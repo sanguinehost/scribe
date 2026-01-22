@@ -33,8 +33,12 @@
 	const llmStore = LLMStore.fromContext();
 
 	// Local component state
-	let chatInput = $state(initialChatInputValue);
+	let chatInput = $state('');
 	let isInitialized = $state(false);
+
+	$effect(() => {
+		chatInput = initialChatInputValue;
+	});
 
 	// Derived state
 	let isLoading = $derived(

@@ -55,13 +55,26 @@
 
 	// Use controller.chat as single source of truth - controller has $state internally
 	const controller = new ChatController(
-		chatProp,
-		user,
-		character,
-		initialMessages,
-		initialCursor,
-		initialChatInputValue ?? ''
+		undefined,
+		undefined,
+		undefined,
+		[],
+		null,
+		''
 	);
+
+	// Sync props to controller reactively
+	$effect(() => {
+		controller.chat = chatProp;
+		controller.user = user;
+		controller.character = character;
+		// initialMessages, initialCursor, and initialChatInputValue are typically for initial load
+		// but we can sync them if they change, or just set them once in an untracked block if preferred.
+		// For now, let's sync them to ensure the controller has the latest data.
+		if (initialMessages) controller.loadedMessagesBatches = [initialMessages];
+		if (initialCursor !== undefined) controller.nextCursor = initialCursor;
+		if (initialChatInputValue !== undefined) controller.chatInput = initialChatInputValue;
+	});
 
 	// Derived chat accessor for convenience
 	let chat = $derived(controller.chat);

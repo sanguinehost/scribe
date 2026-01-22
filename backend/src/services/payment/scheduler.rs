@@ -19,10 +19,7 @@ use crate::{
     errors::AppError,
     models::payment::{Subscription, SubscriptionStatus},
     schema::{daily_usage_tracking, subscriptions, users, webhook_events},
-    services::{
-        encryption_service::EncryptionService,
-        payment::{CreditService, SubscriptionService, UsageTrackingService},
-    },
+    services::payment::CreditService,
 };
 
 /// Payment scheduler service that manages all periodic payment tasks
@@ -30,28 +27,16 @@ pub struct PaymentScheduler {
     config: Arc<Config>,
     pool: DbPool,
     credit_service: Arc<CreditService>,
-    subscription_service: Arc<SubscriptionService>,
-    usage_service: Arc<UsageTrackingService>,
 }
 
 impl PaymentScheduler {
     pub fn new(config: Arc<Config>, pool: DbPool) -> Self {
         let credit_service = Arc::new(CreditService::new(config.clone()));
-        let subscription_service = Arc::new(SubscriptionService::new(
-            config.as_ref().clone(),
-            EncryptionService::new(),
-        ));
-        let usage_service = Arc::new(UsageTrackingService::new(
-            config.as_ref().clone(),
-            EncryptionService::new(),
-        ));
 
         Self {
             config,
             pool,
             credit_service,
-            subscription_service,
-            usage_service,
         }
     }
 

@@ -1,7 +1,5 @@
-use crate::db::DbId;
 use crate::db::DbTimestamp;
 use crate::DbJson as JsonValue;
-use chrono::Utc;
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;

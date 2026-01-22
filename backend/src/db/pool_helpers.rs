@@ -16,6 +16,7 @@ use crate::errors::AppError;
 
 // Extension trait to provide async .get() for SQLite pools (compatibility with PostgreSQL async pools)
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[allow(async_fn_in_trait)]
 pub trait SqlitePoolExt {
     type Connection;
     async fn get(
@@ -60,6 +61,7 @@ impl SqlitePoolExt for DbPool {
 // IMPORTANT: This means SQLite code must use `let mut conn` while PostgreSQL uses `let conn`.
 // The trait signature matches the closure return type: T can be Result<U, E> to support ?? pattern.
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[allow(async_fn_in_trait)]
 pub trait SqliteInteractExt {
     async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
     where

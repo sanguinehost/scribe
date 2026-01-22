@@ -58,7 +58,7 @@
 	// Apply template substitution to the current greeting
 	// Note: The backend already applies template substitution to variants,
 	// but we apply it here too for consistency and in case of local updates.
-	let currentGreeting = $state(message.content);
+	let currentGreeting = $state('');
 
 	$effect(() => {
 		const rawGreeting = availableGreetings[currentGreetingIndex] || message.content || '';

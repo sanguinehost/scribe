@@ -445,11 +445,7 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
         use crate::auth::user_store::Backend as AuthBackend;
         use crate::services::payment::SoftLimitService;
         use crate::AppState;
-        use axum::http::StatusCode;
-        use axum::response::IntoResponse;
-        use axum::Json;
         use axum_login::AuthSession;
-        use serde_json::json;
         use std::sync::Arc;
 
         // Extract app state from request extensions

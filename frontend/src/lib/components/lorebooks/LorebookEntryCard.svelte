@@ -45,14 +45,15 @@
 		return content.substring(0, maxLength) + '...';
 	}
 
-	const keywordsList = entry.keys_text
-		? entry.keys_text
-				.split(',')
-				.map((k) => k.trim())
-				.filter((k) => k.length > 0)
-		: [];
-
-	const cardClass = `transition-opacity ${!entry.is_enabled ? 'opacity-60' : ''}`;
+	const keywordsList = $derived(
+		entry.keys_text
+			? entry.keys_text
+					.split(',')
+					.map((k) => k.trim())
+					.filter((k) => k.length > 0)
+			: []
+	);
+	const cardClass = $derived(`transition-opacity ${!entry.is_enabled ? 'opacity-60' : ''}`);
 </script>
 
 <Card class={cardClass}>

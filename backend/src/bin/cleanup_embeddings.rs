@@ -13,10 +13,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use diesel::prelude::*;
-use scribe_backend::{
-    config::Config,
-    vector_db::qdrant_client::{QdrantClientService, QdrantClientServiceTrait},
-};
+use scribe_backend::{config::Config, vector_db::qdrant_client::QdrantClientServiceTrait};
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -82,6 +79,7 @@ async fn main() -> Result<()> {
     // Initialize vector database service
     #[cfg(feature = "remote-vector")]
     let qdrant_service = {
+        use scribe_backend::vector_db::qdrant_client::QdrantClientService;
         info!("Initializing Qdrant client service (remote-vector mode)...");
         let service = Arc::new(QdrantClientService::new(config.clone()).await?);
         service as Arc<dyn QdrantClientServiceTrait + Send + Sync>

@@ -14,9 +14,9 @@
 		currentUserId?: string;
 	}>();
 
-	let messages = $state(incomingMessages || []);
-	let isSending = $state(incomingIsSending || false);
-	let _currentUserId = $state(incomingCurrentUserId);
+	let messages = $state<_ScribeChatMessage[]>([]);
+	let isSending = $state(false);
+	let _currentUserId = $state<string | undefined>(undefined);
 
 	// This helper function can be used to determine if a message is from the current user
 	// For styling or logic if needed, though not strictly required for basic mock rendering.

@@ -22,7 +22,7 @@ use crate::models::chats::{Vote, VoteRequest};
 use crate::models::usage::ChatTokenUsage;
 use crate::models::users::User; // Added User import
 use crate::privacy::logging::loggable_user_id;
-use crate::schema::{chat_messages, chat_sessions, message_variants};
+use crate::schema::{chat_messages, chat_sessions};
 use crate::services::chat::generation::{self, StreamAiParams}; // Added generation imports
 use crate::state::AppState;
 use axum::{
@@ -1685,6 +1685,7 @@ pub async fn get_message_by_id_handler(
 
         let variant_res = crate::db::with_conn(&pool, move |conn| {
             use crate::models::chats::MessageVariant;
+            use crate::schema::message_variants;
 
             let variant_opt = message_variants::table
                 .filter(message_variants::parent_message_id.eq(msg_id))

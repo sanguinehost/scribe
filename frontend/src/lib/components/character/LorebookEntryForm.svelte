@@ -20,27 +20,23 @@
 
 	let { entry = null, isLoading = false, onSubmit, onCancel }: Props = $props();
 
-	let name = $state(entry?.name || '');
-	let keys = $state(entry?.keys?.join(', ') || '');
-	let secondaryKeys = $state(entry?.secondary_keys?.join(', ') || '');
-	let content = $state(entry?.content || '');
-	let enabled = $state(entry?.enabled ?? true);
-	let insertionOrder = $state(entry?.insertion_order ?? 100);
-	let caseSensitive = $state(entry?.case_sensitive ?? false);
-	let useRegex = $state(entry?.use_regex ?? false);
-	let constant = $state(entry?.constant ?? false);
-	let priority = $state(entry?.priority ?? 10);
-	let position = $state<'before_char' | 'after_char'>(
-		(entry?.position === 'before_char' || entry?.position === 'after_char'
-			? entry.position
-			: 'after_char') as 'before_char' | 'after_char'
-	);
-	let comment = $state(entry?.comment || '');
-	let selective = $state(entry?.selective ?? true);
+	let name = $state('');
+	let keys = $state('');
+	let secondaryKeys = $state('');
+	let content = $state('');
+	let enabled = $state(true);
+	let insertionOrder = $state(100);
+	let caseSensitive = $state(false);
+	let useRegex = $state(false);
+	let constant = $state(false);
+	let priority = $state(10);
+	let position = $state<'before_char' | 'after_char'>('after_char');
+	let comment = $state('');
+	let selective = $state(true);
 
-	const isEditing = entry !== null;
-	const title = isEditing ? 'Edit Entry' : 'Create New Entry';
-	const submitLabel = isEditing ? 'Update Entry' : 'Create Entry';
+	const isEditing = $derived(entry !== null);
+	const title = $derived(isEditing ? 'Edit Entry' : 'Create New Entry');
+	const submitLabel = $derived(isEditing ? 'Update Entry' : 'Create Entry');
 
 	// AI assistant state
 	let aiDialogOpen = $state(false);

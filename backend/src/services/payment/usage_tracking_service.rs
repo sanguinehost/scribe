@@ -47,16 +47,12 @@ pub struct UsageLimit {
 #[derive(Clone)]
 pub struct UsageTrackingService {
     config: Config,
-    encryption_service: EncryptionService,
 }
 
 #[cfg(feature = "payment")]
 impl UsageTrackingService {
-    pub fn new(config: Config, encryption_service: EncryptionService) -> Self {
-        Self {
-            config,
-            encryption_service,
-        }
+    pub fn new(config: Config, _encryption_service: EncryptionService) -> Self {
+        Self { config }
     }
 
     /// Track token usage for a user
@@ -332,15 +328,6 @@ impl UsageTrackingService {
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
         Ok(stats)
-    }
-
-    /// Get token limit for a user based on their subscription
-    async fn get_token_limit_for_user(
-        &self,
-        conn: &mut PgConnection,
-        user_id: crate::db::DbId,
-    ) -> Result<i32, AppError> {
-        self.get_token_limit_for_user_sync(conn, user_id)
     }
 
     /// Get token limit for a user based on their subscription (sync version)

@@ -38,7 +38,7 @@
 		return content.substring(0, maxLength) + '...';
 	}
 
-	const cardClass = `transition-opacity ${!entry.enabled ? 'opacity-60' : ''}`;
+	const cardClass = $derived(`transition-opacity ${!entry.enabled ? 'opacity-60' : ''}`);
 	const contentIsTruncated = $derived((entry.content?.length || 0) > 150);
 	const displayContent = $derived(
 		isExpanded ? entry.content || '' : truncateContent(entry.content)

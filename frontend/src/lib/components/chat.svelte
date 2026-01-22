@@ -67,10 +67,18 @@
 	let firstMessageVariantIndex = $state<number>(0);
 
 	// Pagination state
-	let nextCursor = $state<string | null>(untrack(() => initialCursor) || null);
+	let nextCursor = $state<string | null>(null);
 	let isLoadingMore = $state(false);
-	let hasMoreMessages = $state(untrack(() => initialCursor) !== null);
-	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([untrack(() => initialMessages)]);
+	let hasMoreMessages = $state(false);
+	let loadedMessagesBatches = $state<ScribeChatMessage[][]>([]);
+
+	$effect(() => {
+		untrack(() => {
+			nextCursor = initialCursor || null;
+			hasMoreMessages = initialCursor !== null;
+			loadedMessagesBatches = [initialMessages];
+		});
+	});
 	let suppressAutoScroll = $state(false);
 
 	// Chronicle opt-in state
@@ -716,7 +724,11 @@
 	});
 
 	// Removed attachments state as feature is disabled/not supported
-	let chatInput = $state(initialChatInputValue || ''); // Initialize with prop
+	let chatInput = $state(''); // Initialize with empty string
+
+	$effect(() => {
+		chatInput = initialChatInputValue || '';
+	});
 
 	// --- Suggested Actions State ---
 	let dynamicSuggestedActions = $state<Array<{ action: string }>>([]);

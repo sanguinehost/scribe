@@ -1,4 +1,5 @@
-import { Result as _Result, err, ok } from 'neverthrow';
+import { err, ok } from 'neverthrow';
+import type { Result as _Result } from 'neverthrow';
 import type { ApiError } from '$lib/errors/api';
 import {
 	ApiResponseError,

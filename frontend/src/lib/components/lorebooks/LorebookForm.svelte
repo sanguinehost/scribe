@@ -15,12 +15,12 @@
 
 	let { lorebook = null, isLoading = false, onSubmit, onCancel }: Props = $props();
 
-	let name = $state(lorebook?.name || '');
-	let description = $state(lorebook?.description || '');
+	let name = $state('');
+	let description = $state('');
 
-	const isEditing = lorebook !== null;
-	const title = isEditing ? 'Edit Lorebook' : 'Create New Lorebook';
-	const submitLabel = isEditing ? 'Update Lorebook' : 'Create Lorebook';
+	const isEditing = $derived(lorebook !== null);
+	const title = $derived(isEditing ? 'Edit Lorebook' : 'Create New Lorebook');
+	const submitLabel = $derived(isEditing ? 'Update Lorebook' : 'Create Lorebook');
 
 	function handleSubmit(_event: Event) {
 		_event.preventDefault();

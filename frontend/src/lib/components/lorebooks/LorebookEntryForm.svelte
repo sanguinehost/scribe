@@ -19,15 +19,15 @@
 
 	let { entry = null, isLoading = false, onSubmit, onCancel }: Props = $props();
 
-	let entryTitle = $state(entry?.entry_title || '');
-	let keysText = $state(entry?.keys_text || '');
-	let content = $state(entry?.content || '');
-	let isEnabled = $state(entry?.is_enabled ?? true);
-	let isConstant = $state(entry?.is_constant ?? false);
+	let entryTitle = $state('');
+	let keysText = $state('');
+	let content = $state('');
+	let isEnabled = $state(true);
+	let isConstant = $state(false);
 
-	const isEditing = entry !== null;
-	const title = isEditing ? 'Edit Entry' : 'Create New Entry';
-	const submitLabel = isEditing ? 'Update Entry' : 'Create Entry';
+	const isEditing = $derived(entry !== null);
+	const title = $derived(isEditing ? 'Edit Entry' : 'Create New Entry');
+	const submitLabel = $derived(isEditing ? 'Update Entry' : 'Create Entry');
 
 	function handleSubmit(_event: Event) {
 		_event.preventDefault();

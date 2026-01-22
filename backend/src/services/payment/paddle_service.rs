@@ -8,7 +8,6 @@
 
 use crate::config::PaymentConfig;
 use crate::errors::AppError;
-use crate::services::encryption_service::EncryptionService;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,7 +18,6 @@ use tracing::{debug, error, info, warn};
 pub struct PaddleService {
     config: PaymentConfig,
     client: reqwest::Client,
-    encryption_service: EncryptionService,
 }
 
 /// Paddle webhook event types
@@ -341,11 +339,7 @@ impl PaddleService {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self {
-            config,
-            client,
-            encryption_service: EncryptionService::new(),
-        }
+        Self { config, client }
     }
 
     /// Verify webhook signature

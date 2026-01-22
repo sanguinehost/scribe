@@ -355,7 +355,7 @@ pub fn create_user_sync(
             .get_result(conn)
     };
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let insert_result = {
         use diesel::prelude::*;
         // SQLite doesn't support RETURNING, so we insert and query back by username
@@ -930,7 +930,7 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
             })?
     };
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let updated_user = {
         use diesel::prelude::*;
         // SQLite doesn't support RETURNING on UPDATE, so we update and query back

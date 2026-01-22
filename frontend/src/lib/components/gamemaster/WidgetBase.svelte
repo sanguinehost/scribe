@@ -22,7 +22,11 @@
 		action
 	}: Props = $props();
 
-	let collapsed = $state(defaultCollapsed);
+	let collapsed = $state(false);
+
+	$effect(() => {
+		collapsed = defaultCollapsed;
+	});
 
 	function toggleCollapse() {
 		collapsed = !collapsed;

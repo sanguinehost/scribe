@@ -72,6 +72,7 @@ use tracing::{debug, error, info, instrument, trace, warn};
 use validator::Validate;
 
 // Credit value in dollars per credit (1 credit = $0.02)
+#[cfg(feature = "payment")]
 const CREDIT_VALUE_DOLLARS: f64 = 0.02;
 
 // const RAG_CHUNK_LIMIT: u64 = 7; // No longer needed here, handled by prompt_builder
@@ -389,17 +390,17 @@ pub async fn generate_chat_response(
     // CREDIT SYSTEM INTEGRATION - Check credits and subscription limits
     // Define credit reservation variable outside feature gate for use in confirmation/refund
     #[cfg(feature = "payment")]
-    let mut credit_reservation: Option<(
+    let credit_reservation: Option<(
         crate::services::payment::CreditService,
         crate::db::DbId,
         i32,
-    )> = None;
+    )>;
     #[cfg(not(feature = "payment"))]
     let _credit_reservation: Option<((), (), i32)> = None;
 
     // These need to be accessible outside the feature gate but are only meaningful with payment
     #[cfg(feature = "payment")]
-    let mut should_track_usage = false;
+    let should_track_usage;
     #[cfg(not(feature = "payment"))]
     let _should_track_usage = false;
 

@@ -25,16 +25,12 @@ use diesel::{prelude::*, PgConnection};
 #[derive(Clone)]
 pub struct SubscriptionService {
     config: Config,
-    encryption_service: EncryptionService,
 }
 
 #[cfg(feature = "payment")]
 impl SubscriptionService {
-    pub fn new(config: Config, encryption_service: EncryptionService) -> Self {
-        Self {
-            config,
-            encryption_service,
-        }
+    pub fn new(config: Config, _encryption_service: EncryptionService) -> Self {
+        Self { config }
     }
 
     /// Create a new subscription for a user

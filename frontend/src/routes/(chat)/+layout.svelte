@@ -28,12 +28,14 @@
 	// Desktop mode: data may be undefined initially with ssr:false
 	let { data = {} as LayoutData, children } = $props();
 
-	// Safely initialize with empty array if chats not available
-	const chatHistory = new ChatHistory(data?.chats ?? []);
-	chatHistory.setContext();
+	const chatHistory = new ChatHistory([]);
 
-	// Safely call setContext if selectedChatModel exists
-	data?.selectedChatModel?.setContext();
+	// Reactively initialize context and sync data when it changes
+	$effect(() => {
+		chatHistory.chats = data?.chats ?? [];
+		chatHistory.setContext();
+		data?.selectedChatModel?.setContext();
+	});
 
 	const selectedCharacterStore = new SelectedCharacterStore();
 	selectedCharacterStore.setContext();
