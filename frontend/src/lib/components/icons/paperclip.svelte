@@ -1,5 +1,5 @@
 <script lang="ts">
-	/* eslint-disable svelte/valid-compile */
+
 
 	// Disable custom elements to avoid props inference issues
 	import type { WithElementRef } from '$lib/utils/types.js';

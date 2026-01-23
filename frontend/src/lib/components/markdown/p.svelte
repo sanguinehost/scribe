@@ -1,5 +1,5 @@
 <script lang="ts">
-	/* eslint-disable svelte/valid-compile */
+
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { streamingService } from '$lib/services/StreamingService.svelte';

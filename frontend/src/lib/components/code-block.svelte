@@ -1,5 +1,5 @@
 <script lang="ts">
-	/* eslint-disable svelte/valid-compile */
+
 	import { cn as _cn } from '$lib/utils/shadcn';
 	import type { Snippet } from 'svelte';
 
