@@ -79,7 +79,7 @@ mod payment_audit_tests {
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await??;
@@ -142,26 +142,26 @@ mod payment_audit_tests {
             let service = CreditService::new(config.clone());
 
             // Initialize user credits - should be audited
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
 
             // Add credits - should be audited
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 100,
                 "audit_test",
                 "Test credit addition for audit verification",
                 None,
-                Some(json!({"audit_test": true, "operation_id": "test_001"})),
+                Some(json!({"audit_test": true, "operation_id": "test_001"}).into()),
             )?;
 
             // Reserve credits - should be audited
             service.reserve_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 50,
                 "Test reservation for audit",
-                Some(json!({"reservation_reason": "audit_test"})),
+                Some(json!({"reservation_reason": "audit_test"}).into()),
             )?;
 
             Ok::<_, scribe_backend::errors::AppError>(())
@@ -213,15 +213,15 @@ mod payment_audit_tests {
 
         conn.interact(move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 200,
                 "metadata_test",
                 "Credit addition with transaction metadata",
                 None,
-                Some(transaction_metadata),
+                Some(transaction_metadata.into()),
             )
         })
         .await
@@ -296,12 +296,12 @@ mod payment_audit_tests {
 
                     match op_type {
                         "initialize_credits" => {
-                            service.initialize_user_credits(conn, user_id)?;
+                            service.initialize_user_credits(conn, user_id.into())?;
                         }
                         "add_credits" => {
                             service.add_credits(
                                 conn,
-                                user_id,
+                                user_id.into(),
                                 amount,
                                 "integrity_test",
                                 &format!("Integrity test operation {}", i),
@@ -312,7 +312,7 @@ mod payment_audit_tests {
                         "reserve_credits" => {
                             service.reserve_credits(
                                 conn,
-                                user_id,
+                                user_id.into(),
                                 amount,
                                 &format!("Integrity test reservation {}", i),
                                 None,
@@ -449,21 +449,24 @@ mod payment_audit_tests {
         // Perform operations that might be flagged as suspicious
         conn.interact(move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
 
             // Rapid large credit additions (might be suspicious)
             for i in 0..5 {
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     1000,
                     "suspicious_test",
                     &format!("Large credit addition {}", i),
                     None,
-                    Some(json!({
-                        "pattern": "rapid_large_amounts",
-                        "sequence": i
-                    })),
+                    Some(
+                        json!({
+                            "pattern": "rapid_large_amounts",
+                            "sequence": i
+                        })
+                        .into(),
+                    ),
                 )?;
             }
 
@@ -510,23 +513,26 @@ mod payment_audit_tests {
         // Simulate payment processing operations
         conn.interact(move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
 
             // Credit purchase simulation
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 500,
                 "credit_purchase",
                 "Credit purchase via payment processor",
                 None,
-                Some(json!({
-                    "payment_provider": "paddle",
-                    "paddle_transaction": "txn_paddle_4321",
-                    "amount_usd": 25.00,
-                    "currency": "USD",
-                    "paddle_checkout_id": "co_test_123456"
-                })),
+                Some(
+                    json!({
+                        "payment_provider": "paddle",
+                        "paddle_transaction": "txn_paddle_4321",
+                        "amount_usd": 25.00,
+                        "currency": "USD",
+                        "paddle_checkout_id": "co_test_123456"
+                    })
+                    .into(),
+                ),
             )?;
 
             Ok::<_, scribe_backend::errors::AppError>(())
@@ -607,30 +613,31 @@ mod payment_audit_tests {
                 let service = CreditService::new(config.clone());
 
                 // 1. Initialize account
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
 
                 // 2. Purchase credits
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     1000,
                     "purchase",
                     "Credit purchase",
                     None,
-                    Some(json!({"purchase_amount_usd": 50.00})),
+                    Some(json!({"purchase_amount_usd": 50.00}).into()),
                 )?;
 
                 // 3. Reserve credits for usage
                 let (_balance, reservation_id) = service.reserve_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     300,
                     "Usage reservation",
-                    Some(json!({"service": "ai_generation"})),
+                    Some(json!({"service": "ai_generation"}).into()),
                 )?;
 
                 // 4. Confirm usage
-                let final_balance = service.confirm_reservation(conn, user_id, reservation_id)?;
+                let final_balance =
+                    service.confirm_reservation(conn, user_id.into(), reservation_id)?;
 
                 Ok::<(Uuid, _), scribe_backend::errors::AppError>((reservation_id, final_balance))
             })
@@ -713,10 +720,10 @@ mod payment_audit_tests {
         // Create audit entries
         conn.interact(move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 100,
                 "tamper_test",
                 "Test audit entry for tamper resistance",
@@ -790,15 +797,15 @@ mod payment_audit_tests {
 
         conn.interact(move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 50,
                 "retention_test",
                 "Test entry for retention policy",
                 None,
-                Some(json!({"retention_test": true})),
+                Some(json!({"retention_test": true}).into()),
             )
         })
         .await
@@ -856,10 +863,10 @@ mod payment_audit_tests {
                 let config = config.clone();
                 move |conn| {
                     let service = CreditService::new(config.clone());
-                    service.initialize_user_credits(conn, user_id)?;
+                    service.initialize_user_credits(conn, user_id.into())?;
                     service.add_credits(
                         conn,
-                        user_id,
+                        user_id.into(),
                         75,
                         "isolation_test",
                         "Cross-user isolation test",

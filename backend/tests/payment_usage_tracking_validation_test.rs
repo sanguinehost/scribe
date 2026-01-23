@@ -49,7 +49,7 @@ async fn test_payment_usage_tracking_direct() {
         model_usage,
         feature_usage,
         request_count: 1,
-        last_activity: chrono::Utc::now(),
+        last_activity: chrono::Utc::now().into(),
     };
 
     // Testing payment usage tracking for test user (not logging actual ID for privacy)

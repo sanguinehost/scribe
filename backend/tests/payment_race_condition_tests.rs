@@ -66,7 +66,7 @@ mod payment_race_condition_tests {
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now())
+            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await??;
@@ -91,13 +91,13 @@ mod payment_race_condition_tests {
             let service = CreditService::new(config.clone());
 
             // Initialize user credits
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
 
             // Add credits sequentially
             for i in 1..=5 {
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     100,
                     "sequential_test",
                     &format!("Sequential operation {}", i),
@@ -107,7 +107,7 @@ mod payment_race_condition_tests {
             }
 
             // Check final balance
-            let balance = service.get_balance(conn, user_id)?;
+            let balance = service.get_balance(conn, user_id.into())?;
             assert_eq!(
                 balance.balance, 500,
                 "Sequential operations should sum correctly"
@@ -143,7 +143,7 @@ mod payment_race_condition_tests {
             let config = config.clone();
             move |conn| {
                 let service = CreditService::new(config.clone());
-                service.initialize_user_credits(conn, user_id)
+                service.initialize_user_credits(conn, user_id.into())
             }
         })
         .await
@@ -163,7 +163,7 @@ mod payment_race_condition_tests {
                     let service = CreditService::new(config.clone());
                     service.add_credits(
                         conn,
-                        user_id,
+                        user_id.into(),
                         50,
                         "concurrent_test",
                         &format!("Concurrent operation {}", i),
@@ -197,7 +197,7 @@ mod payment_race_condition_tests {
                 let config = config.clone();
                 move |conn| {
                     let service = CreditService::new(config.clone());
-                    service.get_balance(conn, user_id)
+                    service.get_balance(conn, user_id.into())
                 }
             })
             .await
@@ -237,10 +237,10 @@ mod payment_race_condition_tests {
             let service = CreditService::new(config.clone());
 
             // Initialize and add credits
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 1000,
                 "reservation_test",
                 "Initial credits for reservation test",
@@ -250,10 +250,11 @@ mod payment_race_condition_tests {
 
             // Reserve credits
             let (_balance, reservation_id) =
-                service.reserve_credits(conn, user_id, 300, "Test reservation", None)?;
+                service.reserve_credits(conn, user_id.into(), 300, "Test reservation", None)?;
 
             // Confirm reservation
-            let final_balance = service.confirm_reservation(conn, user_id, reservation_id)?;
+            let final_balance =
+                service.confirm_reservation(conn, user_id.into(), reservation_id)?;
 
             assert_eq!(
                 final_balance.balance, 700,
@@ -295,12 +296,12 @@ mod payment_race_condition_tests {
                 let service = CreditService::new(config.clone());
 
                 // Initialize user with no additional credits
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
 
                 // Try to reserve more credits than available
                 service.reserve_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     500,
                     "Should fail - insufficient credits",
                     None,
@@ -338,10 +339,10 @@ mod payment_race_condition_tests {
             let service = CreditService::new(config.clone());
 
             // Initialize and add credits
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 200,
                 "isolation_test",
                 "Initial credits",
@@ -350,12 +351,17 @@ mod payment_race_condition_tests {
             )?;
 
             // Perform multiple operations in sequence
-            let balance1 = service.get_balance(conn, user_id)?;
+            let balance1 = service.get_balance(conn, user_id.into())?;
 
-            let (_balance, reservation_id) =
-                service.reserve_credits(conn, user_id, 100, "Isolation test reservation", None)?;
+            let (_balance, reservation_id) = service.reserve_credits(
+                conn,
+                user_id.into(),
+                100,
+                "Isolation test reservation",
+                None,
+            )?;
 
-            let balance2 = service.get_balance(conn, user_id)?;
+            let balance2 = service.get_balance(conn, user_id.into())?;
 
             // Balances should be consistent
             assert_eq!(balance1.balance, 200, "Initial balance should be correct");
@@ -365,9 +371,9 @@ mod payment_race_condition_tests {
             );
 
             // Confirm reservation
-            service.confirm_reservation(conn, user_id, reservation_id)?;
+            service.confirm_reservation(conn, user_id.into(), reservation_id)?;
 
-            let final_balance = service.get_balance(conn, user_id)?;
+            let final_balance = service.get_balance(conn, user_id.into())?;
             assert_eq!(
                 final_balance.balance, 100,
                 "Final balance should remain consistent"
@@ -413,10 +419,10 @@ mod payment_race_condition_tests {
             let config = config.clone();
             move |conn| {
                 let service = CreditService::new(config.clone());
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     1000,
                     "high_concurrency_test",
                     "Initial credits for high-concurrency test",
@@ -456,7 +462,7 @@ mod payment_race_condition_tests {
                         let service = CreditService::new(config.clone());
                         service.reserve_credits(
                             conn,
-                            user_id,
+                            user_id.into(),
                             50,
                             &format!("High-concurrency reservation {}", i),
                             None,
@@ -507,7 +513,7 @@ mod payment_race_condition_tests {
                 let config = config.clone();
                 move |conn| {
                     let service = CreditService::new(config.clone());
-                    service.get_balance(conn, user_id)
+                    service.get_balance(conn, user_id.into())
                 }
             })
             .await
@@ -569,10 +575,10 @@ mod payment_race_condition_tests {
             let config = config.clone();
             move |conn| {
                 let service = CreditService::new(config.clone());
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     500,
                     "retry_test",
                     "Initial credits for retry test",
@@ -608,7 +614,7 @@ mod payment_race_condition_tests {
                         let service = CreditService::new(config.clone());
                         service.reserve_credits(
                             conn,
-                            user_id,
+                            user_id.into(),
                             100,
                             &format!("Retry test reservation {}", i),
                             None,
@@ -666,7 +672,7 @@ mod payment_race_condition_tests {
                 let config = config.clone();
                 move |conn| {
                     let service = CreditService::new(config.clone());
-                    service.get_balance(conn, user_id)
+                    service.get_balance(conn, user_id.into())
                 }
             })
             .await

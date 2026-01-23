@@ -553,7 +553,7 @@ fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<A
         chat_override_service: chat_override_service_for_test,
         user_persona_service: user_persona_service_for_test,
         token_counter: hybrid_token_counter_for_test,
-        encryption_service: encryption_service_for_test,
+        encryption_service: encryption_service_for_test.clone(),
         lorebook_service: lorebook_service_for_test,
         auth_backend: auth_backend_for_test,
         token_service,

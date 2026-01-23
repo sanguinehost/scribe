@@ -56,7 +56,7 @@ use hex::decode;
 use rcgen::generate_simple_self_signed;
 use rustls::crypto::ring;
 use scribe_backend::config::Config; // Import Config instead
-use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
+                                    // use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
 use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
 use scribe_backend::services::ai_client_factory::AiClientFactory;
 use scribe_backend::services::character_service::CharacterService;
@@ -328,7 +328,8 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         .gemini_api_key
         .as_ref()
         .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY is required".to_string()))?;
-    let ai_client = build_gemini_client(api_key, &config.gemini_api_base_url)?;
+    // Use RigClient instead of ScribeGeminiClient
+    let ai_client = scribe_backend::llm::rig_client::RigClient::new(Some(api_key.clone()));
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---

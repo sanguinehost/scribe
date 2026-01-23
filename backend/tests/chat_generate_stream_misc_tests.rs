@@ -216,6 +216,8 @@ async fn perform_empty_response_stream_test(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -430,6 +432,8 @@ async fn perform_reasoning_chunk_stream_test(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -843,6 +847,8 @@ async fn perform_real_client_stream_test_and_verify(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()

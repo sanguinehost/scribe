@@ -402,6 +402,8 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -516,6 +518,7 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session(
                 message_type: MessageRole::User,
                 content: b"First message".to_vec(),
                 content_nonce: None,
+                rag_embedding_id: None,
                 created_at: now.into(),
                 updated_at: now.into(),
                 role: None,
@@ -559,6 +562,8 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -798,6 +803,8 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -1112,6 +1119,8 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -1402,6 +1411,8 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     // Ensure responses are queued for the retrieve_relevant_chunks calls (system prompt + user message)
@@ -1535,6 +1546,8 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -1671,6 +1684,8 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -1796,6 +1811,8 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -1969,6 +1986,8 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     // Ensure responses are queued for this specific /generate call (system prompt + user message)

@@ -8,7 +8,9 @@ use crate::llm::llamacpp::{
     LlamaCppResilience, LlamaCppServerManager, LocalLlmError, ModelManager, OutputValidator,
     PerformanceMetrics, PromptSanitizer, ResourceLimiter,
 };
-use crate::llm::{AiClient, ChatStream, ChatStreamItem};
+use crate::llm::{
+    AiClient, ChatStream, ChatStreamItem, RigChatResponse, RigCompletionRequest, RigStreamEvent,
+};
 
 use async_trait::async_trait;
 use futures::stream::{Stream, StreamExt, TryStreamExt};
@@ -937,6 +939,29 @@ impl AiClient for LlamaCppClient {
 
         info!("LlamaCpp streaming chat started successfully");
         Ok(stream)
+    }
+
+    async fn completion(
+        &self,
+        _req: RigCompletionRequest,
+    ) -> Result<RigChatResponse, anyhow::Error> {
+        Err(anyhow::anyhow!(
+            "completion not implemented for LlamaCppClient"
+        ))
+    }
+
+    async fn completion_stream(
+        &self,
+        _req: RigCompletionRequest,
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures::Stream<Item = Result<RigStreamEvent, anyhow::Error>> + Send>,
+        >,
+        anyhow::Error,
+    > {
+        Err(anyhow::anyhow!(
+            "completion_stream not implemented for LlamaCppClient"
+        ))
     }
 }
 

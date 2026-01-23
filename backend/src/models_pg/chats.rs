@@ -1148,6 +1148,14 @@ impl ChatMessageBuilder {
         self.inner.status = status;
         self
     }
+    pub fn created_at(mut self, ts: DbTimestamp) -> Self {
+        self.inner.created_at = ts;
+        self
+    }
+    pub fn updated_at(mut self, ts: DbTimestamp) -> Self {
+        self.inner.updated_at = ts;
+        self
+    }
     pub fn build(self) -> ChatMessage {
         self.inner
     }

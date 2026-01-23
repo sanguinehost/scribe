@@ -138,6 +138,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         message_type: MessageRole::User,
         content: dummy_message_content.as_bytes().to_vec().into(),
         content_nonce: None, // Plaintext for this test message
+        rag_embedding_id: None,
         role: Some("user".to_string()),
         parts: None,
         attachments: None,

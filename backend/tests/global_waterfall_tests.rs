@@ -190,6 +190,8 @@ async fn test_global_waterfall_fills_context() -> anyhow::Result<()> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()

@@ -501,6 +501,12 @@ mod lorebook_analysis_tests {
                 test_app.db_pool.clone(),
             )),
             token_service: None,
+            character_service: Arc::new(
+                scribe_backend::services::character_service::CharacterService::new(
+                    test_app.db_pool.clone(),
+                    encryption_service.clone(),
+                ),
+            ),
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]
@@ -515,7 +521,7 @@ mod lorebook_analysis_tests {
             app_state_services,
         ));
 
-        let analysis_tool = AnalyzeLorebookTool::new(lorebook_service, mock_ai_client, app_state);
+        let analysis_tool = AnalyzeLorebookTool::new(mock_ai_client, app_state);
 
         let params = json!({
             "lorebook_id": lorebook_id.to_string(),
@@ -631,6 +637,12 @@ mod lorebook_analysis_tests {
                 test_app.db_pool.clone(),
             )),
             token_service: None,
+            character_service: Arc::new(
+                scribe_backend::services::character_service::CharacterService::new(
+                    test_app.db_pool.clone(),
+                    encryption_service.clone(),
+                ),
+            ),
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]
@@ -645,7 +657,7 @@ mod lorebook_analysis_tests {
             app_state_services,
         ));
 
-        let analysis_tool = AnalyzeLorebookTool::new(lorebook_service, mock_ai_client, app_state);
+        let analysis_tool = AnalyzeLorebookTool::new(mock_ai_client, app_state);
 
         let params = json!({
             "lorebook_id": lorebook_id.to_string(),
@@ -736,6 +748,12 @@ mod lorebook_analysis_tests {
                 test_app.db_pool.clone(),
             )),
             token_service: None,
+            character_service: Arc::new(
+                scribe_backend::services::character_service::CharacterService::new(
+                    test_app.db_pool.clone(),
+                    encryption_service.clone(),
+                ),
+            ),
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]
@@ -750,7 +768,7 @@ mod lorebook_analysis_tests {
             app_state_services,
         ));
 
-        let analysis_tool = AnalyzeLorebookTool::new(lorebook_service, mock_ai_client, app_state);
+        let analysis_tool = AnalyzeLorebookTool::new(mock_ai_client, app_state);
 
         // Test missing lorebook_id
         let result = analysis_tool
@@ -888,6 +906,12 @@ mod lorebook_analysis_tests {
                 test_app.db_pool.clone(),
             )),
             token_service: None,
+            character_service: Arc::new(
+                scribe_backend::services::character_service::CharacterService::new(
+                    test_app.db_pool.clone(),
+                    encryption_service.clone(),
+                ),
+            ),
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None,
             #[cfg(feature = "local-llm")]

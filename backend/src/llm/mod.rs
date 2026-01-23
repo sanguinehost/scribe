@@ -9,9 +9,9 @@ pub type ChatStreamItem = Result<ChatStreamEvent, AppError>;
 // Type alias for the stream itself (The stream implementor)
 pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 
-pub mod gemini_client;
 pub mod gemini_embedding_client;
 pub mod model_registry;
+pub mod rig_client; // Added rig_client module
 
 // LlamaCpp integration (feature-gated)
 #[cfg(feature = "local-llm")]
@@ -19,6 +19,7 @@ pub mod llamacpp;
 
 // Import the public request struct for use in the trait
 pub use gemini_embedding_client::BatchEmbeddingContentRequest;
+pub use rig_client::{RigChatResponse, RigCompletionRequest, RigStreamEvent}; // Import Rig types
 
 // Re-export LlamaCpp types when feature is enabled
 #[cfg(feature = "local-llm")]
@@ -58,6 +59,19 @@ pub trait AiClient: Send + Sync {
         request: ChatRequest,
         config_override: Option<ChatOptions>,
     ) -> Result<ChatStream, AppError>; // Return type alias
+
+    // Rig-based completion method
+    async fn completion(&self, req: RigCompletionRequest)
+        -> Result<RigChatResponse, anyhow::Error>;
+
+    // Rig-based streaming completion method
+    async fn completion_stream(
+        &self,
+        req: RigCompletionRequest,
+    ) -> Result<
+        std::pin::Pin<Box<dyn Stream<Item = Result<RigStreamEvent, anyhow::Error>> + Send>>,
+        anyhow::Error,
+    >;
 }
 
 #[async_trait]

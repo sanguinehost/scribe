@@ -86,6 +86,7 @@ async fn create_test_user_with_persona(
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        id: scribe_backend::db::DbId::new(),
         username: username.clone(),
         password_hash: hashed_password,
         email,
@@ -295,6 +296,12 @@ async fn create_test_app_state(
             test_app.db_pool.clone(),
         )),
         token_service: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]

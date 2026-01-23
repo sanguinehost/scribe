@@ -56,6 +56,12 @@ async fn create_test_app_state(test_app: &scribe_backend::test_helpers::TestApp)
                 encryption_service.clone(),
             ),
         ),
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         token_counter: Arc::new(
             scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
                 scribe_backend::services::tokenizer_service::TokenizerService::new(
@@ -175,6 +181,7 @@ async fn test_context_enrichment_complete_workflow_preprocessing() {
             None,       // rag_chronicles_limit
             None,       // rag_lorebooks_limit
             None,       // rag_older_chat_limit
+            None,       // max_game_time_day
         )
         .await;
 
@@ -317,6 +324,7 @@ async fn test_context_enrichment_complete_workflow_postprocessing() {
             None,       // rag_chronicles_limit
             None,       // rag_lorebooks_limit
             None,       // rag_older_chat_limit
+            None,       // max_game_time_day
         )
         .await;
 
@@ -453,6 +461,7 @@ async fn test_context_enrichment_search_types() {
             None,       // rag_chronicles_limit
             None,       // rag_lorebooks_limit
             None,       // rag_older_chat_limit
+            None,       // max_game_time_day
         )
         .await;
 
@@ -561,6 +570,7 @@ async fn test_context_enrichment_error_handling() {
             None,       // rag_chronicles_limit
             None,       // rag_lorebooks_limit
             None,       // rag_older_chat_limit
+            None,       // max_game_time_day
         )
         .await;
 
@@ -672,6 +682,7 @@ async fn test_context_enrichment_analysis_storage() {
             None,       // rag_chronicles_limit
             None,       // rag_lorebooks_limit
             None,       // rag_older_chat_limit
+            None,       // max_game_time_day
         )
         .await;
 

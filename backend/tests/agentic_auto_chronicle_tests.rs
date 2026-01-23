@@ -49,6 +49,12 @@ async fn create_test_app_state(
                 Arc::new(scribe_backend::services::EncryptionService::new()),
             ),
         ),
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                Arc::new(scribe_backend::services::EncryptionService::new()),
+            ),
+        ),
         token_counter: Arc::new(
             scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new(
                 scribe_backend::services::tokenizer_service::TokenizerService::new(
@@ -324,9 +330,12 @@ mod agentic_chronicle_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id.into()), // Chronicle exists after user opted in
+                None,                      // message_variant_id
                 &messages,
                 &session_dek,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -506,9 +515,12 @@ mod agentic_chronicle_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(existing_chronicle.id),
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -648,10 +660,13 @@ mod agentic_chronicle_tests {
             .process_narrative_event(
                 user_id.into(),
                 chat_session_id.into(),
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 

@@ -40,6 +40,8 @@ async fn generate_chat_response_streaming_unauthorized() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
     let request = Request::builder()
         .method(Method::POST)
@@ -125,6 +127,8 @@ async fn generate_chat_response_streaming_not_found() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
     let request = Request::builder()
         .method(Method::POST)
@@ -304,6 +308,8 @@ async fn generate_chat_response_streaming_forbidden() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
     let request = Request::builder()
         .method(Method::POST)

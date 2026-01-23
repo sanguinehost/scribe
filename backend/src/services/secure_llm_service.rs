@@ -4,7 +4,7 @@
 use crate::{
     auth::SessionDek,
     errors::AppError,
-    llm::{AiClient, ChatStream},
+    llm::{AiClient, ChatStream, RigChatResponse, RigCompletionRequest, RigStreamEvent},
     state::AppState,
 };
 use async_trait::async_trait;
@@ -459,5 +459,24 @@ impl AiClient for SecureLlmService {
         self.ai_client
             .stream_chat(model_name, request, config_override)
             .await
+    }
+
+    async fn completion(
+        &self,
+        req: RigCompletionRequest,
+    ) -> Result<RigChatResponse, anyhow::Error> {
+        self.ai_client.completion(req).await
+    }
+
+    async fn completion_stream(
+        &self,
+        req: RigCompletionRequest,
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures::Stream<Item = Result<RigStreamEvent, anyhow::Error>> + Send>,
+        >,
+        anyhow::Error,
+    > {
+        self.ai_client.completion_stream(req).await
     }
 }

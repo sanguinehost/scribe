@@ -224,6 +224,8 @@ async fn generate_chat_response_streaming_ai_error() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -510,6 +512,8 @@ async fn generate_chat_response_streaming_initiation_error() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -759,6 +763,8 @@ async fn generate_chat_response_streaming_error_before_content() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()
@@ -1041,6 +1047,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()

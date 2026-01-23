@@ -191,6 +191,8 @@ async fn send_chat_request(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let chat_request = Request::builder()

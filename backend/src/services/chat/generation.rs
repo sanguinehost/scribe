@@ -1,5 +1,5 @@
 use crate::db::DbId;
-use std::{pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use bigdecimal::ToPrimitive;
 use diesel::{result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl};
@@ -7,8 +7,7 @@ use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use genai::chat::{
     ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-    ChatRequest as GenAiChatRequest, ChatRole, ChatStreamEvent as GeminiResponseChunkAlias,
-    ReasoningEffort, ThinkingLevel,
+    ChatRequest as GenAiChatRequest, ChatRole, ReasoningEffort, ThinkingLevel,
 };
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
@@ -44,10 +43,12 @@ use crate::services::encryption_service::EncryptionService;
 use crate::services::payment::{SoftLimitService, SubscriptionService};
 
 // Type aliases for complex types
+/*
 type GeminiStreamResult = Result<
     Pin<Box<dyn Stream<Item = Result<GeminiResponseChunkAlias, AppError>> + Send>>,
     AppError,
 >;
+*/
 type ScribeEventStream =
     std::pin::Pin<Box<dyn Stream<Item = Result<ScribeSseEvent, AppError>> + Send>>;
 
@@ -2102,7 +2103,7 @@ pub struct ExecChatWithRetryParams {
 #[instrument(skip_all, err, fields(session_id = %params.session_id, model_name = %params.model_name))]
 pub async fn exec_chat_with_retry(
     params: ExecChatWithRetryParams,
-) -> Result<genai::chat::ChatResponse, AppError> {
+) -> Result<crate::llm::rig_client::RigChatResponse, AppError> {
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
 
@@ -2126,7 +2127,7 @@ pub async fn exec_chat_with_retry(
 
     loop {
         // Create chat request for this attempt
-        let attempt_chat_request = {
+        let (attempt_system_prompt, attempt_messages) = {
             let system_prompt = if retry_count == 0 {
                 // First attempt: use original system prompt
                 original_system_prompt.clone().unwrap_or_default()
@@ -2155,25 +2156,49 @@ pub async fn exec_chat_with_retry(
             };
             messages_with_prefill.push(prefill_message);
 
-            let mut request =
-                genai::chat::ChatRequest::new(messages_with_prefill).with_system(system_prompt);
+            (Some(system_prompt), messages_with_prefill)
+        };
 
-            if let Some(tools) = &params.chat_request.tools {
-                request = request.with_tools(tools.clone());
-            }
-            request
+        // Convert genai messages to rig messages
+        let mut rig_messages = Vec::new();
+        for m in attempt_messages {
+            let role = match m.role {
+                genai::chat::ChatRole::User => rig::message::Message::User {
+                    content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                        m.content.texts().join("\n"),
+                    )),
+                },
+                genai::chat::ChatRole::Assistant => rig::message::Message::Assistant {
+                    id: None,
+                    content: rig::one_or_many::OneOrMany::one(
+                        rig::message::AssistantContent::text(m.content.texts().join("\n")),
+                    ),
+                },
+                _ => continue,
+            };
+            rig_messages.push(role);
+        }
+
+        let rig_req = crate::llm::rig_client::RigCompletionRequest {
+            model_name: params.model_name.clone(),
+            provider: params
+                .model_provider
+                .clone()
+                .unwrap_or_else(|| "gemini".to_string()),
+            prompt: "".to_string(), // We use history for everything
+            preamble: attempt_system_prompt,
+            history: rig_messages,
+            temperature: params.chat_options.as_ref().and_then(|o| o.temperature),
+            max_tokens: params
+                .chat_options
+                .as_ref()
+                .and_then(|o| o.max_tokens)
+                .map(|t| t as i32),
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting non-streaming AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
 
-        match ai_client
-            .exec_chat(
-                &params.model_name,
-                attempt_chat_request,
-                params.chat_options.clone(),
-            )
-            .await
-        {
+        match ai_client.completion(rig_req).await {
             Ok(response) => {
                 if retry_count > 0 {
                     info!(session_id = %params.session_id, retry_count, "Non-streaming AI generation succeeded after retry with jailbreak prompt");
@@ -2195,7 +2220,7 @@ pub async fn exec_chat_with_retry(
                     if retry_count >= MAX_RETRIES {
                         error!(session_id = %params.session_id, retry_count, "Exhausted all retry attempts for non-streaming generation, returning final error");
                     }
-                    return Err(AppError::from(e));
+                    return Err(AppError::InternalServerErrorGeneric(e.to_string()));
                 }
             }
         }
@@ -2418,21 +2443,6 @@ pub async fn stream_ai_response_and_save_message(
     );
     info!(%request_thinking, "Initiating AI stream and message saving process");
 
-    // Get the appropriate AI client based on model provider
-    // Always use secure client - user_dek is mandatory for security
-    let dek_bytes = user_dek.expose_secret().clone();
-    let session_dek = crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)));
-    let ai_client = state
-        .ai_client_factory
-        .get_secure_client_for_provider(
-            user_id,
-            model_provider.as_deref(),
-            Some(&model_name),
-            Some(&session_dek),
-            &state,
-        )
-        .await?;
-
     // Log the system_prompt that will be used
     debug!(
         target: "chat_service_system_prompt",
@@ -2440,11 +2450,11 @@ pub async fn stream_ai_response_and_save_message(
         "System prompt to be used for GenAiChatRequest construction"
     );
 
-    let mut chat_request = GenAiChatRequest::new(incoming_genai_messages) // MODIFIED: Use incoming_genai_messages directly
-        .with_system(system_prompt.unwrap_or_default());
+    let mut chat_request = GenAiChatRequest::new(incoming_genai_messages.clone()) // MODIFIED: Use incoming_genai_messages directly
+        .with_system(system_prompt.clone().unwrap_or_default());
 
     let mut genai_chat_options = GenAiChatOptions::default();
-    if let Some(temp_val) = temperature {
+    if let Some(ref temp_val) = temperature {
         if let Some(f_val) = temp_val.to_f32() {
             genai_chat_options = genai_chat_options.with_temperature(f_val.into());
         }
@@ -2541,21 +2551,71 @@ pub async fn stream_ai_response_and_save_message(
     // Temporary debug: log the raw prompt length to see if it's being built correctly
     tracing::debug!("Raw prompt debug built, length: {}", raw_prompt_debug.len());
 
-    let genai_stream_result: GeminiStreamResult = ai_client
-        .stream_chat(&model_name, chat_request, Some(genai_chat_options))
-        .await;
+    // Build RigCompletionRequest
+    let rig_req = crate::llm::rig_client::RigCompletionRequest {
+        model_name: model_name.clone(),
+        provider: model_provider
+            .clone()
+            .unwrap_or_else(|| "gemini".to_string()),
+        prompt: incoming_genai_messages
+            .last()
+            .and_then(|m| m.content.texts().first().map(|t| t.to_string()))
+            .unwrap_or_default(),
+        preamble: Some(system_prompt.unwrap_or_default()),
+        history: incoming_genai_messages
+            .iter()
+            .take(incoming_genai_messages.len().saturating_sub(1))
+            .map(|m| {
+                // Map genai::chat::ChatMessage to rig::message::Message
+                match m.role {
+                    genai::chat::ChatRole::User => {
+                        let content = m.content.texts().join("\n");
+                        rig::message::Message::User {
+                            content: rig::one_or_many::OneOrMany::one(
+                                rig::message::UserContent::text(content),
+                            ),
+                        }
+                    }
+                    genai::chat::ChatRole::Assistant => {
+                        let content = m.content.texts().join("\n");
+                        rig::message::Message::Assistant {
+                            id: None,
+                            content: rig::one_or_many::OneOrMany::one(
+                                rig::message::AssistantContent::text(content),
+                            ),
+                        }
+                    }
+                    _ => rig::message::Message::User {
+                        content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                            "".to_string(),
+                        )),
+                    },
+                }
+            })
+            .collect(),
+        temperature: temperature.and_then(|t| t.to_f64()),
+        max_tokens: max_output_tokens,
+    };
 
-    let genai_stream = match genai_stream_result {
+    let rig_client = crate::llm::rig_client::RigClient::new(None); // Gemini uses env var or we can pass it
+    let rig_stream_result = rig_client.completion_stream(rig_req).await;
+
+    let rig_stream: std::pin::Pin<
+        Box<
+            dyn futures_util::Stream<
+                    Item = Result<crate::llm::rig_client::RigStreamEvent, anyhow::Error>,
+                > + Send,
+        >,
+    > = match rig_stream_result {
         Ok(s) => {
-            debug!("Successfully initiated AI stream from chat_service");
+            debug!("Successfully initiated Rig AI stream from chat_service");
             s
         }
         Err(e) => {
-            error!(error = ?e, "Failed to initiate AI stream from chat_service");
+            error!(error = ?e, "Failed to initiate Rig AI stream from chat_service");
             let error_stream = async_stream::stream! {
                 let sanitized_error = crate::errors::sanitize_error_message(&e.to_string());
-                let error_msg = format!("LLM API error (chat_service): Failed to initiate stream - {sanitized_error}");
-                trace!(error_message = %error_msg, "Sending SSE 'error' event (initiation failed in service)");
+                let error_msg = format!("LLM API error (Rig): Failed to initiate stream - {sanitized_error}");
                 yield Ok::<_, AppError>(ScribeSseEvent::Error(error_msg));
             };
             return Ok(Box::pin(error_stream));
@@ -2575,35 +2635,17 @@ pub async fn stream_ai_response_and_save_message(
         // Create a channel to receive token usage data from the spawned task
         let (token_sender, mut token_receiver) = tokio::sync::mpsc::unbounded_channel::<ScribeSseEvent>();
 
-        // Pin the stream from the AI client
-        futures::pin_mut!(genai_stream);
-        trace!("Entering SSE async_stream! processing loop in chat_service");
+        // Pin the stream from the Rig client
+        futures::pin_mut!(rig_stream);
+        trace!("Entering SSE async_stream! processing loop in chat_service (Rig)");
 
-        while let Some(event_result) = genai_stream.next().await {
-            trace!("Received event from genai_stream in chat_service: {:?}", event_result);
+        while let Some(event_result) = rig_stream.next().await {
+            trace!("Received event from rig_stream in chat_service: {:?}", event_result);
             match event_result {
-                Ok(GeminiResponseChunkAlias::Start) => {
-                    debug!("Received Start event from AI stream in chat_service");
-                }
-                Ok(GeminiResponseChunkAlias::Chunk(chunk)) => {
-                    if chunk.content.is_empty() {
-                        trace!("Skipping empty content chunk from AI in chat_service");
+                Ok(crate::llm::rig_client::RigStreamEvent::Content(chunk_content)) => {
+                    if chunk_content.is_empty() {
+                        trace!("Skipping empty content chunk from Rig in chat_service");
                     } else {
-                        // ... existing logic for content ..
-                        let chunk_content = chunk.content;
-                        let chunk_lower = chunk_content.to_lowercase();
-                        let is_likely_safety_refusal = chunk_lower.contains("i can't help")
-                            || chunk_lower.contains("i cannot provide")
-                            || chunk_lower.contains("i'm not able to")
-                            || chunk_lower.contains("i cannot assist")
-                            || chunk_lower.contains("against my guidelines")
-                            || chunk_lower.contains("inappropriate content")
-                            || chunk_lower.contains("harmful content");
-
-                        if is_likely_safety_refusal {
-                            warn!(session_id = %stream_session_id, content_len = chunk_content.len(), "Detected potential safety refusal in AI response");
-                        }
-
                         // Create structured chunk with integrity checking
                         let checksum = crc32fast::hash(chunk_content.as_bytes());
                         let structured_chunk = super::types::StreamedChunk {
@@ -2619,7 +2661,7 @@ pub async fn stream_ai_response_and_save_message(
                                     chunk_index = chunk_index,
                                     content_len = chunk_content.len(),
                                     checksum = checksum,
-                                    "🔥 BACKEND: Yielding chunk {} (length: {} chars)",
+                                    "🔥 BACKEND (Rig): Yielding chunk {} (length: {} chars)",
                                     chunk_index,
                                     chunk_content.len()
                                 );
@@ -2629,36 +2671,33 @@ pub async fn stream_ai_response_and_save_message(
                                 chunk_index += 1;
                             }
                             Err(e) => {
-                                error!(error = ?e, "Failed to serialize structured chunk");
-                                // Fallback to original behavior for this chunk
+                                error!(error = ?e, "Failed to serialize structured chunk (Rig)");
                                 accumulated_content.push_str(&chunk_content);
                                 yield Ok(ScribeSseEvent::Content(chunk_content));
                             }
                         }
                     }
                 }
-                Ok(GeminiResponseChunkAlias::ReasoningChunk(chunk)) => {
-                    // Handle reasoning chunks
-                    if !chunk.content.is_empty() {
-                        yield Ok(ScribeSseEvent::Thinking(chunk.content));
+                Ok(crate::llm::rig_client::RigStreamEvent::Reasoning(reasoning)) => {
+                    if !reasoning.is_empty() {
+                        yield Ok(ScribeSseEvent::Thinking(reasoning));
                     }
                 }
-                Ok(GeminiResponseChunkAlias::ToolCallChunk(tool_chunk)) => {
-                    // Handle tool call chunks
-                    debug!(tool_call_id = %tool_chunk.tool_call.call_id, tool_fn_name = %tool_chunk.tool_call.fn_name, "Received ToolCall from AI stream in chat_service");
-                    let thinking_message = format!("Attempting to use tool: {} with ID: {}", tool_chunk.tool_call.fn_name, tool_chunk.tool_call.call_id);
+                Ok(crate::llm::rig_client::RigStreamEvent::ToolCall { id, name, .. }) => {
+                    debug!(tool_call_id = %id, tool_fn_name = %name, "Received ToolCall from Rig stream in chat_service");
+                    let thinking_message = format!("Attempting to use tool: {} with ID: {}", name, id);
                     yield Ok(ScribeSseEvent::Thinking(thinking_message));
                 }
-                Ok(GeminiResponseChunkAlias::End(stream_end)) => {
-                    debug!("Received End event from AI stream in chat_service");
-                    if let Some(sig) = &stream_end.captured_thought_signature {
-                         if !sig.is_empty() {
-                            yield Ok(ScribeSseEvent::Thinking(format!("Thought Signature: {}", sig)));
-                        }
-                    }
+                Ok(crate::llm::rig_client::RigStreamEvent::TokenUsage { input_tokens, output_tokens }) => {
+                    debug!(input_tokens, output_tokens, "Received TokenUsage from Rig stream");
+                    token_sender.send(ScribeSseEvent::TokenUsage {
+                        prompt_tokens: input_tokens as i32,
+                        completion_tokens: output_tokens as i32,
+                        model_name: service_model_name.clone(),
+                    }).ok();
                 }
                 Err(e) => {
-                    error!(error = ?e, "Error during AI stream processing in chat_service (inside loop)");
+                    error!(error = ?e, "Error during Rig AI stream processing in chat_service (inside loop)");
                     stream_error_occurred = true;
 
                     let partial_content_clone = accumulated_content.clone();
@@ -2672,11 +2711,11 @@ pub async fn stream_ai_response_and_save_message(
 
                     tokio::spawn(async move {
                         if partial_content_clone.is_empty() {
-                            trace!(session_id = %error_session_id_clone, "No partial content to save after stream error (chat_service)");
+                            trace!(session_id = %error_session_id_clone, "No partial content to save after stream error (Rig)");
                         } else {
-                            trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (chat_service)");
+                            trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (Rig)");
                             let dek_ref_partial = Some(user_dek_arc_clone_partial.clone());
-                            debug!(session_id = %error_session_id_clone, content_len = partial_content_clone.len(), "Calling save_message for partial response");
+                            debug!(session_id = %error_session_id_clone, content_len = partial_content_clone.len(), "Calling save_message for partial response (Rig)");
                             match save_message(SaveMessageParams {
                                 state: state_for_partial_save,
                                 session_id: error_session_id_clone,
@@ -2688,12 +2727,12 @@ pub async fn stream_ai_response_and_save_message(
                                 attachments: None,
                                 user_dek_secret_box: dek_ref_partial,
                                 model_name: service_model_name_clone_partial,
-                                raw_prompt_debug: None, // No raw prompt for partial/error saves
+                                raw_prompt_debug: None,
                                 status: crate::models::chats::MessageStatus::Partial,
-                                error_message: Some("Stream interrupted - partial content saved".to_string()),
+                                error_message: Some("Rig Stream interrupted - partial content saved".to_string()),
                                 variant_of,
-                                charge_credits: charge_credits_clone_partial, // Use charge flag from params
-                                credits_cost_override: None, // Let save_message calculate from tokens
+                                charge_credits: charge_credits_clone_partial,
+                                credits_cost_override: None,
                                 game_time: game_time_clone_partial,
                            }).await {
                                 Ok((saved_message, _variant_id)) => {

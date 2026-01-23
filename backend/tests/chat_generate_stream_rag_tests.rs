@@ -216,6 +216,8 @@ async fn assert_rag_response(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
     };
 
     let request = Request::builder()

@@ -1628,10 +1628,9 @@ pub async fn generate_chat_response(
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
 
                     // Extract token usage from LLM response
-                    let prompt_tokens = chat_response.usage.prompt_tokens.unwrap_or(0);
-                    let completion_tokens = chat_response.usage.completion_tokens.unwrap_or(0);
+                    let prompt_tokens = chat_response.prompt_tokens.unwrap_or(0);
+                    let completion_tokens = chat_response.completion_tokens.unwrap_or(0);
                     let total_tokens = chat_response
-                        .usage
                         .total_tokens
                         .unwrap_or(prompt_tokens + completion_tokens);
 
@@ -1884,8 +1883,7 @@ pub async fn generate_chat_response(
                         }
                     }
 
-                    let response_content =
-                        chat_response.first_text().unwrap_or_default().to_string();
+                    let response_content = chat_response.content.clone();
 
                     trace!(%session_id, ?response_content, "Full non-streaming AI response (JSON path)");
 

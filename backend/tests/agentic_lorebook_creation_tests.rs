@@ -120,6 +120,12 @@ async fn create_test_app_state(
             test_app.db_pool.clone(),
         )),
         token_service: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                Arc::new(scribe_backend::services::EncryptionService::new()),
+            ),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -156,7 +162,7 @@ fn create_chat_message(
         content_nonce: Some(content_nonce),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(content.len() as i64 / 4), // Rough estimate
+        prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
             Some(20)
         } else {

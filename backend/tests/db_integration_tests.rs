@@ -1207,6 +1207,7 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         message_type: MessageRole::User,
         content: b"Guard message content".to_vec(),
         content_nonce: None,
+        rag_embedding_id: None,
         created_at: Utc::now().into(),
         updated_at: Utc::now().into(),
         role: None,

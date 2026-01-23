@@ -1134,7 +1134,7 @@ mod tests {
         }
 
         // Primary model should have been called MAX_RETRIES + 1 times (initial attempt + MAX_RETRIES)
-        primary_429_mock.assert_hits(MAX_RETRIES as usize + 1);
+        assert_eq!(primary_429_mock.hits(), MAX_RETRIES as usize + 1);
         // Fallback model assertion removed
 
         let mut expected_total_delay_ms = 0;
@@ -1212,7 +1212,7 @@ mod tests {
             other_err => panic!("Expected GeminiError, got {other_err:?}"),
         }
 
-        primary_batch_429_mock.assert_hits(MAX_RETRIES as usize + 1);
+        assert_eq!(primary_batch_429_mock.hits(), MAX_RETRIES as usize + 1);
         // Fallback model assertion removed
 
         let mut expected_total_delay_ms = 0;

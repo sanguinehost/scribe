@@ -1,4 +1,5 @@
 pub mod agentic;
+pub mod ai;
 pub mod ai_client_factory;
 pub mod character_generation;
 pub mod character_parser;

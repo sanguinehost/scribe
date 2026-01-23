@@ -66,6 +66,7 @@ fn insert_test_user_with_password(
         .expect("Failed to encrypt DEK for test user");
 
     let new_user = NewUser {
+        id: scribe_backend::db::DbId::new(),
         username: username.to_string(),
         password_hash: hashed_password,
         email,
@@ -902,6 +903,7 @@ mod extract_from_chat_api_tests {
                 message_type: message_role,
                 content: content_ciphertext.into(),
                 content_nonce: Some(content_nonce.into()),
+                rag_embedding_id: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 role: Some(role.to_string()),

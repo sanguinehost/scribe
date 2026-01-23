@@ -13,9 +13,7 @@ use futures::future::join_all;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     config::Config,
-    llm::{
-        gemini_client::build_gemini_client, gemini_embedding_client::build_gemini_embedding_client,
-    },
+    llm::{gemini_embedding_client::build_gemini_embedding_client, rig_client::RigClient},
     logging::init_subscriber,
     models::{
         chronicle_event::ChronicleEvent,
@@ -98,7 +96,7 @@ async fn main() -> Result<()> {
         .gemini_api_key
         .as_ref()
         .context("GEMINI_API_KEY is required")?;
-    let ai_client = Arc::new(build_gemini_client(api_key, &config.gemini_api_base_url)?);
+    let ai_client = Arc::new(RigClient::new(Some(api_key.clone())));
     let embedding_client = Arc::new(build_gemini_embedding_client(config.clone())?);
     let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
 

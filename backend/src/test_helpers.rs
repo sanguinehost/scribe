@@ -14,7 +14,10 @@ use std::net::SocketAddr;
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
-use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
+use crate::llm::{
+    AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient, RigChatResponse,
+    RigCompletionRequest, RigStreamEvent,
+};
 use crate::services::embeddings::{
     metadata::{CognitiveFactMetadata, EntityMetadata, OpinionMetadata},
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
@@ -361,6 +364,31 @@ impl AiClient for MockAiClient {
 
         let stream = futures::stream::iter(items);
         Ok(Box::pin(stream) as ChatStream)
+    }
+
+    async fn completion(
+        &self,
+        _req: RigCompletionRequest,
+    ) -> Result<RigChatResponse, anyhow::Error> {
+        // TODO: Implement mock logic if needed
+        Err(anyhow::anyhow!(
+            "completion not implemented for MockAiClient"
+        ))
+    }
+
+    async fn completion_stream(
+        &self,
+        _req: RigCompletionRequest,
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures::Stream<Item = Result<RigStreamEvent, anyhow::Error>> + Send>,
+        >,
+        anyhow::Error,
+    > {
+        // TODO: Implement mock logic if needed
+        Err(anyhow::anyhow!(
+            "completion_stream not implemented for MockAiClient"
+        ))
     }
 }
 
@@ -2030,9 +2058,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     ) = if use_real_ai {
         let api_key =
             std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-api-key".to_string());
-        let base_url = "https://generativelanguage.googleapis.com";
-        let real_ai_client = crate::llm::gemini_client::build_gemini_client(&api_key, base_url)
-            .expect("Failed to build real AI client for test");
+        let real_ai_client = crate::llm::rig_client::RigClient::new(Some(api_key));
         (Arc::new(real_ai_client), None)
     } else {
         let mock_client = Arc::new(MockAiClient::new());
