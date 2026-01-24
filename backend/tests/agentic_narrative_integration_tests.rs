@@ -53,7 +53,7 @@ async fn create_test_user(
         id: scribe_backend::db::DbId::new(),
         username,
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,

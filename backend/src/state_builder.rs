@@ -10,10 +10,10 @@ use crate::{
         email_service::{create_email_service, EmailService},
         embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
-        gemini_token_client::GeminiTokenClient,
         hybrid_token_counter::HybridTokenCounter,
         lorebook::LorebookService,
         narrative_intelligence_service::NarrativeIntelligenceService,
+        token_client::TokenClient,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },
@@ -187,7 +187,7 @@ impl AppStateServicesBuilder {
                 .config
                 .gemini_api_key
                 .as_ref()
-                .map(|api_key| GeminiTokenClient::new(api_key.clone()));
+                .map(|api_key| TokenClient::new(api_key.clone()));
 
             Arc::new(HybridTokenCounter::new(
                 tokenizer_service,

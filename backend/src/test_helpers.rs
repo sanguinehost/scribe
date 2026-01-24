@@ -53,9 +53,9 @@ use crate::{
     services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
     services::chronicle_service::ChronicleService,        // <<< ADDED THIS IMPORT
     services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
-    services::gemini_token_client::GeminiTokenClient,
     services::hybrid_token_counter::HybridTokenCounter,
     services::narrative_intelligence_service::NarrativeIntelligenceService, // <<< ADDED THIS IMPORT
+    services::token_client::TokenClient,
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
@@ -1539,7 +1539,7 @@ impl TestAppStateBuilder {
                 .config
                 .gemini_api_key
                 .as_ref()
-                .map(|api_key| GeminiTokenClient::new(api_key.clone()));
+                .map(|api_key| TokenClient::new(api_key.clone()));
 
             let default_model = self.config.token_counter_default_model.clone();
 
@@ -2105,8 +2105,8 @@ pub async fn spawn_app_with_rate_limiting_options(
     if use_real_qdrant {
         // If true, use real embedding client and pipeline for AppState
         let real_embedding_client =
-            crate::llm::gemini_embedding_client::build_gemini_embedding_client(config_arc.clone())
-                .expect("Failed to build real Gemini embedding client for test");
+            crate::llm::cloud_embedding_client::build_cloud_embedding_client(config_arc.clone())
+                .expect("Failed to build real Cloud embedding client for test");
         embedding_client_for_state = Arc::new(real_embedding_client);
 
         // mock_embedding_client_for_test_app and mock_embedding_pipeline_service_for_test_app are already initialized.
@@ -2229,7 +2229,7 @@ pub async fn spawn_app_with_rate_limiting_options(
             template_preferences_routes::template_preferences_routes(app_state_inner.clone()),
         ) // Add template preferences routes
         .nest("/payment", payment_routes::payment_routes()) // Add payment routes
-        .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
+        .merge(lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
             app_state_inner.clone(),
             auth_log_wrapper,
@@ -2436,7 +2436,7 @@ pub mod db {
         let conn_default = pool_default
             .get()
             .await
-            .expect("Failed to get default DB connection");
+            .unwrap_or_else(|e| panic!("Failed to get default DB connection: {}", e));
 
         // Drop and Create the test database
         let db_name_clone_drop = db_name.clone();
@@ -2517,7 +2517,7 @@ pub mod db {
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
-            email,
+            email: email,
             kek_salt,
             encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
             dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
@@ -2636,7 +2636,7 @@ pub mod db {
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
-            email,
+            email: email,
             kek_salt,
             encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
             dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
@@ -3647,8 +3647,8 @@ pub async fn set_history_settings(
         stop_sequences: None,
         model_name: None,
         model_provider: None,
-        gemini_enable_code_execution: None,
-        gemini_thinking_budget: None,
+        enable_code_execution: None,
+        thinking_budget: None,
         chronicle_id: None,
         agent_mode: None,
         active_custom_persona_id: None,
@@ -3658,7 +3658,7 @@ pub async fn set_history_settings(
         min_p: None,
         top_a: None,
         logit_bias: None,
-        gemini_thinking_level: None,
+        thinking_level: None,
         rag_chronicles_limit: None,
         rag_lorebooks_limit: None,
         rag_older_chat_limit: None,

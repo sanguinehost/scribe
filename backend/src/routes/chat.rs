@@ -269,8 +269,8 @@ pub async fn generate_chat_response(
 
     // Get comprehensive data for generation from chat_service
     let (
-        managed_db_history,               // 0: Vec<DbChatMessage>
-        system_prompt_from_service,       // 1: Option<String> (persona/override only)
+        managed_db_history,              // 0: Vec<DbChatMessage>
+        system_prompt_from_service,      // 1: Option<String> (persona/override only)
         _active_lorebook_ids_for_search, // 2: Option<Vec<crate::db::DbId>> - Now handled by prompt_builder
         session_character_id,            // 3: crate::db::DbId
         raw_character_system_prompt, // 4: Option<String> (NEW - from character_db.system_prompt)
@@ -283,9 +283,9 @@ pub async fn generate_chat_response(
         gen_seed,                    // 11: Option<i32> (was 13)
         gen_model_name_from_service, // 12: String (was 15)
         gen_model_provider_from_service, // 13: Option<String> (NEW)
-        gen_gemini_thinking_budget,  // 14: Option<i32> (was 16)
-        gen_gemini_thinking_level,   // 15: Option<String> (NEW)
-        gen_gemini_enable_code_execution, // 16: Option<bool> (was 17)
+        gen_thinking_budget,         // 14: Option<i32> (was 16)
+        gen_thinking_level,          // 15: Option<String> (NEW)
+        gen_enable_code_execution,   // 16: Option<bool> (was 17)
         user_message_struct_to_save, // 17: DbInsertableChatMessage (was 18)
         // -- New RAG related fields --
         _actual_recent_history_tokens_from_service, // 18: usize (NEW) - Handled by prompt_builder (was 19)
@@ -1302,9 +1302,9 @@ pub async fn generate_chat_response(
                     seed: gen_seed,
                     model_name: model_to_use.clone(),
                     model_provider: gen_model_provider_from_service,
-                    gemini_thinking_budget: gen_gemini_thinking_budget,
-                    gemini_thinking_level: gen_gemini_thinking_level.clone(),
-                    gemini_enable_code_execution: gen_gemini_enable_code_execution,
+                    thinking_budget: gen_thinking_budget,
+                    thinking_level: gen_thinking_level.clone(),
+                    enable_code_execution: gen_enable_code_execution,
                     request_thinking,
                     user_dek: dek_for_stream_service,
                     character_name: Some(character_db_model.name.clone()),
@@ -1586,24 +1586,21 @@ pub async fn generate_chat_response(
                 }
             }
             // Add other gen_... parameters to chat_options as needed
-            if let Some(budget_i32) = gen_gemini_thinking_budget {
+            if let Some(budget_i32) = gen_thinking_budget {
                 // budget_i32 is Option<i32>
                 if budget_i32 > 0 {
                     if let Ok(budget_u32) = u32::try_from(budget_i32) {
                         chat_options =
                             chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget_u32));
                     } else {
-                        warn!("gemini_thinking_budget overflow ({}), ignoring", budget_i32);
+                        warn!("thinking_budget overflow ({}), ignoring", budget_i32);
                     }
                 } else {
-                    warn!(
-                        "gemini_thinking_budget is not positive ({}), ignoring",
-                        budget_i32
-                    );
+                    warn!("thinking_budget is not positive ({}), ignoring", budget_i32);
                 }
             }
-            // `with_gemini_enable_code_execution` removed as it's no longer a direct ChatOption.
-            // The `gen_gemini_enable_code_execution` variable is still available if needed for other logic.
+            // `with_enable_code_execution` removed as it's no longer a direct ChatOption.
+            // The `gen_enable_code_execution` variable is still available if needed for other logic.
 
             // TODO: Add other gen_ parameters like top_k, frequency_penalty etc. if supported by ChatOptions
 
@@ -2180,9 +2177,9 @@ pub async fn generate_chat_response(
                     seed: gen_seed,
                     model_name: model_to_use.clone(),
                     model_provider: gen_model_provider_from_service,
-                    gemini_thinking_budget: gen_gemini_thinking_budget,
-                    gemini_thinking_level: gen_gemini_thinking_level.clone(),
-                    gemini_enable_code_execution: gen_gemini_enable_code_execution,
+                    thinking_budget: gen_thinking_budget,
+                    thinking_level: gen_thinking_level.clone(),
+                    enable_code_execution: gen_enable_code_execution,
                     request_thinking,
                     user_dek: dek_for_fallback_stream_service,
                     character_name: Some(character_db_model.name.clone()),
@@ -2944,9 +2941,9 @@ pub async fn generate_suggested_actions(
         _gen_seed,
         _gen_model_name_from_service, // We use a fixed model for suggestions
         _gen_model_provider_from_service, // Model provider field
-        _gen_gemini_thinking_budget,
-        _gen_gemini_thinking_level,
-        _gen_gemini_enable_code_execution,
+        _gen_thinking_budget,
+        _gen_thinking_level,
+        _gen_enable_code_execution,
         _user_message_struct_to_save, // Not saving a user message here
         _actual_recent_history_tokens_from_service,
         _rag_context_items_from_service, // RAG not typically used for suggestions
@@ -3659,9 +3656,9 @@ pub async fn expand_text_handler(
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
-        gemini_thinking_budget: None,
-        gemini_thinking_level: None,
-        gemini_enable_code_execution: Some(false),
+        thinking_budget: None,
+        thinking_level: None,
+        enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: user_dek_arc,
         character_name: None,      // Text expansion doesn't have a character
@@ -4015,9 +4012,9 @@ pub async fn impersonate_handler(
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
-        gemini_thinking_budget: None,
-        gemini_thinking_level: None,
-        gemini_enable_code_execution: Some(false),
+        thinking_budget: None,
+        thinking_level: None,
+        enable_code_execution: Some(false),
         request_thinking: false,
         user_dek: user_dek_arc,
         character_name: None,      // Impersonation doesn't have a character

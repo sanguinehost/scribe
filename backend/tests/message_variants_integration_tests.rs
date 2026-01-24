@@ -72,7 +72,7 @@ async fn create_test_user_with_dek(
         id: Uuid::new_v4().into(),
         username,
         password_hash,
-        email,
+        email: email,
         kek_salt: kek_salt_str,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -266,9 +266,6 @@ async fn create_message_variant(
         variant_content,
         user_id,
         session_dek,
-        None,
-        None,
-        None,
         None,
         None,
     )?;

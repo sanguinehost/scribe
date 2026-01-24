@@ -4278,7 +4278,7 @@ pub async fn get_credit_transactions(
             transaction_type: transaction.transaction_type,
             description,
             metadata,
-            reference_id: transaction.reference_id,
+            reference_id: transaction.reference_id.map(|id| id.to_string()),
             created_at: transaction
                 .created_at
                 .unwrap_or_else(crate::DbTimestamp::now),

@@ -571,7 +571,7 @@ mod tests {
         });
 
         assert_eq!(user.username, "testuser");
-        assert_eq!(user.email, "test@example.com");
+        assert_eq!(user.email, "test@example.com".to_string());
         assert_eq!(user.password_hash, "hashed_password");
         assert_eq!(user.kek_salt, test_kek_salt);
         assert_eq!(

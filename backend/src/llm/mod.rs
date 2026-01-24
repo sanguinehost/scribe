@@ -9,7 +9,7 @@ pub type ChatStreamItem = Result<ChatStreamEvent, AppError>;
 // Type alias for the stream itself (The stream implementor)
 pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 
-pub mod gemini_embedding_client;
+pub mod cloud_embedding_client;
 pub mod model_registry;
 pub mod rig_client; // Added rig_client module
 
@@ -18,7 +18,7 @@ pub mod rig_client; // Added rig_client module
 pub mod llamacpp;
 
 // Import the public request struct for use in the trait
-pub use gemini_embedding_client::BatchEmbeddingContentRequest;
+pub use cloud_embedding_client::BatchEmbeddingContentRequest;
 pub use rig_client::{RigChatResponse, RigCompletionRequest, RigStreamEvent}; // Import Rig types
 
 // Re-export LlamaCpp types when feature is enabled
@@ -30,6 +30,54 @@ pub use llamacpp::{
 
 // Re-export model registry types
 pub use model_registry::{ModelCapabilities, ModelRegistry, RecommendedContextSettings};
+
+/// Trait for handling reasoning/thinking capabilities in a provider-agnostic way.
+/// This allows configuring reasoning parameters for models that support them (like Gemini 2.0),
+/// while safely ignoring them for models that don't (like local Llama models).
+pub trait Reasoning {
+    /// Sets the reasoning effort level (e.g., "low", "medium", "high").
+    fn set_reasoning_effort(&mut self, effort: Option<String>);
+
+    /// Sets the reasoning token budget.
+    fn set_reasoning_budget(&mut self, budget: Option<i32>);
+
+    /// Returns true if the implementation supports reasoning features.
+    fn supports_reasoning(&self) -> bool {
+        false
+    }
+}
+
+impl Reasoning for ChatOptions {
+    fn set_reasoning_effort(&mut self, effort: Option<String>) {
+        if let Some(level_str) = effort {
+            let level = match level_str.to_lowercase().as_str() {
+                "low" => Some(genai::chat::ThinkingLevel::Low),
+                "medium" => Some(genai::chat::ThinkingLevel::Medium),
+                "high" => Some(genai::chat::ThinkingLevel::High),
+                _ => None,
+            };
+            if let Some(l) = level {
+                *self = self.clone().with_thinking_level(l);
+            }
+        }
+    }
+
+    fn set_reasoning_budget(&mut self, budget: Option<i32>) {
+        if let Some(b) = budget {
+            if b > 0 {
+                if let Ok(b_u32) = u32::try_from(b) {
+                    *self = self
+                        .clone()
+                        .with_reasoning_effort(genai::chat::ReasoningEffort::Budget(b_u32));
+                }
+            }
+        }
+    }
+
+    fn supports_reasoning(&self) -> bool {
+        true
+    }
+}
 
 /// Trait defining the interface for AI client operations.
 #[async_trait]

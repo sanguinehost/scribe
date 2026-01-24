@@ -341,14 +341,14 @@ mod subscription_context_limit_tests {
 
         // Verify all three tiers have max_context_tokens set
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        let tier_limits: Vec<(Option<String>, Option<i32>)> = conn
+        let tier_limits: Vec<(String, Option<i32>)> = conn
             .interact(|conn| {
                 use scribe_backend::schema::plan_features;
                 plan_features::table
                     .filter(plan_features::plan_type.eq_any(vec!["free", "basic", "premium"]))
                     .select((plan_features::plan_type, plan_features::max_context_tokens))
                     .order(plan_features::plan_type.asc())
-                    .load::<(Option<String>, Option<i32>)>(conn)
+                    .load::<(String, Option<i32>)>(conn)
             })
             .await
             .expect("Failed to interact")
@@ -359,9 +359,9 @@ mod subscription_context_limit_tests {
 
         // Verify each tier has the correct limit
         let expected_limits = vec![
-            (Some("basic".to_string()), Some(100000)),
-            (Some("free".to_string()), Some(64000)),
-            (Some("premium".to_string()), Some(200000)),
+            ("basic".to_string(), Some(100000)),
+            ("free".to_string(), Some(64000)),
+            ("premium".to_string(), Some(200000)),
         ];
 
         assert_eq!(

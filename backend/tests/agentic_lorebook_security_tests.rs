@@ -221,6 +221,12 @@ async fn test_a01_analyze_prevents_cross_user_lorebook_access() {
                 encryption_service.clone(),
             ),
         ),
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         token_counter: Arc::new(
             scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
                 scribe_backend::services::tokenizer_service::TokenizerService::new(
@@ -265,7 +271,7 @@ async fn test_a01_analyze_prevents_cross_user_lorebook_access() {
         app_state_services,
     ));
 
-    let analyze_tool = AnalyzeLorebookTool::new(lorebook_service, mock_ai_client, app_state);
+    let analyze_tool = AnalyzeLorebookTool::new(mock_ai_client.clone(), app_state);
 
     let params = json!({
         "user_id": user2.id.to_string(),
@@ -559,6 +565,12 @@ async fn test_a02_wrong_session_dek_fails_analysis() {
                 encryption_service.clone(),
             ),
         ),
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         token_counter: Arc::new(
             scribe_backend::services::hybrid_token_counter::HybridTokenCounter::new_local_only(
                 scribe_backend::services::tokenizer_service::TokenizerService::new(
@@ -603,7 +615,7 @@ async fn test_a02_wrong_session_dek_fails_analysis() {
         app_state_services,
     ));
 
-    let analyze_tool = AnalyzeLorebookTool::new(lorebook_service, mock_ai_client, app_state);
+    let analyze_tool = AnalyzeLorebookTool::new(mock_ai_client.clone(), app_state);
 
     let params = json!({
         "user_id": user.id.to_string(),

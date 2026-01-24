@@ -297,8 +297,8 @@ async fn create_chat_session_with_messages(
         )),
         seed: Some(42),
         stop_sequences: scribe_backend::models::OptionalStringArray(None),
-        gemini_thinking_budget: Some(1000),
-        gemini_enable_code_execution: Some(false),
+        thinking_budget: Some(1000),
+        enable_code_execution: Some(false),
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: chronicle_id,
@@ -349,6 +349,7 @@ async fn create_chat_session_with_messages(
         let content_bytes = content.as_bytes().to_vec();
 
         let message = DbInsertableChatMessage {
+            rag_embedding_id: None,
             chat_id: session_id,
             msg_type: role,
             content: content_bytes,

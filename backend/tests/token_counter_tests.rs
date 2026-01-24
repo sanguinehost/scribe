@@ -1,7 +1,7 @@
 #![cfg(feature = "postgres-backend")]
 use dotenvy::dotenv;
-use scribe_backend::services::gemini_token_client::GeminiTokenClient;
 use scribe_backend::services::hybrid_token_counter::{CountingMode, HybridTokenCounter};
+use scribe_backend::services::token_client::TokenClient;
 use scribe_backend::services::tokenizer_service::TokenizerService;
 use std::path::PathBuf;
 
@@ -124,7 +124,7 @@ async fn test_hybrid_token_counter_api() {
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
 
     // Create API client
-    let api_client = GeminiTokenClient::new(api_key);
+    let api_client = TokenClient::new(api_key);
 
     // Create a hybrid counter
     let counter =

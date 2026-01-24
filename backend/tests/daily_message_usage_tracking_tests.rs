@@ -56,8 +56,8 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
     // Create a chat session using our own helper
     let chat_session: Chat = create_test_chat_session(
         &test_app.db_pool,
-        user.id,
-        character.id,
+        *user.id,
+        *character.id,
         "Test Chat".to_string(),
     )
     .await
@@ -118,6 +118,7 @@ async fn test_manual_message_creation_increments_daily_usage() -> anyhow::Result
         content: "Hello, this is a test message".to_string(),
         parts: None,
         attachments: None,
+        parent_message_id: None,
     };
 
     let message_response = test_app
@@ -196,8 +197,8 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
     // Create a chat session using our own helper
     let chat_session: Chat = create_test_chat_session(
         &test_app.db_pool,
-        user.id,
-        character.id,
+        *user.id,
+        *character.id,
         "Test Chat".to_string(),
     )
     .await
@@ -237,6 +238,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
         content: "Hello, this is an assistant response".to_string(),
         parts: None,
         attachments: None,
+        parent_message_id: None,
     };
 
     let _assistant_response = test_app
@@ -284,6 +286,7 @@ async fn test_only_user_messages_increment_daily_usage() -> anyhow::Result<()> {
         content: "Hello, this is a user message".to_string(),
         parts: None,
         attachments: None,
+        parent_message_id: None,
     };
 
     let _user_response = test_app
@@ -343,16 +346,16 @@ async fn create_test_chat_session(
         .context("Failed to get DB connection")?
         .interact(move |conn| {
             let new_chat_session = NewChat {
-                id: uuid::Uuid::new_v4(),
-                user_id,
-                character_id,
+                id: uuid::Uuid::new_v4().into(),
+                user_id: user_id.into(),
+                character_id: character_id.into(),
                 title_ciphertext: Some(title.into_bytes()),
                 title_nonce: None,
                 created_at: Utc::now().into(),
                 updated_at: Utc::now().into(),
                 history_management_strategy: "truncate".to_string(),
                 history_management_limit: 10,
-                model_name: "test_model".to_string(),
+                model_name: Some("test_model".to_string()),
                 visibility: Some("private".to_string()),
                 active_custom_persona_id: None,
                 active_impersonated_character_id: None,
@@ -363,16 +366,16 @@ async fn create_test_chat_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: None,
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                stop_sequences: scribe_backend::db::DbStringArray(None),
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
                 total_prompt_tokens: 0,
                 total_completion_tokens: 0,
                 estimated_cost_cents: 0,
-                tokens_counted_at: chrono::Utc::now(),
+                tokens_counted_at: chrono::Utc::now().into(),
                 total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 prompt_template_id: "default".to_string(),
                 narrative_style_override_ciphertext: None,

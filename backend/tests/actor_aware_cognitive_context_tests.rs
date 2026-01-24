@@ -77,6 +77,7 @@ async fn test_actor_aware_recall_prioritization() -> anyhow::Result<()> {
                     why_encrypted: why1_enc,
                     why_nonce: why1_nonce,
                     fact_type: "Experience".to_string(),
+                    message_variant_id: None,
                     confidence: 1.0,
                     significance: 1.0,
                     created_at: Utc::now().into(),
@@ -96,6 +97,7 @@ async fn test_actor_aware_recall_prioritization() -> anyhow::Result<()> {
                     why_encrypted: why2_enc,
                     why_nonce: why2_nonce,
                     fact_type: "Experience".to_string(),
+                    message_variant_id: None,
                     confidence: 1.0,
                     significance: 1.0,
                     created_at: Utc::now().into(),
@@ -113,12 +115,16 @@ async fn test_actor_aware_recall_prioritization() -> anyhow::Result<()> {
         fact_id: fact1_id.into(),
         chronicle_id: chronicle_id.into(),
         source_type: "cognitive_fact".to_string(),
+        game_time: None,
+        message_variant_id: None,
     };
     let fact_meta2 = CognitiveFactMetadata {
         user_id: user.id,
         fact_id: fact2_id.into(),
         chronicle_id: chronicle_id.into(),
         source_type: "cognitive_fact".to_string(),
+        game_time: None,
+        message_variant_id: None,
     };
 
     // Return Legolas (non-match) first, then Aragorn (match)
@@ -140,8 +146,10 @@ async fn test_actor_aware_recall_prioritization() -> anyhow::Result<()> {
             chronicle_id.into(),
             "What happened?",
             &session_dek,
-            test_app.state.clone(),
+            test_app.create_app_state().await,
             Some(vec!["Aragorn".to_string()]),
+            None,
+            None,
         )
         .await?;
 

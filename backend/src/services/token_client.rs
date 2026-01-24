@@ -5,9 +5,9 @@ use tracing::{debug, error};
 use crate::errors::{AppError, Result};
 use crate::services::tokenizer_service::TokenEstimate;
 
-/// Simple client for Gemini API token counting
+/// Simple client for AI provider token counting
 #[derive(Debug, Clone)]
-pub struct GeminiTokenClient {
+pub struct TokenClient {
     client: Client,
     api_key: String,
     api_base_url: String,
@@ -118,7 +118,7 @@ struct UsageMetadata {
     total: i32,
 }
 
-impl GeminiTokenClient {
+impl TokenClient {
     /// Create a new `GeminiTokenClient`
     #[must_use]
     pub fn new(api_key: String) -> Self {
@@ -405,7 +405,7 @@ mod tests {
         }
         let api_key = api_key_result.unwrap();
 
-        let client = GeminiTokenClient::new(api_key);
+        let client = TokenClient::new(api_key);
         let text = "The quick brown fox jumps over the lazy dog.";
         let model = "gemini-2.5-flash";
 
@@ -429,7 +429,7 @@ mod tests {
         }
         let api_key = api_key_result.unwrap();
 
-        let client = GeminiTokenClient::new(api_key);
+        let client = TokenClient::new(api_key);
         let messages = vec![
             ("user".to_string(), "Hi my name is Bob".to_string()),
             ("model".to_string(), "Hi Bob!".to_string()),

@@ -97,6 +97,8 @@ async fn test_chronicle_creation_refusal() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash-lite".to_string(),
+        role: Some("user".to_string()),
+        updated_at: chrono::Utc::now().into(),
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
@@ -109,6 +111,9 @@ async fn test_chronicle_creation_refusal() {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        parts: None,
+        attachments: None,
+        rag_embedding_id: None,
     };
 
     // Encrypt the content
@@ -127,7 +132,8 @@ async fn test_chronicle_creation_refusal() {
         .process_narrative_event(
             user_id,
             chat_session_id,
-            None, // No existing chronicle
+            None, // No chronicle
+            None, // No message_variant_id
             &messages,
             &session_dek,
             None, // No persona context
@@ -281,6 +287,8 @@ async fn test_chronicle_creation_success() {
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash-lite".to_string(),
+        role: Some("user".to_string()),
+        updated_at: chrono::Utc::now().into(),
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
@@ -293,6 +301,9 @@ async fn test_chronicle_creation_success() {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        parts: None,
+        attachments: None,
+        rag_embedding_id: None,
     };
 
     let _ = message.encrypt_content_field(&session_dek.0, "Something happened");
@@ -304,6 +315,7 @@ async fn test_chronicle_creation_success() {
             user_id,
             chat_session_id,
             Some(chronicle_id),
+            None, // No message_variant_id
             &messages,
             &session_dek,
             None,

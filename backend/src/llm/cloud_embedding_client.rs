@@ -1,4 +1,4 @@
-// Gemini Embedding Client using REST API
+// Cloud Embedding Client using REST API
 
 use crate::config::Config;
 use crate::errors::AppError;
@@ -133,13 +133,13 @@ const fn calculate_min_expected_duration_ms(expected_delay_ms: u64) -> u64 {
 }
 
 #[derive(Clone)] // Add Clone
-pub struct RestGeminiEmbeddingClient {
+pub struct CloudEmbeddingClient {
     reqwest_client: ReqwestClient,
     config: Arc<Config>,
     model_name: String,
 }
 
-impl RestGeminiEmbeddingClient {
+impl CloudEmbeddingClient {
     // fn with_fallback_model(&self) -> Self { // REMOVED - No longer using fallback model logic
     //     Self {
     //         reqwest_client: self.reqwest_client.clone(),
@@ -152,7 +152,7 @@ impl RestGeminiEmbeddingClient {
 // --- Trait Implementation (To be added below) ---
 // --- Builder Function (To be added below) ---
 #[async_trait]
-impl EmbeddingClient for RestGeminiEmbeddingClient {
+impl EmbeddingClient for CloudEmbeddingClient {
     #[instrument(skip(self, text), fields(task_type, model_name = %self.model_name), err)]
     async fn embed_content(
         &self,
@@ -432,9 +432,7 @@ impl EmbeddingClient for RestGeminiEmbeddingClient {
 ///
 /// Returns `AppError::InternalServerErrorGeneric` if the reqwest HTTP client fails to build
 /// due to invalid configuration or system constraints.
-pub fn build_gemini_embedding_client(
-    config: Arc<Config>,
-) -> Result<RestGeminiEmbeddingClient, AppError> {
+pub fn build_cloud_embedding_client(config: Arc<Config>) -> Result<CloudEmbeddingClient, AppError> {
     // Consider adding timeout defaults
     let reqwest_client = ReqwestClient::builder()
         .timeout(Duration::from_secs(30)) // Example timeout
@@ -447,7 +445,7 @@ pub fn build_gemini_embedding_client(
     // Potentially allow model name override via config later
     let model_name = DEFAULT_EMBEDDING_MODEL.to_string();
 
-    Ok(RestGeminiEmbeddingClient {
+    Ok(CloudEmbeddingClient {
         reqwest_client,
         config,
         model_name,
@@ -485,7 +483,7 @@ mod tests {
     fn test_build_gemini_embedding_client_success() {
         // Provide a dummy key for the config, builder doesn't validate it
         let config = create_test_config(Some("dummy-key".to_string()), None);
-        let result = build_gemini_embedding_client(config);
+        let result = build_cloud_embedding_client(config);
         assert!(result.is_ok());
         let client = result.unwrap();
         // Check if the model name is set to the default
@@ -527,7 +525,7 @@ mod tests {
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
         let reqwest_client = ReqwestClient::new();
 
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client,
             config,
             model_name: "models/test-model".to_string(),
@@ -575,7 +573,7 @@ mod tests {
         });
 
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: "models/test-model".to_string(),
@@ -617,7 +615,7 @@ mod tests {
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
         let reqwest_client = ReqwestClient::new();
 
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client,
             config,
             model_name: "models/test-model".to_string(),
@@ -663,7 +661,7 @@ mod tests {
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
         let reqwest_client = ReqwestClient::new();
 
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client,
             config,
             model_name: "models/test-model".to_string(),
@@ -706,7 +704,7 @@ mod tests {
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
         let reqwest_client = ReqwestClient::new();
 
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client,
             config,
             model_name: "models/test-model".to_string(),
@@ -740,7 +738,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client,
             config,
             model_name,
@@ -785,7 +783,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client,
             config,
             model_name: "models/test-model".to_string(),
@@ -825,7 +823,7 @@ mod tests {
             "GEMINI_API_KEY must be set in .env or environment for this integration test"
         );
 
-        let client = build_gemini_embedding_client(config)
+        let client = build_cloud_embedding_client(config)
             .expect("Failed to build client for integration test");
 
         let text = "This is a test sentence for embedding.";
@@ -863,7 +861,7 @@ mod tests {
         );
 
         // Create a client with the fallback model
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: DEFAULT_EMBEDDING_MODEL.to_string(),
@@ -906,7 +904,7 @@ mod tests {
         // Create config with an explicitly invalid key, DO NOT modify env vars
         let config = create_test_config(Some("invalid-key-for-test".to_string()), None);
 
-        let client = build_gemini_embedding_client(config)
+        let client = build_cloud_embedding_client(config)
             .expect("Failed to build client with invalid key config");
 
         let text = "Test text for invalid key";
@@ -937,7 +935,7 @@ mod tests {
         let server = MockServer::start();
         let api_key = "test_api_key";
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: "models/test-model".to_string(),
@@ -974,7 +972,7 @@ mod tests {
         let api_key = "test_api_key";
         let task_type = "RETRIEVAL_DOCUMENT"; // Different task type
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: "models/test-model".to_string(),
@@ -1013,7 +1011,7 @@ mod tests {
         let server = MockServer::start();
         let api_key = "test_api_key";
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: "models/test-model".to_string(),
@@ -1096,7 +1094,7 @@ mod tests {
         let api_key = "retry_failure_key";
         let model_name = "models/retry-fail-model";
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: model_name.to_string(),
@@ -1175,7 +1173,7 @@ mod tests {
         let api_key = "batch_retry_failure_key";
         let model_name = "models/batch-retry-fail-model";
         let config = create_test_config(Some(api_key.to_string()), Some(server.base_url()));
-        let client = RestGeminiEmbeddingClient {
+        let client = CloudEmbeddingClient {
             reqwest_client: ReqwestClient::new(),
             config,
             model_name: model_name.to_string(),

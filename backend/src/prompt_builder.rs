@@ -2472,9 +2472,9 @@ mod tests {
 
         let xml = super::build_scene_context_xml(&state);
 
-        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<npcs_present>"));
         assert!(xml.contains("Friendly Bartender"));
-        assert!(xml.contains("</active_npcs>"));
+        assert!(xml.contains("</npcs_present>"));
     }
 
     #[test]

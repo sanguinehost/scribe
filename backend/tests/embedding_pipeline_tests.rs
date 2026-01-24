@@ -676,6 +676,12 @@ async fn test_retrieve_relevant_chunks_qdrant_error() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                Arc::new(EncryptionService::new()),
+            ),
+        ),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -791,6 +797,12 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                Arc::new(EncryptionService::new()),
+            ),
+        ),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -873,6 +885,12 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_uuid() {
 
     // Create a new AppState with the real service
     let services_for_metadata_test = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test_6.clone(),
+            ),
+        ),
         recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
         token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client: test_app
@@ -1026,6 +1044,12 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_test_7 = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test_7.clone(),
+            ),
+        ),
         recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
         token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client: test_app
@@ -1103,6 +1127,12 @@ async fn test_retrieve_relevant_chunks_metadata_invalid_timestamp() {
     let real_embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let services_for_metadata_test_2 = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test_7.clone(),
+            ),
+        ),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -1280,6 +1310,12 @@ async fn test_retrieve_relevant_chunks_metadata_missing_field() {
     let real_embeddings_service =
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     let services_for_metadata_test_3 = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test_8.clone(),
+            ),
+        ),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -1453,6 +1489,12 @@ async fn test_retrieve_relevant_chunks_metadata_wrong_type() {
         EmbeddingPipelineService::new(ChunkConfig::from(test_app.config.as_ref()));
     // Use the app_state created within this test, not the one from the outer scope (app_state_arc)
     let services_for_metadata_test_4 = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test_9.clone(),
+            ),
+        ),
         ai_client: test_app
             .mock_ai_client
             .clone()
@@ -1644,6 +1686,12 @@ async fn test_rag_context_injection_with_qdrant() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_rag = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service_for_test_10.clone(),
+            ),
+        ),
         recall_pipeline: Arc::new(RecallPipeline::new(test_app.db_pool.clone())),
         token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client: test_app.ai_client.clone(),
@@ -2038,6 +2086,12 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_isolation_test = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
@@ -2065,7 +2119,7 @@ async fn test_rag_chat_history_isolation_by_user_and_session() {
             test_app.db_pool.clone(),
         )),
         token_service: Some(Arc::new(
-            scribe_backend::services::token_service::TokenService::new("test_secret"),
+            scribe_backend::auth::token_service::TokenService::new("test_secret"),
         )),
     };
     let app_state = Arc::new(AppState::new(
@@ -2412,6 +2466,17 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services_for_lorebook_isolation_test = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
+        email_service: Arc::new(
+            scribe_backend::services::email_service::LoggingEmailService::new(
+                "http://localhost:3000".to_string(),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),
@@ -2432,7 +2497,7 @@ async fn test_rag_lorebook_isolation_by_user_and_id() {
             test_app.db_pool.clone(),
         )),
         token_service: Some(Arc::new(
-            scribe_backend::services::token_service::TokenService::new("test_secret"),
+            scribe_backend::auth::token_service::TokenService::new("test_secret"),
         )),
     };
     let app_state = Arc::new(AppState::new(

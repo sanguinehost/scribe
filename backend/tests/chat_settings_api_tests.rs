@@ -209,8 +209,8 @@ async fn create_test_chat_session(
         top_p: None,
         seed: None,
         stop_sequences: scribe_backend::db::DbStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
@@ -221,7 +221,7 @@ async fn create_test_chat_session(
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         game_state: None,
         game_master_mode_enabled: false,
-        gemini_thinking_level: None,
+        thinking_level: None,
         rag_chronicles_limit: None,
         rag_lorebooks_limit: None,
         rag_older_chat_limit: None,
@@ -346,8 +346,8 @@ async fn setup_chat_settings_test_env(
             top_p: None,
             seed: None,
             stop_sequences: scribe_backend::db::DbStringArray(None),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
@@ -358,7 +358,7 @@ async fn setup_chat_settings_test_env(
             total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             game_state: None,
             game_master_mode_enabled: false,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -431,8 +431,8 @@ async fn get_chat_settings_success() {
                     chat_sessions::model_name.eq("gemini-2.5-flash".to_string()),
                     chat_sessions::history_management_strategy.eq("truncate_summary".to_string()),
                     chat_sessions::history_management_limit.eq(20),
-                    chat_sessions::gemini_thinking_budget.eq(Some(30_i32)),
-                    chat_sessions::gemini_enable_code_execution.eq(Some(true)),
+                    chat_sessions::thinking_budget.eq(Some(30_i32)),
+                    chat_sessions::enable_code_execution.eq(Some(true)),
                 ))
                 .execute(actual_conn)
         })
@@ -491,8 +491,8 @@ async fn get_chat_settings_success() {
         "truncate_summary"
     );
     assert_eq!(settings_resp.history_management_limit, 20);
-    assert_eq!(settings_resp.gemini_thinking_budget, Some(30_i32));
-    assert_eq!(settings_resp.gemini_enable_code_execution, Some(true));
+    assert_eq!(settings_resp.thinking_budget, Some(30_i32));
+    assert_eq!(settings_resp.enable_code_execution, Some(true));
 }
 
 fn create_app_state_for_settings_test(test_app: &test_helpers::TestApp) -> Arc<AppState> {
@@ -619,8 +619,8 @@ async fn get_chat_settings_defaults() {
             top_p: None,
             seed: None,
             stop_sequences: scribe_backend::db::DbStringArray(None),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
@@ -631,7 +631,7 @@ async fn get_chat_settings_defaults() {
             total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
             game_state: None,
             game_master_mode_enabled: false,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -711,8 +711,8 @@ async fn get_chat_settings_defaults() {
     assert_eq!(settings_resp.history_management_strategy, "message_window");
     assert_eq!(settings_resp.history_management_limit, 20);
 
-    assert_eq!(settings_resp.gemini_thinking_budget, None);
-    assert_eq!(settings_resp.gemini_enable_code_execution, None);
+    assert_eq!(settings_resp.thinking_budget, None);
+    assert_eq!(settings_resp.enable_code_execution, None);
 }
 
 #[tokio::test]
@@ -910,8 +910,8 @@ async fn setup_update_test_env(
         top_p: None,
         seed: None,
         stop_sequences: scribe_backend::db::DbStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
@@ -922,7 +922,7 @@ async fn setup_update_test_env(
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         game_state: None,
         game_master_mode_enabled: false,
-        gemini_thinking_level: None,
+        thinking_level: None,
         rag_chronicles_limit: None,
         rag_lorebooks_limit: None,
         rag_older_chat_limit: None,
@@ -987,8 +987,8 @@ async fn update_chat_settings_success_full() {
         model_name: Some("updated-model-name".to_string()),
         history_management_strategy: Some("token_limit".to_string()),
         history_management_limit: Some(100),
-        gemini_thinking_budget: Some(60_i32),
-        gemini_enable_code_execution: Some(false),
+        thinking_budget: Some(60_i32),
+        enable_code_execution: Some(false),
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1029,8 +1029,8 @@ async fn update_chat_settings_success_full() {
     );
     assert_eq!(settings_resp.history_management_strategy, "token_limit");
     assert_eq!(settings_resp.history_management_limit, 100);
-    assert_eq!(settings_resp.gemini_thinking_budget, Some(60_i32));
-    assert_eq!(settings_resp.gemini_enable_code_execution, Some(false));
+    assert_eq!(settings_resp.thinking_budget, Some(60_i32));
+    assert_eq!(settings_resp.enable_code_execution, Some(false));
 }
 
 #[tokio::test]
@@ -1087,8 +1087,8 @@ async fn update_chat_settings_success_partial() {
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1206,8 +1206,8 @@ async fn update_chat_settings_forbidden() {
         history_management_strategy: None,
         history_management_limit: None,
         model_name: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1278,8 +1278,8 @@ async fn update_chat_settings_not_found() {
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1336,8 +1336,8 @@ async fn update_chat_settings_unauthorized() {
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1440,8 +1440,8 @@ async fn debug_system_prompt_encryption_decryption() {
                 top_p: None,
                 seed: None,
                 stop_sequences: scribe_backend::db::DbStringArray(None),
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
@@ -1456,7 +1456,7 @@ async fn debug_system_prompt_encryption_decryption() {
                 total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 game_master_mode_enabled: false,
                 game_state: None,
-                gemini_thinking_level: None,
+                thinking_level: None,
                 rag_chronicles_limit: None,
                 rag_lorebooks_limit: None,
                 rag_older_chat_limit: None,
@@ -1492,8 +1492,8 @@ async fn debug_system_prompt_encryption_decryption() {
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1697,8 +1697,8 @@ async fn test_actual_api_route_for_system_prompt() {
                 top_p: None,
                 seed: None,
                 stop_sequences: scribe_backend::db::DbStringArray(None),
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
@@ -1713,7 +1713,7 @@ async fn test_actual_api_route_for_system_prompt() {
                 total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 game_master_mode_enabled: false,
                 game_state: None,
-                gemini_thinking_level: None,
+                thinking_level: None,
                 rag_chronicles_limit: None,
                 rag_lorebooks_limit: None,
                 rag_older_chat_limit: None,
@@ -1745,8 +1745,8 @@ async fn test_actual_api_route_for_system_prompt() {
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: None,
         agent_mode: None,
         model_provider: None,
@@ -1899,8 +1899,8 @@ async fn test_chat_chronicle_association() {
         model_name: None,
         history_management_strategy: None,
         history_management_limit: None,
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        thinking_budget: None,
+        enable_code_execution: None,
         chronicle_id: Some(chronicle_uuid.into()),
         agent_mode: None,
         model_provider: None,

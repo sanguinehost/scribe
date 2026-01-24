@@ -3,15 +3,15 @@
 **Goal:** Replace the custom `rust-genai` fork with the [Rig](https://github.com/0xPlaygrounds/rig) framework for cloud providers and [Mistral.rs](https://github.com/EricLBuehler/mistral.rs) for local inference. This standardizes our AI stack, enables "Agentic" capabilities, and simplifies maintenance.
 
 **Architecture:** Hybrid
-- **Cloud:** Rig (Gemini, Anthropic)
+- **Cloud:** Rig (Gemini, Anthropic, etc.)
 - **Local:** Mistral.rs (Embedded via custom Rig adapter)
 - **Vector DB:** Rig Native (LanceDB, Qdrant)
 
 ---
 
-## Phase 1: Foundation & Dependencies
+## Phase 1: Foundation & Dependencies [x]
 
-### Task 1.1: Dependency Management
+### Task 1.1: Dependency Management [x]
 - [x] **Subtask:** Update `backend/Cargo.toml`
     - Add `rig-core`, `rig-lancedb`, `rig-qdrant`.
     - Add `mistralrs-core` (and related crates).
@@ -20,7 +20,7 @@
     - Define `RigClient` wrapper struct.
     - Define `CompletionModel` factory.
 
-### Task 1.2: Test Infrastructure (TDD Start)
+### Task 1.2: Test Infrastructure (TDD Start) [x]
 - [x] **Subtask:** Create `backend/tests/rig_integration_tests.rs`
     - Write a failing test for `RigClient::new()`.
     - Write a failing test for `RigClient::completion()`.
@@ -29,20 +29,31 @@
 
 ---
 
-## Phase 2: Cloud Provider Migration (Rig)
+## Phase 2: Cloud Provider Migration (Rig) [/]
 
-### Task 2.1: Gemini Adapter Port
-- [x] **Subtask:** Implement `RigGeminiProvider`
+### Task 2.1: Unified Cloud Adapter Port [x]
+- [x] **Subtask:** Implement `RigProvider` (as `RigClient`)
     - Map Scribe's `ChatRequest` to Rig's `CompletionRequest`.
-    - Handle "Thinking" tokens (Gemini 2.5/3).
-    - **Test:** Verify Gemini 3 reasoning is captured.
+    - Support multiple providers (Gemini, Anthropic, OpenAI) via unified Rig interface.
+    - Handle "Thinking" tokens (Gemini 2.5/3, Claude 3.7).
+    - **Test:** Verify reasoning capture across providers.
 - [x] **Subtask:** Streaming Support
     - Implement `Stream<Item = ScribeSseEvent>` for Rig's output.
     - **Test:** Verify real-time token streaming.
 
+### Task 2.2: LLM Abstraction & Naming Cleanup [/]
+- [ ] **Subtask:** Rename provider-specific variables in `generation.rs`
+    - `gemini_thinking_budget` -> `thinking_budget`
+    - `gemini_thinking_level` -> `thinking_level`
+    - `gemini_enable_code_execution` -> `enable_code_execution`
+- [ ] **Subtask:** Rename provider-specific services
+    - `GeminiTokenClient` -> `TokenClient`
+    - `GeminiEmbeddingClient` -> `CloudEmbeddingClient`
+- [ ] **Subtask:** Update API request/response types to be provider-agnostic.
+
 ---
 
-## Phase 3: Local Inference (Mistral.rs)
+## Phase 3: Local Inference (Mistral.rs) [ ]
 
 ### Task 3.1: Mistral.rs Embedding
 - [ ] **Subtask:** Implement `MistralRsService`
@@ -55,22 +66,20 @@
 
 ---
 
-## Phase 4: Vector Database Migration
+## Phase 4: Vector Database Abstraction [ ]
 
-### Task 4.1: LanceDB Migration
-- [ ] **Subtask:** Replace manual LanceDB code with `rig-lancedb`
-    - Update `backend/src/services/embeddings/lancedb.rs`.
-    - Use Rig's `VectorStore` trait.
-    - **Test:** Verify RAG retrieval works with new impl.
-
-### Task 4.2: Qdrant Migration
-- [ ] **Subtask:** Replace `qdrant-client` usage with `rig-qdrant`
-    - Update `backend/src/services/embeddings/qdrant.rs`.
-    - **Test:** Verify Qdrant RAG retrieval.
+### Task 4.1: Unified Vector Service
+- [ ] **Subtask:** Replace manual LanceDB/Qdrant code with `rig-lancedb` and `rig-qdrant`
+    - Abstract `backend/src/services/embeddings/` to use a unified `VectorService` trait.
+    - Rename build-specific services:
+        - `QdrantClientService` -> `CloudVectorService`
+        - `LanceDbClient` -> `DesktopVectorService`
+    - Use Rig's `VectorStore` trait for all operations.
+    - **Test:** Verify RAG retrieval works with new unified impl on both Cloud and Desktop.
 
 ---
 
-## Phase 5: Core Service Refactor
+## Phase 5: Core Service Refactor [ ]
 
 ### Task 5.1: Switch `ChatService`
 - [ ] **Subtask:** Update `backend/src/services/chat/generation.rs`
@@ -85,7 +94,7 @@
 
 ---
 
-## Phase 6: Tokenizer Migration
+## Phase 6: Tokenizer Migration [ ]
 
 ### Task 6.1: Replace SentencePiece
 - [ ] **Subtask:** Update `backend/Cargo.toml`
@@ -106,6 +115,6 @@
 2.  **Integration Tests:** Run `backend/tests/rig_integration_tests.rs`.
 
 ### Manual Verification
-1.  **Cloud Chat:** Chat with Gemini 2.5 (verify reasoning).
+1.  **Cloud Chat:** Chat with Gemini 2.5/Claude 3.7 (verify reasoning).
 2.  **Local Chat:** Chat with a GGUF model (verify Mistral.rs embedding).
-3.  **RAG:** Ask a question about a Lorebook entry (verify LanceDB/Qdrant).
+3.  **RAG:** Ask a question about a Lorebook entry (verify unified Vector Service).

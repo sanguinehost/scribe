@@ -102,7 +102,7 @@ mod soft_limit_tests {
             .expect("Failed to interact")
             .expect("Failed to create daily usage");
 
-        assert_eq!(usage.user_id, user_id.into_uuid());
+        assert_eq!(usage.user_id, user_id.into_uuid().into());
         assert_eq!(usage.message_count, 0);
         assert_eq!(usage.token_count, 0);
         assert!(usage.soft_limit_triggered_at.is_none());
@@ -233,14 +233,14 @@ mod soft_limit_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let new_sub = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id: user_id.into_uuid(),
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into_uuid().into(),
                 plan_type: "basic".to_string(),
                 paddle_subscription_id: Some("test_throttle".to_string()),
                 paddle_customer_id: Some("test_customer".to_string()),
                 status: "active".to_string(),
-                current_period_start: Utc::now(),
-                current_period_end: Utc::now() + Duration::days(30),
+                current_period_start: Utc::now().into(),
+                current_period_end: (Utc::now() + Duration::days(30)).into(),
                 cancel_at_period_end: Some(false),
                 trial_end: None,
                 credits_allocated_this_period: Some(false),
@@ -326,14 +326,14 @@ mod soft_limit_tests {
 
         // Create premium subscription
         let sub = NewSubscription {
-            id: Uuid::new_v4(),
-            user_id: user_id.into_uuid(),
+            id: Uuid::new_v4().into(),
+            user_id: user_id.into_uuid().into(),
             paddle_customer_id: Some("cus_test".to_string()),
             paddle_subscription_id: Some("sub_test".to_string()),
             plan_type: "premium".to_string(),
             status: "active".to_string(),
-            current_period_start: Utc::now(),
-            current_period_end: Utc::now() + Duration::days(30),
+            current_period_start: Utc::now().into(),
+            current_period_end: (Utc::now() + Duration::days(30)).into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(false),
@@ -401,14 +401,17 @@ mod soft_limit_tests {
                 use scribe_backend::models::credit::NewDailyUsage;
 
                 let usage = NewDailyUsage {
-                    user_id: user_id.into_uuid(),
+                    user_id: user_id.into_uuid().into(),
                     date,
                     message_count: 10 + days_ago as i32,
                     token_count: 1000 + (days_ago as i64 * 100),
                     soft_limit_triggered_at: None,
-                    model_breakdown: Some(json!({
-                        "test_model": days_ago + 1
-                    })),
+                    model_breakdown: Some(
+                        json!({
+                            "test_model": days_ago + 1
+                        })
+                        .into(),
+                    ),
                 };
 
                 diesel::insert_into(daily_usage_tracking::table)
@@ -456,7 +459,7 @@ mod soft_limit_tests {
             use scribe_backend::models::credit::NewDailyUsage;
 
             let usage = NewDailyUsage {
-                user_id: user_id.into_uuid(),
+                user_id: user_id.into_uuid().into(),
                 date: yesterday,
                 message_count: 50,
                 token_count: 5000,
@@ -506,14 +509,14 @@ mod soft_limit_tests {
 
         // Create subscription with soft limit override
         let sub = NewSubscription {
-            id: Uuid::new_v4(),
-            user_id: user_id.into_uuid(),
+            id: Uuid::new_v4().into(),
+            user_id: user_id.into_uuid().into(),
             paddle_customer_id: Some("cus_test".to_string()),
             paddle_subscription_id: Some("sub_test".to_string()),
             plan_type: "basic".to_string(),
             status: "active".to_string(),
-            current_period_start: Utc::now(),
-            current_period_end: Utc::now() + Duration::days(30),
+            current_period_start: Utc::now().into(),
+            current_period_end: (Utc::now() + Duration::days(30)).into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(false),

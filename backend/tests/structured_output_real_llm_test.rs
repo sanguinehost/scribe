@@ -233,6 +233,12 @@ async fn test_chronicle_naming_with_real_llm() {
     ));
 
     let services = scribe_backend::state::AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                Arc::new(scribe_backend::services::EncryptionService::new()),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone()
             as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
@@ -298,12 +304,6 @@ async fn test_chronicle_naming_with_real_llm() {
         tool_registry,
         config,
         chronicle_service,
-        test_app.mock_embedding_pipeline_service.clone()
-            as Arc<
-                dyn scribe_backend::services::embeddings::EmbeddingPipelineServiceTrait
-                    + Send
-                    + Sync,
-            >,
         app_state,
         token_counter,
     );

@@ -960,36 +960,38 @@ async fn update_cumulative_token_counts(
         #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let (prompt_delta, completion_delta) = (prompt_tokens, completion_tokens);
 
+        // Define SQL type alias based on backend
+        #[cfg(feature = "sqlite-backend")]
+        type CostSqlType = diesel::sql_types::Double;
+        #[cfg(feature = "postgres-backend")]
+        type CostSqlType = diesel::sql_types::Numeric;
+
         // Update chat session cumulative counts
         diesel::update(chat_sessions::table.find(session_id))
             .set((
                 chat_sessions::total_prompt_tokens
-                    .eq(chat_sessions::total_prompt_tokens + prompt_delta),
+                    .eq(chat_sessions::total_prompt_tokens + prompt_delta as i64),
                 chat_sessions::total_completion_tokens
-                    .eq(chat_sessions::total_completion_tokens + completion_delta),
+                    .eq(chat_sessions::total_completion_tokens + completion_delta as i64),
                 chat_sessions::estimated_cost_cents
                     .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
                 // NEW: Track all four cost values properly
-                chat_sessions::total_actual_cost.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_actual_cost + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_cost_val)),
-                chat_sessions::total_modified_cost.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_modified_cost + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(modified_cost_val)),
+                chat_sessions::total_actual_cost
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_actual_cost + ")
+                        .bind::<CostSqlType, _>(actual_cost_val)),
+                chat_sessions::total_modified_cost
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_modified_cost + ")
+                        .bind::<CostSqlType, _>(modified_cost_val)),
                 chat_sessions::total_credit_cost.eq(chat_sessions::total_credit_cost + credit_cost),
-                chat_sessions::total_actual_charge.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_actual_charge + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_charge_val)),
+                chat_sessions::total_actual_charge
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_actual_charge + ")
+                        .bind::<CostSqlType, _>(actual_charge_val)),
                 // Keep total_credits_used for backwards compatibility (uses actual_cost)
-                // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
+                // Note: total_credits_used in SQLite schema is Double, in Postgres it is Numeric.
                 // We use credits_used_delta which is typed correctly for each backend.
-                chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_credits_used + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(credits_used_delta)),
+                chat_sessions::total_credits_used
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_credits_used + ")
+                        .bind::<CostSqlType, _>(credits_used_delta)),
                 chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
             ))
             .execute(conn)?;

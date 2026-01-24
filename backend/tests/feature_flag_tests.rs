@@ -103,7 +103,7 @@ mod feature_flag_tests {
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now().into())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(chrono::Utc::now().into())
             .execute(conn)?;
             Ok(())
         }).await.expect("Failed to interact").expect("Failed to create user");
@@ -174,7 +174,7 @@ mod feature_flag_tests {
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now().into())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(chrono::Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await.expect("Failed to interact").expect("Failed to create user");
@@ -254,7 +254,7 @@ mod feature_flag_tests {
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now().into())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(chrono::Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await.expect("Failed to interact").expect("Failed to create user");

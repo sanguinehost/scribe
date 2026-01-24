@@ -48,9 +48,10 @@ async fn create_test_user(
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        id: Uuid::new_v4().into(),
         username,
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
@@ -156,6 +157,12 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
     ));
 
     let services = scribe_backend::state::AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone()
             as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
@@ -349,8 +356,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -520,8 +530,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &mundane_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -660,8 +673,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &rapid_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -807,8 +823,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &context_building_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -970,8 +989,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &long_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;

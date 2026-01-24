@@ -95,7 +95,7 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config.clone());
-                service.initialize_user_credits(conn, user_id)
+                service.initialize_user_credits(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -112,7 +112,7 @@ mod credit_service_tests {
         let retrieved_balance = conn2
             .interact(move |conn| {
                 let service = CreditService::new(config2);
-                service.get_balance(conn, user_id)
+                service.get_balance(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -142,7 +142,7 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone);
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -156,12 +156,12 @@ mod credit_service_tests {
                 let service = CreditService::new(config_clone);
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     100,
                     "purchase",
                     "Test credit purchase",
                     Some("paddle_123".to_string()),
-                    Some(json!({"test": "data"})),
+                    Some(scribe_backend::db::Json(json!({"test": "data"}))),
                 )
             })
             .await
@@ -178,7 +178,15 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.add_credits(conn, user_id, 50, "bonus", "Bonus credits", None, None)
+                service.add_credits(
+                    conn,
+                    user_id.into(),
+                    50,
+                    "bonus",
+                    "Bonus credits",
+                    None,
+                    None,
+                )
             })
             .await
             .expect("Failed to interact")
@@ -209,8 +217,8 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone.clone());
-            service.initialize_user_credits(conn, user_id)?;
-            service.add_credits(conn, user_id, 100, "test", "Setup", None, None)
+            service.initialize_user_credits(conn, user_id.into())?;
+            service.add_credits(conn, user_id.into(), 100, "test", "Setup", None, None)
         })
         .await
         .expect("Failed to interact")
@@ -224,10 +232,12 @@ mod credit_service_tests {
                 let service = CreditService::new(config_clone);
                 service.deduct_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     30,
                     "Usage for Gemini Pro",
-                    Some(json!({"model": "gemini-2.5-pro", "messages": 1})),
+                    Some(scribe_backend::db::Json(
+                        json!({"model": "gemini-2.5-pro", "messages": 1}),
+                    )),
                 )
             })
             .await
@@ -244,7 +254,7 @@ mod credit_service_tests {
         let result = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.deduct_credits(conn, user_id, 100, "Too much", None)
+                service.deduct_credits(conn, user_id.into(), 100, "Too much", None)
             })
             .await
             .expect("Failed to interact");
@@ -284,7 +294,7 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone);
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -296,7 +306,7 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.grant_monthly_credits(conn, user_id, "basic")
+                service.grant_monthly_credits(conn, user_id.into(), "basic")
             })
             .await
             .expect("Failed to interact")
@@ -313,7 +323,7 @@ mod credit_service_tests {
         let balance2 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.grant_monthly_credits(conn, user_id, "basic")
+                service.grant_monthly_credits(conn, user_id.into(), "basic")
             })
             .await
             .expect("Failed to interact")
@@ -344,7 +354,7 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone);
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -356,7 +366,7 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.grant_monthly_credits(conn, user_id, "premium")
+                service.grant_monthly_credits(conn, user_id.into(), "premium")
             })
             .await
             .expect("Failed to interact")
@@ -373,7 +383,7 @@ mod credit_service_tests {
         let balance2 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.grant_monthly_credits(conn, user_id, "premium")
+                service.grant_monthly_credits(conn, user_id.into(), "premium")
             })
             .await
             .expect("Failed to interact")
@@ -404,7 +414,7 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone);
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -416,7 +426,7 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.grant_monthly_credits(conn, user_id, "free")
+                service.grant_monthly_credits(conn, user_id.into(), "free")
             })
             .await
             .expect("Failed to interact")
@@ -450,11 +460,19 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone.clone());
-            service.initialize_user_credits(conn, user_id)?;
-            service.add_credits(conn, user_id, 100, "purchase", "Purchase 1", None, None)?;
-            service.add_credits(conn, user_id, 50, "bonus", "Bonus", None, None)?;
-            service.deduct_credits(conn, user_id, 30, "Usage 1", None)?;
-            service.deduct_credits(conn, user_id, 20, "Usage 2", None)
+            service.initialize_user_credits(conn, user_id.into())?;
+            service.add_credits(
+                conn,
+                user_id.into(),
+                100,
+                "purchase",
+                "Purchase 1",
+                None,
+                None,
+            )?;
+            service.add_credits(conn, user_id.into(), 50, "bonus", "Bonus", None, None)?;
+            service.deduct_credits(conn, user_id.into(), 30, "Usage 1", None)?;
+            service.deduct_credits(conn, user_id.into(), 20, "Usage 2", None)
         })
         .await
         .expect("Failed to interact")
@@ -466,7 +484,7 @@ mod credit_service_tests {
         let transactions = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.get_transaction_history(conn, user_id, Some(10), None)
+                service.get_transaction_history(conn, user_id.into(), Some(10), None)
             })
             .await
             .expect("Failed to interact")
@@ -484,7 +502,7 @@ mod credit_service_tests {
         let page1 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.get_transaction_history(conn, user_id, Some(2), None)
+                service.get_transaction_history(conn, user_id.into(), Some(2), None)
             })
             .await
             .expect("Failed to interact")
@@ -496,7 +514,7 @@ mod credit_service_tests {
         let page2 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.get_transaction_history(conn, user_id, Some(2), Some(2))
+                service.get_transaction_history(conn, user_id.into(), Some(2), Some(2))
             })
             .await
             .expect("Failed to interact")
@@ -526,7 +544,7 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone);
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -540,7 +558,7 @@ mod credit_service_tests {
                 let service = CreditService::new(config_clone);
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     1001,
                     "purchase",
                     "Too many credits",
@@ -564,7 +582,15 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.add_credits(conn, user_id, 1000, "purchase", "Max credits", None, None)
+                service.add_credits(
+                    conn,
+                    user_id.into(),
+                    1000,
+                    "purchase",
+                    "Max credits",
+                    None,
+                    None,
+                )
             })
             .await
             .expect("Failed to interact")
@@ -594,7 +620,7 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone);
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -630,7 +656,12 @@ mod credit_service_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.process_credit_purchase(conn, user_id, "test_package", "paddle_txn_123")
+                service.process_credit_purchase(
+                    conn,
+                    user_id.into(),
+                    "test_package",
+                    "paddle_txn_123",
+                )
             })
             .await
             .expect("Failed to interact")
@@ -646,7 +677,7 @@ mod credit_service_tests {
         let transactions = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.get_transaction_history(conn, user_id, None, None)
+                service.get_transaction_history(conn, user_id.into(), None, None)
             })
             .await
             .expect("Failed to interact")
@@ -680,8 +711,8 @@ mod credit_service_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let service = CreditService::new(config_clone.clone());
-            service.initialize_user_credits(conn, user_id)?;
-            service.add_credits(conn, user_id, 100, "test", "Setup", None, None)
+            service.initialize_user_credits(conn, user_id.into())?;
+            service.add_credits(conn, user_id.into(), 100, "test", "Setup", None, None)
         })
         .await
         .expect("Failed to interact")
@@ -693,7 +724,7 @@ mod credit_service_tests {
         let has_50 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.has_sufficient_credits(conn, user_id, 50)
+                service.has_sufficient_credits(conn, user_id.into(), 50)
             })
             .await
             .expect("Failed to interact")
@@ -705,7 +736,7 @@ mod credit_service_tests {
         let has_100 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.has_sufficient_credits(conn, user_id, 100)
+                service.has_sufficient_credits(conn, user_id.into(), 100)
             })
             .await
             .expect("Failed to interact")
@@ -717,7 +748,7 @@ mod credit_service_tests {
         let has_101 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config_clone);
-                service.has_sufficient_credits(conn, user_id, 101)
+                service.has_sufficient_credits(conn, user_id.into(), 101)
             })
             .await
             .expect("Failed to interact")

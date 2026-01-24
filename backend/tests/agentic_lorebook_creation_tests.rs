@@ -162,7 +162,7 @@ fn create_chat_message(
         content_nonce: Some(content_nonce),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(content.len() as i32 / 4), // Rough estimate
+        prompt_tokens: Some(content.len() as i64 / 4), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
             Some(20)
         } else {
@@ -311,10 +311,13 @@ mod lorebook_creation_tests {
             .process_narrative_event(
                 user_id.into(),
                 chat_session_id.into(),
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &common_knowledge_messages,
                 &session_dek,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 

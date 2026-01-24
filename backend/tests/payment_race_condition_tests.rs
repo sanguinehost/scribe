@@ -66,7 +66,7 @@ mod payment_race_condition_tests {
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now().into())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await??;

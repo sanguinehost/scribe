@@ -8,6 +8,7 @@ use axum::{
     body::Body,
     http::{header, Method, Request, StatusCode},
 };
+use futures::TryFutureExt;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use tower::ServiceExt;
@@ -45,7 +46,8 @@ async fn create_test_user_with_dek(
     let mut conn = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
+        .await?;
 
     let password_hash = bcrypt::hash(&password, bcrypt::DEFAULT_COST)
         .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
@@ -62,7 +64,7 @@ async fn create_test_user_with_dek(
         id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
-        email,
+        email: email,
         kek_salt: kek_salt_str,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -75,7 +77,7 @@ async fn create_test_user_with_dek(
         total_completion_tokens: DbBigInt::from(0),
         total_token_cost_cents: DbBigInt::from(0),
         tokens_last_reset_at: None,
-        token_usage_updated_at: chrono::Utc::now().into(),
+        token_usage_updated_at: scribe_backend::db::DbTimestamp::now(),
     };
 
     let user_db: UserDbQuery = conn
@@ -108,15 +110,16 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
-        created_at: chrono::Utc::now().into(),
-        updated_at: chrono::Utc::now().into(),
+        created_at: Some(scribe_backend::db::DbTimestamp::now()),
+        updated_at: Some(scribe_backend::db::DbTimestamp::now()),
         ..Default::default()
     };
 
     let character: DbCharacter = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
+        .await?
         .interact(move |conn| {
             let char_id = new_character.id.expect("Character ID must be set");
             diesel::insert_into(characters::table)
@@ -161,7 +164,8 @@ async fn create_test_chat_session(
     let chat_session: Chat = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
+        .await?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
@@ -185,7 +189,7 @@ async fn create_test_message(
     use scribe_backend::models::chats::DbInsertableChatMessage;
 
     let new_message = DbInsertableChatMessage {
-        id: scribe_backend::db::DbId::new(),
+        rag_embedding_id: None,
         chat_id: session_id.into(),
         user_id: user_id.into(),
         msg_type: role.clone(),
@@ -204,18 +208,19 @@ async fn create_test_message(
         variant_count: 1,
         current_variant_index: 0,
         credits_charged: 0,
-        credits_cost: 0.0,
-        actual_cost: 0.0,
-        modified_cost: 0.0,
+        credits_cost: scribe_backend::db::DbDecimal::from(0),
+        actual_cost: scribe_backend::db::DbDecimal::from(0),
+        modified_cost: scribe_backend::db::DbDecimal::from(0),
         credit_cost: 0,
-        actual_charge: 0.0,
+        actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
     };
 
     let message: DbChatMessage = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
+        .await?
         .interact(move |conn| {
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
@@ -270,7 +275,8 @@ async fn test_hidden_streaming_message() -> anyhow::Result<()> {
     test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
+        .await?
         .interact(move |conn| {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message.id)))
                 .set(chat_messages::status.eq("streaming"))

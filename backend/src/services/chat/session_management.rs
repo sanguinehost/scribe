@@ -695,7 +695,7 @@ fn fetch_created_session(
 
     // Check token/cost tracking fields
     #[cfg(feature = "postgres-backend")]
-    let token_check: Result<(i32, i32, i32, crate::db::DbDecimal), _> = chat_sessions::table
+    let token_check: Result<(i64, i64, i32, crate::db::DbDecimal), _> = chat_sessions::table
         .filter(chat_sessions::id.eq(&new_session_id))
         .select((
             chat_sessions::total_prompt_tokens,
@@ -703,7 +703,7 @@ fn fetch_created_session(
             chat_sessions::estimated_cost_cents,
             chat_sessions::total_credits_used,
         ))
-        .first::<(i32, i32, i32, crate::db::DbDecimal)>(transaction_conn);
+        .first::<(i64, i64, i32, crate::db::DbDecimal)>(transaction_conn);
 
     #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let token_check: Result<(i64, i64, i32, crate::db::DbDecimal), _> = chat_sessions::table
@@ -1115,9 +1115,9 @@ pub async fn create_session_and_maybe_first_message(
             default_top_p: None,
             default_top_k: None,
             default_seed: None,
-            default_gemini_thinking_budget: None,
-            default_gemini_thinking_level: None,
-            default_gemini_enable_code_execution: None,
+            default_thinking_budget: None,
+            default_thinking_level: None,
+            default_enable_code_execution: None,
             default_context_total_token_limit: Some(state.config.context_total_token_limit as i32),
             default_context_recent_history_budget: Some(state.config.context_recent_history_token_budget as i32),
             default_context_rag_budget: Some(state.config.context_rag_token_budget as i32),

@@ -427,7 +427,7 @@ mod tests {
         let mock_ai_client = std::sync::Arc::new(crate::test_helpers::MockAiClient::new());
         let service = ChronicleDeduplicationService::new(pool, mock_ai_client, None);
         assert_eq!(service.config.time_window_minutes, 3);
-        assert_eq!(service.config.similarity_threshold, 0.90);
+        assert_eq!(service.config.similarity_threshold, 0.80);
     }
 
     fn create_test_event(summary: &str) -> ChronicleEvent {
@@ -447,7 +447,6 @@ mod tests {
             keywords_encrypted: None,
             keywords_nonce: None,
             chat_session_id: None,
-            event_data: None,
             message_variant_id: None,
         }
     }

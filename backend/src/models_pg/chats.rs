@@ -62,7 +62,9 @@ pub struct GenerationCost {
 }
 
 /// Represents the status of a chat message
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, diesel::query_builder::QueryId,
+)]
 pub enum MessageStatus {
     /// Message is being generated
     Streaming,
@@ -153,8 +155,8 @@ pub struct Chat {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
@@ -167,14 +169,12 @@ pub struct Chat {
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub model_provider: Option<String>,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
     pub total_credits_used: crate::db::DbDecimal,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
     // New cost tracking fields
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_cost: crate::db::DbDecimal,
@@ -183,10 +183,12 @@ pub struct Chat {
     pub total_credit_cost: i32,
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_actual_charge: crate::db::DbDecimal,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
     // Game Master Agent fields
     pub game_state: Option<crate::db::DbJson>, // JSON-encoded GameState
     pub game_master_mode_enabled: bool,        // Feature flag
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -212,9 +214,18 @@ pub struct ChatListQuery {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub stop_sequences: crate::models::OptionalStringArray,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
+    pub estimated_cost_cents: i32,
+    pub tokens_counted_at: DbTimestamp,
+    pub prompt_template_id: String,
     pub total_credits_used: crate::db::DbDecimal,
+    pub total_actual_cost: crate::db::DbDecimal,
+    pub total_modified_cost: crate::db::DbDecimal,
+    pub total_credit_cost: i32,
+    pub total_actual_charge: crate::db::DbDecimal,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
     pub visibility: Option<String>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub game_master_mode_enabled: bool,
@@ -313,8 +324,8 @@ impl ChatListQuery {
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             visibility: self.visibility,
             active_custom_persona_id: None,
             active_impersonated_character_id: None,
@@ -326,7 +337,7 @@ impl ChatListQuery {
             total_actual_cost: crate::db::DbDecimal::from(0), // ChatListItem doesn't have actual cost data
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -359,8 +370,8 @@ pub struct ChatSessionQuery {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
@@ -373,8 +384,8 @@ pub struct ChatSessionQuery {
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub model_provider: Option<String>,
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -387,7 +398,7 @@ pub struct ChatSessionQuery {
     pub total_actual_charge: crate::db::DbDecimal,
     pub game_master_mode_enabled: bool,
     pub game_state: Option<crate::db::DbJson>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -486,8 +497,8 @@ impl ChatSessionQuery {
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
-            gemini_thinking_budget: self.gemini_thinking_budget,
-            gemini_enable_code_execution: self.gemini_enable_code_execution,
+            thinking_budget: self.thinking_budget,
+            enable_code_execution: self.enable_code_execution,
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
@@ -499,7 +510,7 @@ impl ChatSessionQuery {
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
-            gemini_thinking_level: self.gemini_thinking_level,
+            thinking_level: self.thinking_level,
             rag_chronicles_limit: self.rag_chronicles_limit,
             rag_lorebooks_limit: self.rag_lorebooks_limit,
             rag_older_chat_limit: self.rag_older_chat_limit,
@@ -653,11 +664,8 @@ impl std::fmt::Debug for Chat {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field("visibility", &self.visibility)
             // Add new fields to Debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -717,27 +725,27 @@ pub struct NewChat {
     pub seed: Option<i32>,
     pub stop_sequences: crate::models::OptionalStringArray,
     pub chat_mode: ChatMode,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     // Token tracking fields with default values
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
     pub total_credits_used: crate::db::DbDecimal,
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
-    pub narrative_style_override_nonce: Option<Vec<u8>>,
     pub total_actual_cost: crate::db::DbDecimal,
     pub total_modified_cost: crate::db::DbDecimal,
     pub total_credit_cost: i32,
     pub total_actual_charge: crate::db::DbDecimal,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
     pub game_state: Option<crate::db::DbJson>,
     pub game_master_mode_enabled: bool,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -807,11 +815,8 @@ impl std::fmt::Debug for NewChat {
             .field("top_p", &self.top_p)
             .field("seed", &self.seed)
             .field("stop_sequences", &self.stop_sequences)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field(
                 "system_prompt_ciphertext",
                 &self
@@ -917,7 +922,17 @@ impl std::fmt::Display for MessageRole {
 
 // ChatMode enum for different types of chat sessions
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    Default,
+    AsExpression,
+    FromSqlRow,
+    diesel::query_builder::QueryId,
 )]
 #[diesel(sql_type = diesel::sql_types::Text)]
 pub enum ChatMode {
@@ -1003,8 +1018,8 @@ impl ChatMessageQuery {
             role: None,
             parts: None,
             attachments: None,
-            prompt_tokens: self.prompt_tokens.map(|t| t as i32),
-            completion_tokens: self.completion_tokens.map(|t| t as i32),
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
             model_name: self.model_name,
             status: self.status,
             game_time: None, // Not loaded from query
@@ -1032,21 +1047,19 @@ impl ChatMessageQuery {
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct ChatMessage {
     pub id: crate::db::DbId,
-    #[diesel(column_name = session_id)]
     pub session_id: crate::db::DbId,
-    #[diesel(column_name = message_type)]
     pub message_type: MessageRole,
     pub content: Vec<u8>,
-    pub content_nonce: Option<Vec<u8>>,
     pub rag_embedding_id: Option<crate::db::DbId>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
     pub user_id: crate::db::DbId,
+    pub content_nonce: Option<Vec<u8>>,
     pub role: Option<String>,
     pub parts: Option<crate::db::DbJson>,
     pub attachments: Option<crate::db::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1521,8 +1534,8 @@ pub struct Message {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1685,12 +1698,12 @@ impl MessageBuilder {
     }
 
     pub fn prompt_tokens(mut self, prompt_tokens: Option<i64>) -> Self {
-        self.inner.prompt_tokens = prompt_tokens.map(|t| t as i32);
+        self.inner.prompt_tokens = prompt_tokens;
         self
     }
 
     pub fn completion_tokens(mut self, completion_tokens: Option<i64>) -> Self {
-        self.inner.completion_tokens = completion_tokens.map(|t| t as i32);
+        self.inner.completion_tokens = completion_tokens;
         self
     }
 
@@ -2144,8 +2157,8 @@ pub struct NewChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String, // Changed to String to match schema
@@ -2267,12 +2280,12 @@ impl NewChatMessageBuilder {
     }
 
     pub fn prompt_tokens(mut self, prompt_tokens: Option<i64>) -> Self {
-        self.inner.prompt_tokens = prompt_tokens.map(|t| t as i32);
+        self.inner.prompt_tokens = prompt_tokens;
         self
     }
 
     pub fn completion_tokens(mut self, completion_tokens: Option<i64>) -> Self {
-        self.inner.completion_tokens = completion_tokens.map(|t| t as i32);
+        self.inner.completion_tokens = completion_tokens;
         self
     }
 
@@ -2407,8 +2420,8 @@ pub struct DbInsertableChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i32>,
-    pub completion_tokens: Option<i32>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -2528,16 +2541,8 @@ impl DbInsertableChatMessage {
         prompt_tokens: Option<i64>,
         completion_tokens: Option<i64>,
     ) -> Self {
-        self.prompt_tokens = if let Some(t) = prompt_tokens {
-            Some(t as i32)
-        } else {
-            None
-        };
-        self.completion_tokens = if let Some(t) = completion_tokens {
-            Some(t as i32)
-        } else {
-            None
-        };
+        self.prompt_tokens = prompt_tokens;
+        self.completion_tokens = completion_tokens;
         self
     }
 
@@ -2774,21 +2779,21 @@ pub struct ChatForClient {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: Option<String>,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub chat_mode: ChatMode,
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
-    pub total_prompt_tokens: i32,
-    pub total_completion_tokens: i32,
+    pub total_prompt_tokens: i64,
+    pub total_completion_tokens: i64,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     // Game Master Agent fields
     pub game_master_mode_enabled: bool,
     pub game_state: Option<crate::db::DbJson>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -2913,8 +2918,8 @@ impl Chat {
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
-            gemini_thinking_budget: self.gemini_thinking_budget,
-            gemini_enable_code_execution: self.gemini_enable_code_execution,
+            thinking_budget: self.thinking_budget,
+            enable_code_execution: self.enable_code_execution,
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
@@ -2926,7 +2931,7 @@ impl Chat {
             total_actual_cost: self.total_actual_cost,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state,
-            gemini_thinking_level: self.gemini_thinking_level,
+            thinking_level: self.thinking_level,
             rag_chronicles_limit: self.rag_chronicles_limit,
             rag_lorebooks_limit: self.rag_lorebooks_limit,
             rag_older_chat_limit: self.rag_older_chat_limit,
@@ -3062,8 +3067,8 @@ pub struct ChatSettingsResponse {
     // Model Name
     pub model_name: Option<String>,
     // Gemini-specific options
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<crate::db::DbId>,
     // Agent mode for context enrichment
@@ -3074,7 +3079,7 @@ pub struct ChatSettingsResponse {
     pub prompt_template_id: Option<String>,
     // Game Master mode flag
     pub game_master_mode_enabled: Option<bool>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -3102,11 +3107,8 @@ impl std::fmt::Debug for ChatSettingsResponse {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field("chronicle_id", &self.chronicle_id)
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -3134,14 +3136,14 @@ impl From<Chat> for ChatSettingsResponse {
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
             model_name: Some(chat.model_name),
-            gemini_thinking_budget: chat.gemini_thinking_budget,
-            gemini_enable_code_execution: chat.gemini_enable_code_execution,
+            thinking_budget: chat.thinking_budget,
+            enable_code_execution: chat.enable_code_execution,
             chronicle_id: chat.player_chronicle_id,
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
             game_master_mode_enabled: Some(chat.game_master_mode_enabled),
-            gemini_thinking_level: chat.gemini_thinking_level,
+            thinking_level: chat.thinking_level,
             rag_chronicles_limit: chat.rag_chronicles_limit,
             rag_lorebooks_limit: chat.rag_lorebooks_limit,
             rag_older_chat_limit: chat.rag_older_chat_limit,
@@ -3184,8 +3186,8 @@ pub struct UpdateChatSettingsRequest {
     // Model Provider (local, gemini, etc.)
     pub model_provider: Option<String>,
     // Gemini-specific options
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<crate::db::DbId>,
     // Agent mode for context enrichment
@@ -3198,7 +3200,7 @@ pub struct UpdateChatSettingsRequest {
     pub prompt_template_id: Option<String>,
     // Game Master mode enable/disable
     pub game_master_mode_enabled: Option<bool>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     // RAG Limits
     #[validate(range(min = 0, max = 1000000))]
     pub rag_chronicles_limit: Option<i32>,
@@ -3231,11 +3233,8 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field("chronicle_id", &self.chronicle_id)
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -3718,8 +3717,8 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash".to_string(),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             estimated_cost_cents: 0,
             prompt_template_id: "default".to_string(),
             tokens_counted_at: crate::db::DbTimestamp::now(),
@@ -3740,7 +3739,7 @@ mod tests {
             narrative_style_override_nonce: None,
             game_master_mode_enabled: false,
             game_state: None,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_cognitive_context_limit: None,
             rag_lorebooks_limit: None,
@@ -3989,13 +3988,13 @@ mod tests {
             history_management_limit: 4096,
             model_name: Some("gemini-2.5-flash".to_string()),
             game_master_mode_enabled: Some(false),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: None,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -4059,9 +4058,9 @@ mod tests {
             model_name: Some("gemini-2.5-pro".to_string()),
             model_provider: Some("gemini".to_string()),
             game_master_mode_enabled: Some(true),
-            gemini_thinking_level: None,
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_level: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
@@ -4314,6 +4313,9 @@ pub struct MessageVariant {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub game_state: Option<crate::db::DbJson>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub model_name: Option<String>,
 }
 
 /// Insertable model for creating new message variants
@@ -4329,6 +4331,9 @@ pub struct NewMessageVariant {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub game_state: Option<crate::db::DbJson>,
+    pub prompt_tokens: Option<i64>,
+    pub completion_tokens: Option<i64>,
+    pub model_name: Option<String>,
 }
 
 impl MessageVariant {
@@ -4436,6 +4441,9 @@ impl NewMessageVariant {
             raw_prompt_ciphertext,
             raw_prompt_nonce,
             game_state: game_state.map(crate::db::DbJson::new),
+            prompt_tokens: None,
+            completion_tokens: None,
+            model_name: None,
         })
     }
 }

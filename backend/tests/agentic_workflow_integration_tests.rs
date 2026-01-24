@@ -202,11 +202,13 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
         .process_narrative_event(
             user_id.into(),
             session_id.into(),
-            None, // No existing chronicle
+            None, // chronicle_id
+            None, // message_variant_id
             &messages,
             &session_dek,
-            None, // No persona context
-            None, // No game state
+            None, // persona_context
+            None, // game_state
+            None, // character_context
         )
         .await;
 

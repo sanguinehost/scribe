@@ -79,7 +79,7 @@ mod payment_audit_tests {
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
             .bind::<diesel::sql_types::BigInt, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(Utc::now().into())
+            .bind::<diesel::sql_types::Timestamptz, _>(scribe_backend::db::DbTimestamp::from(Utc::now()))
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await??;
@@ -639,7 +639,7 @@ mod payment_audit_tests {
                 let final_balance =
                     service.confirm_reservation(conn, user_id.into(), reservation_id)?;
 
-                Ok::<(Uuid, _), scribe_backend::errors::AppError>((reservation_id, final_balance))
+                Ok::<(Uuid, _), scribe_backend::errors::AppError>((*reservation_id, final_balance))
             })
             .await
             .expect("Failed to interact")

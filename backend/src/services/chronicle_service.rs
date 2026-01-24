@@ -907,7 +907,6 @@ impl ChronicleService {
             summary: new_event.summary.clone(),
             source: new_event.source.clone(),
             message_variant_id: new_event.message_variant_id.clone(),
-            event_data: None,
             created_at: new_event.timestamp_iso8601, // Use timestamp as created_at for check
             updated_at: new_event.timestamp_iso8601,
             summary_encrypted: new_event.summary_encrypted.clone(),
@@ -917,6 +916,8 @@ impl ChronicleService {
             keywords_encrypted: new_event.keywords_encrypted.clone(),
             keywords_nonce: new_event.keywords_nonce.clone(),
             chat_session_id: new_event.chat_session_id,
+            #[cfg(feature = "sqlite-backend")]
+            event_data: None,
         };
 
         // Check for duplicates

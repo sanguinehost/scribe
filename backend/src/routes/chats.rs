@@ -1401,9 +1401,9 @@ pub async fn create_message_handler(
                         seed,
                         model_name,
                         model_provider,
-                        gemini_thinking_budget,
-                        _gemini_thinking_level,
-                        gemini_enable_code_execution,
+                        thinking_budget,
+                        _thinking_level,
+                        enable_code_execution,
                         _user_db_message_to_save, // We already saved the message
                         _actual_recent_history_tokens,
                         _rag_context_items,
@@ -1487,9 +1487,9 @@ pub async fn create_message_handler(
                             seed,
                             model_name,
                             model_provider,
-                            gemini_thinking_budget,
-                            gemini_thinking_level: None, // TODO: Fetch from settings if needed
-                            gemini_enable_code_execution,
+                            thinking_budget,
+                            thinking_level: None, // TODO: Fetch from settings if needed
+                            enable_code_execution,
                             request_thinking: false, // Default to false for now
                             user_dek: dek_arc,
                             character_name: None,

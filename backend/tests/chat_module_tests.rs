@@ -24,9 +24,9 @@ mod get_session_data_for_generation_tests {
                      // DbChatMessage is an alias for ChatMessage from models::chats
     };
     use scribe_backend::services::embeddings::RetrievedChunk;
-    use scribe_backend::services::gemini_token_client::GeminiTokenClient;
     use scribe_backend::services::hybrid_token_counter::CountingMode; // For token counting in tests
     use scribe_backend::services::hybrid_token_counter::HybridTokenCounter;
+    use scribe_backend::services::token_client::TokenClient;
     use scribe_backend::services::tokenizer_service::TokenizerService; // TokenEstimate removed
     use scribe_backend::services::user_persona_service::UserPersonaService;
     use scribe_backend::state::AppState;
@@ -91,7 +91,7 @@ mod get_session_data_for_generation_tests {
         let gemini_token_client = config
             .gemini_api_key
             .as_ref()
-            .map(|api_key| GeminiTokenClient::new(api_key.clone()));
+            .map(|api_key| TokenClient::new(api_key.clone()));
         let default_model = config.token_counter_default_model.clone();
         Arc::new(HybridTokenCounter::new(
             tokenizer_service,

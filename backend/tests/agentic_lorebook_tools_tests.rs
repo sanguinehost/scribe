@@ -926,7 +926,7 @@ mod lorebook_analysis_tests {
             app_state_services,
         ));
 
-        let analysis_tool = AnalyzeLorebookTool::new(lorebook_service, mock_ai_client, app_state);
+        let analysis_tool = AnalyzeLorebookTool::new(mock_ai_client, app_state);
 
         // Use wrong session_dek to trigger decryption failure
         let params = json!({

@@ -270,7 +270,7 @@ impl std::fmt::Debug for UserDbQuery {
 pub struct User {
     pub id: DbId,
     pub username: String,
-    pub email: String,
+    pub email: Option<String>,
     #[serde(skip_serializing, skip_deserializing)]
     pub password_hash: String,
     pub kek_salt: String,
@@ -444,7 +444,7 @@ pub struct NewUser {
     pub id: DbId,
     pub username: String,
     pub password_hash: String,
-    pub email: String,
+    pub email: Option<String>,
     pub kek_salt: String,
     pub encrypted_dek: DbBlob,
     pub encrypted_dek_by_recovery: Option<DbBlob>,
@@ -455,7 +455,7 @@ pub struct NewUser {
     pub account_status: AccountStatus,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
 }

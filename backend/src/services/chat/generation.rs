@@ -91,9 +91,9 @@ struct GenerationDbData {
     _session_stop_sequences_db: Option<crate::db::DbStringArray>,
     session_model_name_db: String,
     session_model_provider_db: Option<String>,
-    session_gemini_thinking_budget_db: Option<i32>,
-    session_gemini_thinking_level_db: Option<String>,
-    session_gemini_enable_code_execution_db: Option<bool>,
+    session_thinking_budget_db: Option<i32>,
+    session_thinking_level_db: Option<String>,
+    session_enable_code_execution_db: Option<bool>,
     existing_messages_db_raw: Vec<DbChatMessage>,
     character_for_first_mes: Character,
     character_overrides_for_first_mes: Vec<ChatCharacterOverride>,
@@ -124,9 +124,9 @@ impl Default for GenerationDbData {
             _session_stop_sequences_db: None,
             session_model_name_db: "gemini-1.5-pro".to_string(),
             session_model_provider_db: None,
-            session_gemini_thinking_budget_db: None,
-            session_gemini_thinking_level_db: None,
-            session_gemini_enable_code_execution_db: None,
+            session_thinking_budget_db: None,
+            session_thinking_level_db: None,
+            session_enable_code_execution_db: None,
             existing_messages_db_raw: Vec::new(),
             character_for_first_mes: Character::default(),
             character_overrides_for_first_mes: Vec::new(),
@@ -203,16 +203,16 @@ impl GenerationDbDataBuilder {
         self.inner.session_model_provider_db = provider;
         self
     }
-    pub fn session_gemini_thinking_budget(mut self, val: Option<i32>) -> Self {
-        self.inner.session_gemini_thinking_budget_db = val;
+    pub fn session_thinking_budget(mut self, val: Option<i32>) -> Self {
+        self.inner.session_thinking_budget_db = val;
         self
     }
-    pub fn session_gemini_thinking_level(mut self, val: Option<String>) -> Self {
-        self.inner.session_gemini_thinking_level_db = val;
+    pub fn session_thinking_level(mut self, val: Option<String>) -> Self {
+        self.inner.session_thinking_level_db = val;
         self
     }
-    pub fn session_gemini_enable_code_execution(mut self, val: Option<bool>) -> Self {
-        self.inner.session_gemini_enable_code_execution_db = val;
+    pub fn session_enable_code_execution(mut self, val: Option<bool>) -> Self {
+        self.inner.session_enable_code_execution_db = val;
         self
     }
     pub fn existing_messages(mut self, messages: Vec<DbChatMessage>) -> Self {
@@ -450,9 +450,9 @@ pub async fn get_session_data_for_generation(
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select((
                     chat_sessions::model_provider,
-                    chat_sessions::gemini_thinking_budget,
-                    chat_sessions::gemini_thinking_level,
-                    chat_sessions::gemini_enable_code_execution,
+                    chat_sessions::thinking_budget,
+                    chat_sessions::thinking_level,
+                    chat_sessions::enable_code_execution,
                     chat_sessions::player_chronicle_id,
                     chat_sessions::agent_mode,
                     chat_sessions::game_master_mode_enabled,
@@ -641,13 +641,13 @@ pub async fn get_session_data_for_generation(
                         query_base.load::<(
                             crate::db::DbId,
                             crate::db::DbId,
-                            MessageRole,
+                            crate::models::chats::MessageRole,
                             Vec<u8>,
                             Option<Vec<u8>>,
                             crate::db::DbTimestamp,
                             crate::db::DbId,
-                            Option<i32>,
-                            Option<i32>,
+                            Option<i64>,
+                            Option<i64>,
                             String,
                             String,
                             Option<crate::DbJson>,
@@ -879,9 +879,9 @@ pub async fn get_session_data_for_generation(
                     .session_seed(seed_val)
                     .session_model_name(model_n)
                     .session_model_provider(model_prov)
-                    .session_gemini_thinking_budget(gem_think_budget)
-                    .session_gemini_thinking_level(gem_think_level)
-                    .session_gemini_enable_code_execution(gem_enable_code_exec)
+                    .session_thinking_budget(gem_think_budget)
+                    .session_thinking_level(gem_think_level)
+                    .session_enable_code_execution(gem_enable_code_exec)
                     .existing_messages(messages_raw_db)
                     .character(character_db)
                     .character_overrides(overrides_db)
@@ -914,9 +914,9 @@ pub async fn get_session_data_for_generation(
         _session_stop_sequences_db,
         session_model_name_db,
         session_model_provider_db,
-        session_gemini_thinking_budget_db,
-        session_gemini_thinking_level_db,
-        session_gemini_enable_code_execution_db,
+        session_thinking_budget_db,
+        session_thinking_level_db,
+        session_enable_code_execution_db,
         existing_messages_db_raw,
         character_for_first_mes,
         character_overrides_for_first_mes,
@@ -1984,11 +1984,11 @@ pub async fn get_session_data_for_generation(
         session_seed_db,                // 11: seed (Option<i32>) - MOVED
         session_model_name_db.to_string(), // 12: model_name (String) - MOVED
         session_model_provider_db,      // 13: model_provider (Option<String>) - NEW
-        // -- Gemini Specific Options --
-        session_gemini_thinking_budget_db, // 14: gemini_thinking_budget (Option<i32>) - MOVED
-        session_gemini_thinking_level_db,  // 15: gemini_thinking_level (Option<String>) - NEW
-        session_gemini_enable_code_execution_db, // 16: gemini_enable_code_execution (Option<bool>) - MOVED
-        user_db_message_to_save, // 17: The user message struct (DbInsertableChatMessage) - MOVED
+        // -- Thinking Options --
+        session_thinking_budget_db, // 14: thinking_budget (Option<i32>) - MOVED
+        session_thinking_level_db,  // 15: thinking_level (Option<String>) - NEW
+        session_enable_code_execution_db, // 16: enable_code_execution (Option<bool>) - MOVED
+        user_db_message_to_save,    // 17: The user message struct (DbInsertableChatMessage) - MOVED
         // -- RAG Context & Recent History Tokens --
         actual_recent_history_tokens, // 18: actual_recent_history_tokens (usize) - MOVED
         rag_context_items,            // 19: rag_context_items (Vec<RetrievedChunk>) - MOVED
@@ -2025,9 +2025,9 @@ pub struct StreamAiParams {
     pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
     pub model_provider: Option<String>,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_thinking_level: Option<String>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub thinking_level: Option<String>,
+    pub enable_code_execution: Option<bool>,
     pub request_thinking: bool,                       // New parameter
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub character_name: Option<String>,    // For prefill generation
@@ -2252,9 +2252,9 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             user_id: params.user_id,
             model_name: params.model_name.clone(),
             model_provider: params.model_provider.clone(),
-            gemini_thinking_budget: params.gemini_thinking_budget,
-            gemini_thinking_level: params.gemini_thinking_level.clone(),
-            gemini_enable_code_execution: params.gemini_enable_code_execution,
+            thinking_budget: params.thinking_budget,
+            thinking_level: params.thinking_level.clone(),
+            enable_code_execution: params.enable_code_execution,
             incoming_genai_messages: {
                 let mut messages_with_prefill = params.incoming_genai_messages.clone();
 
@@ -2374,9 +2374,9 @@ pub async fn stream_ai_response_and_save_message(
         seed: _,
         model_name,
         model_provider,
-        gemini_thinking_budget,
-        gemini_thinking_level,
-        gemini_enable_code_execution,
+        thinking_budget,
+        thinking_level,
+        enable_code_execution,
         request_thinking,
         user_dek,
         character_name: _, // Ignore character_name in the actual generation function
@@ -2470,13 +2470,13 @@ pub async fn stream_ai_response_and_save_message(
     if let Some(seqs) = stop_sequences {
         genai_chat_options = genai_chat_options.with_stop_sequences(seqs);
     }
-    if let Some(budget) = gemini_thinking_budget {
+    if let Some(budget) = thinking_budget {
         if budget > 0 {
             genai_chat_options = genai_chat_options
                 .with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
         }
     }
-    if let Some(level_str) = gemini_thinking_level {
+    if let Some(level_str) = thinking_level {
         let thinking_level = match level_str.to_lowercase().as_str() {
             "low" => Some(ThinkingLevel::Low),
             "medium" => Some(ThinkingLevel::Medium),
@@ -2501,7 +2501,7 @@ pub async fn stream_ai_response_and_save_message(
 
     // Declare scribe_tool_invoker if thinking is requested or code execution is enabled
     // (as it's our stand-in for a generic tool for now when code execution is on)
-    if request_thinking || gemini_enable_code_execution == Some(true) {
+    if request_thinking || enable_code_execution == Some(true) {
         debug!("'scribe_tool_invoker' will be declared for Gemini.");
         let scribe_tool_schema = serde_json::json!({
             "type": "object",

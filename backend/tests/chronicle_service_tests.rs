@@ -129,7 +129,7 @@ mod integration_tests {
             id: Uuid::new_v4().into(),
             username: username.to_string(),
             password_hash: hashed_password,
-            email,
+            email: email,
             kek_salt,
             encrypted_dek: encrypted_dek.into(),
             encrypted_dek_by_recovery: None,

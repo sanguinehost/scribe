@@ -27,10 +27,10 @@ pub struct UserSettings {
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
-    // Gemini-Specific Settings
-    pub default_gemini_thinking_budget: Option<i32>,
-    pub default_gemini_thinking_level: Option<String>,
-    pub default_gemini_enable_code_execution: Option<bool>,
+    // Thinking & Code Execution Settings
+    pub default_thinking_budget: Option<i32>,
+    pub default_thinking_level: Option<String>,
+    pub default_enable_code_execution: Option<bool>,
 
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
@@ -80,10 +80,10 @@ pub struct NewUserSettings {
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
-    // Gemini-Specific Settings
-    pub default_gemini_thinking_budget: Option<i32>,
-    pub default_gemini_thinking_level: Option<String>,
-    pub default_gemini_enable_code_execution: Option<bool>,
+    // Thinking & Code Execution Settings
+    pub default_thinking_budget: Option<i32>,
+    pub default_thinking_level: Option<String>,
+    pub default_enable_code_execution: Option<bool>,
 
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
@@ -115,10 +115,10 @@ pub struct UpdateUserSettingsRequest {
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
-    // Gemini-Specific Settings
-    pub default_gemini_thinking_budget: Option<i32>,
-    pub default_gemini_thinking_level: Option<String>,
-    pub default_gemini_enable_code_execution: Option<bool>,
+    // Thinking & Code Execution Settings
+    pub default_thinking_budget: Option<i32>,
+    pub default_thinking_level: Option<String>,
+    pub default_enable_code_execution: Option<bool>,
 
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
@@ -153,10 +153,10 @@ pub struct UserSettingsResponse {
     pub default_top_k: Option<i32>,
     pub default_seed: Option<i32>,
 
-    // Gemini-Specific Settings
-    pub default_gemini_thinking_budget: Option<i32>,
-    pub default_gemini_thinking_level: Option<String>,
-    pub default_gemini_enable_code_execution: Option<bool>,
+    // Thinking & Code Execution Settings
+    pub default_thinking_budget: Option<i32>,
+    pub default_thinking_level: Option<String>,
+    pub default_enable_code_execution: Option<bool>,
 
     // Context Management Settings
     pub default_context_total_token_limit: Option<i32>,
@@ -191,9 +191,9 @@ impl From<UserSettings> for UserSettingsResponse {
             default_top_p: settings.default_top_p,
             default_top_k: settings.default_top_k,
             default_seed: settings.default_seed,
-            default_gemini_thinking_budget: settings.default_gemini_thinking_budget,
-            default_gemini_thinking_level: settings.default_gemini_thinking_level,
-            default_gemini_enable_code_execution: settings.default_gemini_enable_code_execution,
+            default_thinking_budget: settings.default_thinking_budget,
+            default_thinking_level: settings.default_thinking_level,
+            default_enable_code_execution: settings.default_enable_code_execution,
             default_context_total_token_limit: settings.default_context_total_token_limit,
             default_context_recent_history_budget: settings.default_context_recent_history_budget,
             default_context_rag_budget: settings.default_context_rag_budget,

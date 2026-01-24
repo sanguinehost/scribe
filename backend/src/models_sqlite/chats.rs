@@ -118,8 +118,8 @@ pub type SettingsTuple = (
     i32,                                        // history_management_limit
     String,                                     // model_name
     // -- Gemini Specific Options --
-    Option<i32>,  // gemini_thinking_budget
-    Option<bool>, // gemini_enable_code_execution
+    Option<i32>,  // thinking_budget
+    Option<bool>, // enable_code_execution
     // -- Chronicle Support --
     Option<crate::db::DbId>, // player_chronicle_id
     // -- Agent Mode --
@@ -152,9 +152,9 @@ pub struct Chat {
     pub history_management_strategy: String,                       // 17
     pub history_management_limit: i32,                             // 18
     pub model_name: String,                                        // 19
-    pub gemini_thinking_budget: Option<i32>,                       // 20
-    pub gemini_thinking_level: Option<String>,                     // 21 - ADDED
-    pub gemini_enable_code_execution: Option<bool>,                // 22 - MOVED
+    pub thinking_budget: Option<i32>,                              // 20
+    pub thinking_level: Option<String>,                            // 21 - ADDED
+    pub enable_code_execution: Option<bool>,                       // 22 - MOVED
     pub visibility: Option<String>,                                // 23
     pub active_custom_persona_id: Option<crate::db::DbId>,         // 24
     pub active_impersonated_character_id: Option<crate::db::DbId>, // 25
@@ -233,11 +233,9 @@ impl std::fmt::Debug for Chat {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("thinking_level", &self.thinking_level)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field("visibility", &self.visibility)
             // Add new fields to Debug output
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -300,9 +298,9 @@ pub struct NewChat {
     pub seed: Option<i32>,
     pub logit_bias: Option<String>,
     pub stop_sequences: crate::models::OptionalStringArray,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_thinking_level: Option<String>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub thinking_level: Option<String>,
+    pub enable_code_execution: Option<bool>,
     pub system_prompt_ciphertext: Option<Vec<u8>>,
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub player_chronicle_id: Option<crate::db::DbId>,
@@ -357,9 +355,9 @@ impl Default for NewChat {
             seed: None,
             logit_bias: None,
             stop_sequences: crate::models::OptionalStringArray(None),
-            gemini_thinking_budget: None,
-            gemini_thinking_level: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            thinking_level: None,
+            enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
@@ -446,11 +444,8 @@ impl std::fmt::Debug for NewChat {
             .field("top_p", &self.top_p)
             .field("seed", &self.seed)
             .field("stop_sequences", &self.stop_sequences)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field(
                 "system_prompt_ciphertext",
                 &self
@@ -493,7 +488,7 @@ impl std::fmt::Debug for NewChat {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, AsExpression, FromSqlRow,
 )]
-#[diesel(sql_type = crate::schema::sql_types::MessageType)]
+#[diesel(sql_type = diesel::sql_types::Text)]
 pub enum MessageRole {
     #[default]
     User,
@@ -2349,8 +2344,8 @@ pub struct ChatForClient {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: Option<String>,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
@@ -2362,7 +2357,7 @@ pub struct ChatForClient {
     pub total_actual_cost: f64, // Raw API cost in dollars
     pub game_master_mode_enabled: bool,
     pub game_state: Option<serde_json::Value>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -2488,8 +2483,8 @@ impl Chat {
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
-            gemini_thinking_budget: self.gemini_thinking_budget,
-            gemini_enable_code_execution: self.gemini_enable_code_execution,
+            thinking_budget: self.thinking_budget,
+            enable_code_execution: self.enable_code_execution,
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
@@ -2512,7 +2507,7 @@ impl Chat {
                 );
                 parsed
             },
-            gemini_thinking_level: self.gemini_thinking_level,
+            thinking_level: self.thinking_level,
             rag_chronicles_limit: self.rag_chronicles_limit,
             rag_lorebooks_limit: self.rag_lorebooks_limit,
             rag_older_chat_limit: self.rag_older_chat_limit,
@@ -2649,8 +2644,8 @@ pub struct ChatSettingsResponse {
     // Model Name
     pub model_name: Option<String>,
     // Gemini-specific options
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<crate::db::DbId>,
     // Agent mode for context enrichment
@@ -2661,7 +2656,7 @@ pub struct ChatSettingsResponse {
     pub prompt_template_id: Option<String>,
     // Game Master mode enabled
     pub game_master_mode_enabled: Option<bool>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -2689,11 +2684,8 @@ impl std::fmt::Debug for ChatSettingsResponse {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field("chronicle_id", &self.chronicle_id)
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -2721,14 +2713,14 @@ impl From<Chat> for ChatSettingsResponse {
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
             model_name: Some(chat.model_name),
-            gemini_thinking_budget: chat.gemini_thinking_budget,
-            gemini_enable_code_execution: chat.gemini_enable_code_execution,
+            thinking_budget: chat.thinking_budget,
+            enable_code_execution: chat.enable_code_execution,
             chronicle_id: chat.player_chronicle_id,
             agent_mode: chat.agent_mode,
             active_custom_persona_id: chat.active_custom_persona_id,
             prompt_template_id: Some(chat.prompt_template_id),
             game_master_mode_enabled: Some(chat.game_master_mode_enabled),
-            gemini_thinking_level: chat.gemini_thinking_level,
+            thinking_level: chat.thinking_level,
             rag_chronicles_limit: chat.rag_chronicles_limit,
             rag_lorebooks_limit: chat.rag_lorebooks_limit,
             rag_older_chat_limit: chat.rag_older_chat_limit,
@@ -2771,9 +2763,9 @@ pub struct UpdateChatSettingsRequest {
     // Model Provider (local, gemini, etc.)
     pub model_provider: Option<String>,
     // Gemini-specific options
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_enable_code_execution: Option<bool>,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
+    pub thinking_level: Option<String>,
 
     // Chronicle association
     pub chronicle_id: Option<crate::db::DbId>,
@@ -2819,11 +2811,8 @@ impl std::fmt::Debug for UpdateChatSettingsRequest {
             )
             .field("history_management_limit", &self.history_management_limit)
             .field("model_name", &self.model_name)
-            .field("gemini_thinking_budget", &self.gemini_thinking_budget)
-            .field(
-                "gemini_enable_code_execution",
-                &self.gemini_enable_code_execution,
-            )
+            .field("thinking_budget", &self.thinking_budget)
+            .field("enable_code_execution", &self.enable_code_execution)
             .field("chronicle_id", &self.chronicle_id)
             .field("agent_mode", &self.agent_mode)
             .field("active_custom_persona_id", &self.active_custom_persona_id)
@@ -3305,8 +3294,8 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash".to_string(),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             estimated_cost_cents: 0,
             prompt_template_id: "default".to_string(),
             tokens_counted_at: Utc::now().into(),
@@ -3327,7 +3316,7 @@ mod tests {
             narrative_style_override_nonce: None,
             game_state: None,
             game_master_mode_enabled: false,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -3577,14 +3566,14 @@ mod tests {
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: Some("gemini-2.5-flash".to_string()),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: Some("neutral_roleplay".to_string()),
             game_master_mode_enabled: false,
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -4130,7 +4119,7 @@ pub struct ChatListQuery {
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
     pub model_name: String,
-    pub gemini_thinking_level: Option<String>,
+    pub thinking_level: Option<String>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
@@ -4243,8 +4232,8 @@ impl ChatListQuery {
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
@@ -4256,7 +4245,7 @@ impl ChatListQuery {
             total_actual_cost: 0.0,
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state.map(|s| serde_json::Value::String(s)),
-            gemini_thinking_level: self.gemini_thinking_level,
+            thinking_level: self.thinking_level,
             rag_chronicles_limit: self.rag_chronicles_limit,
             rag_lorebooks_limit: self.rag_lorebooks_limit,
             rag_older_chat_limit: self.rag_older_chat_limit,
@@ -4291,9 +4280,9 @@ pub struct ChatSessionQuery {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: String,
-    pub gemini_thinking_budget: Option<i32>,
-    pub gemini_thinking_level: Option<String>,
-    pub gemini_enable_code_execution: Option<bool>,
+    pub thinking_budget: Option<i32>,
+    pub thinking_level: Option<String>,
+    pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
@@ -4411,8 +4400,8 @@ impl ChatSessionQuery {
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
-            gemini_thinking_budget: self.gemini_thinking_budget,
-            gemini_enable_code_execution: self.gemini_enable_code_execution,
+            thinking_budget: self.thinking_budget,
+            enable_code_execution: self.enable_code_execution,
             visibility: self.visibility,
             active_custom_persona_id: self.active_custom_persona_id,
             active_impersonated_character_id: self.active_impersonated_character_id,
@@ -4424,7 +4413,7 @@ impl ChatSessionQuery {
             total_actual_cost: self.total_actual_cost.0.to_f64().unwrap_or(0.0),
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state.map(|s| serde_json::Value::String(s)),
-            gemini_thinking_level: self.gemini_thinking_level,
+            thinking_level: self.thinking_level,
             rag_chronicles_limit: self.rag_chronicles_limit,
             rag_lorebooks_limit: self.rag_lorebooks_limit,
             rag_older_chat_limit: self.rag_older_chat_limit,

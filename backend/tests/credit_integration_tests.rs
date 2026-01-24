@@ -98,14 +98,14 @@ mod credit_integration_tests {
 
                 // Create subscription
                 let new_sub = NewSubscription {
-                    id: Uuid::new_v4(),
-                    user_id,
+                    id: Uuid::new_v4().into(),
+                    user_id: user_id.into(),
                     plan_type: "basic".to_string(),
                     paddle_subscription_id: Some("test_sub_123".to_string()),
                     paddle_customer_id: Some("test_customer_123".to_string()),
                     status: "active".to_string(),
-                    current_period_start: Utc::now(),
-                    current_period_end: Utc::now() + Duration::days(30),
+                    current_period_start: Utc::now().into(),
+                    current_period_end: (Utc::now() + Duration::days(30)).into(),
                     cancel_at_period_end: Some(false),
                     trial_end: None,
                     credits_allocated_this_period: Some(false),
@@ -137,8 +137,8 @@ mod credit_integration_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let credit_service = CreditService::new(config_clone);
-            credit_service.initialize_user_credits(conn, user_id)?;
-            credit_service.grant_monthly_credits(conn, user_id, "basic")
+            credit_service.initialize_user_credits(conn, user_id.into())?;
+            credit_service.grant_monthly_credits(conn, user_id.into(), "basic")
         })
         .await
         .expect("Failed to interact")
@@ -150,7 +150,7 @@ mod credit_integration_tests {
         let balance = conn
             .interact(move |conn| {
                 let credit_service = CreditService::new(config_clone);
-                credit_service.get_balance(conn, user_id)
+                credit_service.get_balance(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -198,8 +198,8 @@ mod credit_integration_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let credit_service = CreditService::new(config_clone.clone());
-            credit_service.initialize_user_credits(conn, user_id)?;
-            credit_service.add_credits(conn, user_id, 1000, "test", "Setup", None, None)
+            credit_service.initialize_user_credits(conn, user_id.into())?;
+            credit_service.add_credits(conn, user_id.into(), 1000, "test", "Setup", None, None)
         })
         .await
         .expect("Failed to interact")
@@ -212,7 +212,7 @@ mod credit_integration_tests {
             let usage = conn
                 .interact(move |conn| {
                     let soft_limit_service = SoftLimitService::new(config_clone);
-                    soft_limit_service.record_usage(conn, user_id, "gemini-2.5-flash", 1000)
+                    soft_limit_service.record_usage(conn, user_id.into(), "gemini-2.5-flash", 1000)
                 })
                 .await
                 .expect("Failed to interact")
@@ -238,10 +238,10 @@ mod credit_integration_tests {
                     let credit_service = CreditService::new(config_clone);
                     credit_service.deduct_credits(
                         conn,
-                        user_id,
+                        user_id.into(),
                         50,
                         "Gemini Pro usage",
-                        Some(json!({"model": "gemini-2.5-pro", "message": i})),
+                        Some(json!({"model": "gemini-2.5-pro", "message": i}).into()),
                     )
                 })
                 .await
@@ -256,7 +256,7 @@ mod credit_integration_tests {
         let balance = conn
             .interact(move |conn| {
                 let credit_service = CreditService::new(config_clone);
-                credit_service.get_balance(conn, user_id)
+                credit_service.get_balance(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -268,7 +268,7 @@ mod credit_integration_tests {
         let remaining = conn
             .interact(move |conn| {
                 let soft_limit_service = SoftLimitService::new(config_clone);
-                soft_limit_service.get_remaining_messages(conn, user_id)
+                soft_limit_service.get_remaining_messages(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -320,7 +320,7 @@ mod credit_integration_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let credit_service = CreditService::new(config_clone);
-            credit_service.initialize_user_credits(conn, user_id)
+            credit_service.initialize_user_credits(conn, user_id.into())
         })
         .await
         .expect("Failed to interact")
@@ -334,7 +334,7 @@ mod credit_integration_tests {
                 let credit_service = CreditService::new(config_clone);
                 credit_service.process_credit_purchase(
                     conn,
-                    user_id,
+                    user_id.into(),
                     &package.package_id,
                     "trans_test_123",
                 )
@@ -369,7 +369,7 @@ mod credit_integration_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         conn.interact(move |conn| {
             let credit_service = CreditService::new(config_clone.clone());
-            credit_service.initialize_user_credits(conn, user_id)?;
+            credit_service.initialize_user_credits(conn, user_id.into())?;
             // Create a package and process purchase
             let package_id = "initial_pack";
             diesel::sql_query(
@@ -385,7 +385,12 @@ mod credit_integration_tests {
             .bind::<diesel::sql_types::Bool, _>(true)
             .execute(conn)?;
 
-            credit_service.process_credit_purchase(conn, user_id, package_id, "trans_initial")
+            credit_service.process_credit_purchase(
+                conn,
+                user_id.into(),
+                package_id,
+                "trans_initial",
+            )
         })
         .await
         .expect("Failed to interact")
@@ -397,7 +402,7 @@ mod credit_integration_tests {
         let balance = conn
             .interact(move |conn| {
                 let credit_service = CreditService::new(config_clone);
-                credit_service.grant_monthly_credits(conn, user_id, "premium")
+                credit_service.grant_monthly_credits(conn, user_id.into(), "premium")
             })
             .await
             .expect("Failed to interact")
@@ -415,7 +420,7 @@ mod credit_integration_tests {
         let balance2 = conn
             .interact(move |conn| {
                 let credit_service = CreditService::new(config_clone);
-                credit_service.grant_monthly_credits(conn, user_id, "premium")
+                credit_service.grant_monthly_credits(conn, user_id.into(), "premium")
             })
             .await
             .expect("Failed to interact")

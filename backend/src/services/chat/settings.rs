@@ -80,8 +80,8 @@ struct ChatSessionUpdateBuilder {
     history_management_limit: DatabaseUpdate<i32>,
     model_name: DatabaseUpdate<String>,
     model_provider: DatabaseUpdate<String>,
-    gemini_thinking_budget: DatabaseUpdate<i32>,
-    gemini_enable_code_execution: DatabaseUpdate<bool>,
+    thinking_budget: DatabaseUpdate<i32>,
+    enable_code_execution: DatabaseUpdate<bool>,
     player_chronicle_id: DatabaseUpdate<Option<crate::db::DbId>>,
     agent_mode: DatabaseUpdate<String>,
     active_custom_persona_id: DatabaseUpdate<Option<crate::db::DbId>>,
@@ -145,11 +145,11 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
-            gemini_thinking_budget: match self.gemini_thinking_budget {
+            thinking_budget: match self.thinking_budget {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
-            gemini_enable_code_execution: match self.gemini_enable_code_execution {
+            enable_code_execution: match self.enable_code_execution {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
@@ -199,8 +199,8 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.history_management_limit, DatabaseUpdate::NoChange)
             || !matches!(self.model_name, DatabaseUpdate::NoChange)
             || !matches!(self.model_provider, DatabaseUpdate::NoChange)
-            || !matches!(self.gemini_thinking_budget, DatabaseUpdate::NoChange)
-            || !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
+            || !matches!(self.thinking_budget, DatabaseUpdate::NoChange)
+            || !matches!(self.enable_code_execution, DatabaseUpdate::NoChange)
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
             || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
             || !matches!(self.active_custom_persona_id, DatabaseUpdate::NoChange)
@@ -232,8 +232,8 @@ struct ChatSessionUpdateChangeset {
     history_management_limit: Option<i32>,
     model_name: Option<String>,
     model_provider: Option<String>,
-    gemini_thinking_budget: Option<i32>,
-    gemini_enable_code_execution: Option<bool>,
+    thinking_budget: Option<i32>,
+    enable_code_execution: Option<bool>,
     player_chronicle_id: Option<Option<crate::db::DbId>>,
     agent_mode: Option<String>,
     active_custom_persona_id: Option<Option<crate::db::DbId>>,
@@ -402,8 +402,8 @@ pub async fn get_session_settings(
         let settings_part4 = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
-                chat_sessions::gemini_thinking_budget,
-                chat_sessions::gemini_enable_code_execution,
+                chat_sessions::thinking_budget,
+                chat_sessions::enable_code_execution,
                 chat_sessions::player_chronicle_id,
                 chat_sessions::agent_mode,
             ))
@@ -472,7 +472,7 @@ pub async fn get_session_settings(
                 chat_sessions::min_p,
                 chat_sessions::top_a,
                 chat_sessions::logit_bias,
-                chat_sessions::gemini_thinking_level,
+                chat_sessions::thinking_level,
                 chat_sessions::rag_chronicles_limit,
                 chat_sessions::rag_lorebooks_limit,
                 chat_sessions::rag_older_chat_limit,
@@ -515,8 +515,8 @@ pub async fn get_session_settings(
         ) = settings_part3;
 
         let (
-            gemini_thinking_budget,
-            gemini_enable_code_execution,
+            thinking_budget,
+            enable_code_execution,
             player_chronicle_id,
             agent_mode,
         ) = settings_part4;
@@ -552,8 +552,8 @@ pub async fn get_session_settings(
             history_management_strategy,
             history_management_limit,
             model_name: Some(model_name),
-            gemini_thinking_budget,
-            gemini_enable_code_execution,
+            thinking_budget,
+            enable_code_execution,
             chronicle_id: player_chronicle_id,
             agent_mode,
             active_custom_persona_id,
@@ -563,7 +563,7 @@ pub async fn get_session_settings(
             min_p,
             top_a,
             logit_bias,
-            gemini_thinking_level,
+            thinking_level: gemini_thinking_level,
             rag_chronicles_limit,
             rag_lorebooks_limit,
             rag_older_chat_limit,
@@ -670,11 +670,11 @@ fn apply_payload_to_builder(
     if let Some(provider) = payload.model_provider {
         update_builder.model_provider = DatabaseUpdate::SetValue(provider);
     }
-    if let Some(gem_budget) = payload.gemini_thinking_budget {
-        update_builder.gemini_thinking_budget = DatabaseUpdate::SetValue(gem_budget);
+    if let Some(gem_budget) = payload.thinking_budget {
+        update_builder.thinking_budget = DatabaseUpdate::SetValue(gem_budget);
     }
-    if let Some(gem_exec) = payload.gemini_enable_code_execution {
-        update_builder.gemini_enable_code_execution = DatabaseUpdate::SetValue(gem_exec);
+    if let Some(gem_exec) = payload.enable_code_execution {
+        update_builder.enable_code_execution = DatabaseUpdate::SetValue(gem_exec);
     }
     // Chronicle ID handling
     if let Some(chronicle_id) = payload.chronicle_id {

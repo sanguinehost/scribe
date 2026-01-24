@@ -145,10 +145,10 @@ async fn test_save_message_with_game_time() {
 
     // 4. Verify game_time is stored
     assert!(
-        saved_message.game_time.is_some(),
+        saved_message.0.game_time.is_some(),
         "Game time should be stored"
     );
-    let stored_game_time = saved_message.game_time.unwrap();
+    let stored_game_time = saved_message.0.game_time.unwrap();
 
     // Handle both Json wrapper and direct Value depending on backend
     let stored_value = stored_game_time.0;

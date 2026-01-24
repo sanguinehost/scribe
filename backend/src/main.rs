@@ -57,7 +57,7 @@ use rcgen::generate_simple_self_signed;
 use rustls::crypto::ring;
 use scribe_backend::config::Config; // Import Config instead
                                     // use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
-use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
+use scribe_backend::llm::cloud_embedding_client::build_cloud_embedding_client; // Add this
 use scribe_backend::services::ai_client_factory::AiClientFactory;
 use scribe_backend::services::character_service::CharacterService;
 use scribe_backend::services::chat_override_service::ChatOverrideService;
@@ -66,10 +66,10 @@ use scribe_backend::services::embeddings::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
 use scribe_backend::services::encryption_service::EncryptionService;
-use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
 use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
 use scribe_backend::services::lorebook::LorebookService;
 use scribe_backend::services::narrative_intelligence_service::NarrativeIntelligenceService;
+use scribe_backend::services::token_client::TokenClient; // Added
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
@@ -333,18 +333,17 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---
-    let embedding_client = build_gemini_embedding_client(config.clone())?;
+    let embedding_client = build_cloud_embedding_client(config.clone())?;
     let embedding_client_arc = Arc::new(embedding_client);
 
     // --- Initialize Tokenizer Service ---
     let tokenizer_service = setup_tokenizer_service(config)?;
 
-    // --- Initialize Gemini Token Client (Optional) ---
-    let gemini_token_client = setup_gemini_token_client(config);
+    // --- Initialize Token Client (Optional) ---
+    let token_client = setup_token_client(config);
 
     // --- Initialize Hybrid Token Counter ---
-    let hybrid_token_counter =
-        setup_hybrid_token_counter(config, tokenizer_service, gemini_token_client);
+    let hybrid_token_counter = setup_hybrid_token_counter(config, tokenizer_service, token_client);
 
     // --- Initialize Services ---
     let encryption_service = Arc::new(EncryptionService::new());
@@ -593,28 +592,33 @@ fn resolve_tokenizer_model_path(config: &Config) -> PathBuf {
     final_tokenizer_model_path
 }
 
-// Setup Gemini token client
-fn setup_gemini_token_client(config: &Config) -> Option<GeminiTokenClient> {
-    config.gemini_api_key.as_ref().map_or_else(|| {
-        tracing::warn!("GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available.");
-        None
-    }, |api_key| {
-        tracing::info!("Initializing GeminiTokenClient for token counting...");
-        Some(GeminiTokenClient::new(api_key.clone()))
-    })
+// Setup token client
+fn setup_token_client(config: &Config) -> Option<TokenClient> {
+    config.gemini_api_key.as_ref().map_or_else(
+        || {
+            tracing::warn!(
+                "GEMINI_API_KEY not set, TokenClient for token counting will not be available."
+            );
+            None
+        },
+        |api_key| {
+            tracing::info!("Initializing TokenClient for token counting...");
+            Some(TokenClient::new(api_key.clone()))
+        },
+    )
 }
 
 // Setup hybrid token counter
 fn setup_hybrid_token_counter(
     config: &Config,
     tokenizer_service: TokenizerService,
-    gemini_token_client: Option<GeminiTokenClient>,
+    token_client: Option<TokenClient>,
 ) -> Arc<HybridTokenCounter> {
     tracing::info!("Initializing HybridTokenCounter...");
     let token_counter_default_model = config.token_counter_default_model.clone();
     let hybrid_token_counter = HybridTokenCounter::new(
         tokenizer_service,
-        gemini_token_client,
+        token_client,
         token_counter_default_model.clone(),
     );
     tracing::info!(

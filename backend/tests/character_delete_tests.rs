@@ -12,6 +12,7 @@ use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use reqwest::Client;
 use reqwest::StatusCode as ReqwestStatusCode;
 use scribe_backend::auth::session_dek::SessionDek;
+use scribe_backend::db::DbId;
 use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard};
 use scribe_backend::{
     crypto,
@@ -55,7 +56,7 @@ fn insert_test_user_with_password(
         id: Uuid::new_v4().into(),
         username: username.to_string(),
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,

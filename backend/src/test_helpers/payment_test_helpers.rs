@@ -76,7 +76,7 @@ pub mod payment_test_helpers {
             id: DbId::new(),
             username,
             password_hash,
-            email,
+            email: email,
             kek_salt,
             encrypted_dek: crate::DbBlob::from_bytes(encrypted_dek_bytes),
             dek_nonce: crate::DbBlob::from_bytes(dek_nonce_bytes),

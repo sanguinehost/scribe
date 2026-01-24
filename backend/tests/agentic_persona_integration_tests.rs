@@ -89,7 +89,7 @@ async fn create_test_user_with_persona(
         id: scribe_backend::db::DbId::new(),
         username: username.clone(),
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
@@ -402,9 +402,12 @@ async fn test_persona_context_missing_in_events() {
             user_id.into(),
             session_id.into(),
             Some(chronicle_id.into()),
+            None, // message_variant_id
             &messages,
             &session_dek,
-            None, // No persona context for this test
+            None, // persona_context
+            None, // game_state
+            None, // character_context
         )
         .await
         .expect("Workflow should complete");

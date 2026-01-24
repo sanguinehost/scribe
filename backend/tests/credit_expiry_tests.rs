@@ -107,7 +107,7 @@ mod credit_expiry_tests {
 
         // Initialize user credits
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        conn.interact(move |conn| service.initialize_user_credits(conn, user_id))
+        conn.interact(move |conn| service.initialize_user_credits(conn, user_id.into()))
             .await
             .expect("Failed to interact")
             .expect("Failed to initialize credits");
@@ -121,8 +121,8 @@ mod credit_expiry_tests {
             // Insert credit transaction with past expiry date
             diesel::insert_into(credit_transactions::table)
                 .values(&NewCreditTransaction {
-                    id: transaction_id,
-                    user_id,
+                    id: transaction_id.into(),
+                    user_id: user_id.into(),
                     amount: 1000,
                     balance_after: 1000,
                     transaction_type: "test_expired".to_string(),
@@ -131,8 +131,8 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Some(Utc::now() - Duration::days(30)),
-                    expires_at: Some(expired_date),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
+                    expires_at: Some(expired_date.into()),
                 })
                 .execute(conn)?;
 
@@ -155,10 +155,10 @@ mod credit_expiry_tests {
             .interact(move |conn| {
                 service.deduct_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     500,
                     "test_deduction",
-                    Some(serde_json::json!({})),
+                    Some(serde_json::json!({}).into()),
                 )
             })
             .await
@@ -208,7 +208,7 @@ mod credit_expiry_tests {
 
         // Initialize user credits
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        conn.interact(move |conn| service.initialize_user_credits(conn, user_id))
+        conn.interact(move |conn| service.initialize_user_credits(conn, user_id.into()))
             .await
             .expect("Failed to interact")
             .expect("Failed to initialize credits");
@@ -219,8 +219,8 @@ mod credit_expiry_tests {
         conn.interact(move |conn| {
             diesel::insert_into(credit_transactions::table)
                 .values(&NewCreditTransaction {
-                    id: Uuid::new_v4(),
-                    user_id,
+                    id: Uuid::new_v4().into(),
+                    user_id: user_id.into(),
                     amount: 1000,
                     balance_after: 1000,
                     transaction_type: "expired_credits".to_string(),
@@ -229,8 +229,8 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Some(Utc::now() - Duration::days(30)),
-                    expires_at: Some(expired_date),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
+                    expires_at: Some(expired_date.into()),
                 })
                 .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
@@ -245,8 +245,8 @@ mod credit_expiry_tests {
         conn.interact(move |conn| {
             diesel::insert_into(credit_transactions::table)
                 .values(&NewCreditTransaction {
-                    id: Uuid::new_v4(),
-                    user_id,
+                    id: Uuid::new_v4().into(),
+                    user_id: user_id.into(),
                     amount: 500,
                     balance_after: 1500,
                     transaction_type: "active_credits".to_string(),
@@ -255,8 +255,8 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Some(Utc::now()),
-                    expires_at: Some(future_expiry),
+                    created_at: Some(Utc::now().into()),
+                    expires_at: Some(future_expiry.into()),
                 })
                 .execute(conn)?;
 
@@ -276,7 +276,7 @@ mod credit_expiry_tests {
         let service = CreditService::new(config.clone());
 
         let cleanup_result = conn
-            .interact(move |conn| service.cleanup_expired_credits(conn, Some(user_id)))
+            .interact(move |conn| service.cleanup_expired_credits(conn, Some(user_id.into())))
             .await
             .expect("Failed to interact")
             .expect("Cleanup should succeed");
@@ -344,7 +344,7 @@ mod credit_expiry_tests {
 
         // Initialize user credits
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        conn.interact(move |conn| service.initialize_user_credits(conn, user_id))
+        conn.interact(move |conn| service.initialize_user_credits(conn, user_id.into()))
             .await
             .expect("Failed to interact")
             .expect("Failed to initialize credits");
@@ -355,8 +355,8 @@ mod credit_expiry_tests {
         conn.interact(move |conn| {
             diesel::insert_into(credit_transactions::table)
                 .values(&NewCreditTransaction {
-                    id: Uuid::new_v4(),
-                    user_id,
+                    id: Uuid::new_v4().into(),
+                    user_id: user_id.into(),
                     amount: 500,
                     balance_after: 500,
                     transaction_type: "expired_purchase".to_string(),
@@ -365,8 +365,8 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Some(Utc::now() - Duration::days(30)),
-                    expires_at: Some(expired_date),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
+                    expires_at: Some(expired_date.into()),
                 })
                 .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
@@ -381,8 +381,8 @@ mod credit_expiry_tests {
         conn.interact(move |conn| {
             diesel::insert_into(credit_transactions::table)
                 .values(&NewCreditTransaction {
-                    id: Uuid::new_v4(),
-                    user_id,
+                    id: Uuid::new_v4().into(),
+                    user_id: user_id.into(),
                     amount: 9000,
                     balance_after: 9500,
                     transaction_type: "active_purchase".to_string(),
@@ -391,8 +391,8 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Some(Utc::now()),
-                    expires_at: Some(future_expiry),
+                    created_at: Some(Utc::now().into()),
+                    expires_at: Some(future_expiry.into()),
                 })
                 .execute(conn)?;
 
@@ -416,12 +416,12 @@ mod credit_expiry_tests {
             .interact(move |conn| {
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     1500,
                     "credit_purchase",
                     "Credit purchase - 1500 credits package",
                     Some("purchase_123".to_string()),
-                    Some(serde_json::json!({"package": "1500_credits"})),
+                    Some(serde_json::json!({"package": "1500_credits"}).into()),
                 )
             })
             .await
@@ -478,7 +478,7 @@ mod credit_expiry_tests {
 
         // Initialize user credits
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        conn.interact(move |conn| service.initialize_user_credits(conn, user_id))
+        conn.interact(move |conn| service.initialize_user_credits(conn, user_id.into()))
             .await
             .expect("Failed to interact")
             .expect("Failed to initialize credits");
@@ -491,8 +491,8 @@ mod credit_expiry_tests {
         conn.interact(move |conn| {
             diesel::insert_into(credit_transactions::table)
                 .values(&NewCreditTransaction {
-                    id: old_transaction_id,
-                    user_id,
+                    id: old_transaction_id.into(),
+                    user_id: user_id.into(),
                     amount: 1000,
                     balance_after: 1000,
                     transaction_type: "expiring_soon".to_string(),
@@ -501,8 +501,8 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Some(Utc::now() - Duration::days(364)),
-                    expires_at: Some(tomorrow),
+                    created_at: Some((Utc::now() - Duration::days(364)).into()),
+                    expires_at: Some(tomorrow.into()),
                 })
                 .execute(conn)?;
 
@@ -524,12 +524,14 @@ mod credit_expiry_tests {
             .interact(move |conn| {
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     5000,
                     "monthly_grant",
                     "Monthly credit grant - basic plan",
                     Some("monthly_grant_123".to_string()),
-                    Some(serde_json::json!({"plan": "basic"})),
+                    Some(scribe_backend::db::Json(
+                        serde_json::json!({"plan": "basic"}),
+                    )),
                 )
             })
             .await
@@ -610,7 +612,7 @@ mod credit_expiry_tests {
         // Run cleanup
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let cleanup_result = conn
-            .interact(move |conn| service.cleanup_expired_credits(conn, Some(user_id)))
+            .interact(move |conn| service.cleanup_expired_credits(conn, Some(user_id.into())))
             .await
             .expect("Failed to interact")
             .expect("Cleanup should succeed");

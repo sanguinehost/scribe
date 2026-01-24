@@ -255,12 +255,13 @@ mod agent_runner_conversation_tests {
             .process_narrative_event(
                 user_id,
                 chat_session_id,
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
-                None,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -409,12 +410,13 @@ mod agent_runner_conversation_tests {
             .process_narrative_event(
                 user_id,
                 chat_session_id.into(),
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
-                None,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -533,12 +535,13 @@ mod agent_runner_conversation_tests {
             .process_narrative_event(
                 user_id,
                 chat_session_id.into(),
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
-                None,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -666,11 +669,12 @@ mod agent_runner_duplicate_prevention_tests {
                 user_id,
                 first_session_id.into(),
                 Some(chronicle_id),
+                None, // message_variant_id
                 &messages,
                 &session_dek,
                 None, // persona_context
-                None,
-                None,
+                None, // game_state
+                None, // character_context
             )
             .await
             .expect("First narrative processing should succeed");
@@ -725,11 +729,12 @@ mod agent_runner_duplicate_prevention_tests {
                 user_id,
                 second_session_id.into(),
                 Some(chronicle_id),
+                None, // message_variant_id
                 &similar_messages,
                 &session_dek,
                 None, // persona_context
-                None,
-                None,
+                None, // game_state
+                None, // character_context
             )
             .await
             .expect("Second narrative processing should succeed");

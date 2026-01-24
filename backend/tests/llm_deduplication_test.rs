@@ -13,6 +13,7 @@ use scribe_backend::schema::{player_chronicles, users};
 use scribe_backend::services::chronicle_service::ChronicleService;
 use scribe_backend::test_helpers::{spawn_app, TestApp};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_llm_deduplication_solomon_example() {

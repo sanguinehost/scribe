@@ -62,9 +62,10 @@ pub struct ChronicleEvent {
     pub chronicle_id: crate::db::DbId,
     pub user_id: crate::db::DbId,
     pub event_type: String,
-    pub summary: String,                   // Plaintext fallback (legacy)
-    pub source: String,                    // Will be converted to/from EventSource
-    pub event_data: Option<crate::DbJson>, // Added to match schema
+    pub summary: String, // Plaintext fallback (legacy)
+    pub source: String,  // Will be converted to/from EventSource
+    #[cfg(feature = "sqlite-backend")]
+    pub event_data: Option<String>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
     #[serde(skip_serializing)]

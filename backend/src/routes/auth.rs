@@ -223,7 +223,7 @@ pub async fn register_handler(
             let response = AuthResponse {
                 user_id: user.id,
                 username: user.username,
-                email: user.email,
+                email: Some(user.email),
                 role: format!("{:?}", user.role),
                 recovery_key: user.recovery_phrase.clone(), // Get recovery phrase from the returned user
                 default_persona_id: user.default_persona_id,
@@ -390,7 +390,7 @@ pub async fn login_handler(
                 user: AuthResponse {
                     user_id: user.id,
                     username: user.username.clone(),
-                    email: user.email.clone(),
+                    email: Some(user.email.clone()),
                     role: format!("{:?}", user.role),
                     recovery_key: None, // Login response doesn't include recovery key
                     default_persona_id: user.default_persona_id,
@@ -620,7 +620,7 @@ pub async fn me_handler(auth: UnifiedAuth) -> Result<Response, AppError> {
         let response = AuthResponse {
             user_id: user.id,
             username: user.username,
-            email: user.email,
+            email: Some(user.email),
             role: format!("{:?}", user.role),
             recovery_key: None, // /me endpoint doesn't return recovery key
             default_persona_id: user.default_persona_id,
@@ -747,7 +747,7 @@ pub async fn get_session_handler(
         let user_response = AuthResponse {
             user_id: user.id,
             username: user.username.clone(), // Assuming User struct has these fields and they are cloneable
-            email: user.email.clone(),
+            email: Some(user.email.clone()),
             role: format!("{:?}", user.role), // Assuming role is an enum
             recovery_key: None, // Session response doesn't typically include recovery key
             default_persona_id: user.default_persona_id,
@@ -1265,7 +1265,7 @@ pub async fn desktop_setup_handler(
             user: AuthResponse {
                 user_id: user.id,
                 username: user.username,
-                email: user.email,
+                email: Some(user.email),
                 role: format!("{:?}", user.role),
                 recovery_key: None,
                 default_persona_id: user.default_persona_id,
@@ -1413,7 +1413,7 @@ pub async fn desktop_auto_login_handler(
         user: AuthResponse {
             user_id: user.id,
             username: user.username.clone(),
-            email: user.email.clone(),
+            email: Some(user.email.clone()),
             role: format!("{:?}", user.role),
             recovery_key: None,
             default_persona_id: user.default_persona_id,
@@ -1582,7 +1582,7 @@ pub async fn token_login_handler(
                 user: AuthResponse {
                     user_id: user.id,
                     username: user.username,
-                    email: user.email,
+                    email: Some(user.email),
                     role: format!("{:?}", user.role),
                     recovery_key: None,
                     default_persona_id: user.default_persona_id,

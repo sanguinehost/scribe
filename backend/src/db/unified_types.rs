@@ -190,6 +190,16 @@ impl FromSql<PgUuid, Pg> for DbId {
 }
 
 #[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Nullable<PgUuid>, Pg> for DbId {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let uuid = <Uuid as FromSql<PgUuid, Pg>>::from_sql(bytes)?;
+        Ok(Self(uuid))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
 impl ToSql<PgUuid, Pg> for DbId {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         <Uuid as ToSql<PgUuid, Pg>>::to_sql(&self.0, out)
@@ -578,6 +588,16 @@ impl FromSql<Timestamptz, Pg> for DbTimestamp {
 }
 
 #[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Nullable<Timestamptz>, Pg> for DbTimestamp {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let dt = <DateTime<Utc> as FromSql<Timestamptz, Pg>>::from_sql(bytes)?;
+        Ok(Self(dt))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
 impl ToSql<Timestamptz, Pg> for DbTimestamp {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         <DateTime<Utc> as ToSql<Timestamptz, Pg>>::to_sql(&self.0, out)
@@ -901,6 +921,16 @@ impl FromSql<Numeric, Pg> for DbDecimal {
 }
 
 #[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Nullable<Numeric>, Pg> for DbDecimal {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let bd = <BigDecimal as FromSql<Numeric, Pg>>::from_sql(bytes)?;
+        Ok(Self(bd))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
 impl ToSql<Numeric, Pg> for DbDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         <BigDecimal as ToSql<Numeric, Pg>>::to_sql(&self.0, out)
@@ -1202,6 +1232,16 @@ impl DbType for DbBlob {
 
 #[cfg(feature = "postgres-backend")]
 impl FromSql<Bytea, Pg> for DbBlob {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let vec = <Vec<u8> as FromSql<Bytea, Pg>>::from_sql(bytes)?;
+        Ok(Self(vec))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Nullable<Bytea>, Pg> for DbBlob {
     fn from_sql(
         bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {

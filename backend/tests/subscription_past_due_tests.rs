@@ -16,6 +16,7 @@ mod subscription_past_due_tests {
     use deadpool_diesel::Pool;
     use diesel::prelude::*;
     use reqwest::{Client, StatusCode};
+    use scribe_backend::db::{DbId, DbTimestamp};
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::subscriptions;
     use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
@@ -87,25 +88,25 @@ mod subscription_past_due_tests {
         let subscription_id = Uuid::new_v4();
         let period_end = Utc::now() - Duration::days(3); // 3 days overdue
         let subscription = NewSubscription {
-            id: subscription_id,
-            user_id,
+            id: subscription_id.into(),
+            user_id: user_id.into(),
             paddle_customer_id: Some("cus_test_past_due".to_string()),
             paddle_subscription_id: Some("sub_test_past_due".to_string()),
             plan_type: "premium".to_string(),
             status: "active".to_string(), // Still active, scheduler will mark as past_due
-            current_period_start: period_end - Duration::days(30),
-            current_period_end: period_end,
+            current_period_start: (period_end - Duration::days(30)).into(),
+            current_period_end: period_end.into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(true),
-            last_credit_grant: Some(Utc::now() - Duration::days(30)),
+            last_credit_grant: Some((Utc::now() - Duration::days(30)).into()),
             soft_limit_override: None,
             paddle_sync_attempted: false,
-            first_payment_date: Some(Utc::now() - Duration::days(60)),
+            first_payment_date: Some((Utc::now() - Duration::days(60)).into()),
             has_ever_paid: Some(true),
             cancellation_date: None,
             trial_start_date: None,
-            last_payment_date: Some(Utc::now() - Duration::days(30)),
+            last_payment_date: Some((Utc::now() - Duration::days(30)).into()),
             grace_period_end: None,
             scheduled_plan_change: None,
             scheduled_change_date: None,
@@ -179,25 +180,25 @@ mod subscription_past_due_tests {
         let subscription_id = Uuid::new_v4();
         let paddle_subscription_id = "sub_test_webhook_past_due";
         let subscription = NewSubscription {
-            id: subscription_id,
-            user_id,
+            id: subscription_id.into(),
+            user_id: user_id.into(),
             paddle_customer_id: Some("cus_test_webhook".to_string()),
             paddle_subscription_id: Some(paddle_subscription_id.to_string()),
             plan_type: "premium".to_string(),
             status: "active".to_string(),
-            current_period_start: Utc::now() - Duration::days(15),
-            current_period_end: Utc::now() + Duration::days(15),
+            current_period_start: (Utc::now() - Duration::days(15)).into(),
+            current_period_end: (Utc::now() + Duration::days(15)).into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(true),
-            last_credit_grant: Some(Utc::now() - Duration::days(15)),
+            last_credit_grant: Some((Utc::now() - Duration::days(15)).into()),
             soft_limit_override: None,
             paddle_sync_attempted: false,
-            first_payment_date: Some(Utc::now() - Duration::days(30)),
+            first_payment_date: Some((Utc::now() - Duration::days(30)).into()),
             has_ever_paid: Some(true),
             cancellation_date: None,
             trial_start_date: None,
-            last_payment_date: Some(Utc::now() - Duration::days(15)),
+            last_payment_date: Some((Utc::now() - Duration::days(15)).into()),
             grace_period_end: None,
             scheduled_plan_change: None,
             scheduled_change_date: None,
@@ -272,7 +273,7 @@ mod subscription_past_due_tests {
         let expected_min = Utc::now() + Duration::days(6); // Allow 1 day buffer
         let expected_max = Utc::now() + Duration::days(8);
 
-        assert!(grace_end > expected_min && grace_end < expected_max);
+        assert!(grace_end > expected_min.into() && grace_end < expected_max.into());
     }
 
     #[tokio::test]
@@ -291,26 +292,26 @@ mod subscription_past_due_tests {
         let subscription_id = Uuid::new_v4();
         let grace_end = Utc::now() + Duration::days(3); // 3 days remaining
         let subscription = NewSubscription {
-            id: subscription_id,
-            user_id,
+            id: subscription_id.into(),
+            user_id: user_id.into(),
             paddle_customer_id: Some("cus_test_grace".to_string()),
             paddle_subscription_id: Some("sub_test_grace".to_string()),
             plan_type: "premium".to_string(),
             status: "past_due".to_string(),
-            current_period_start: Utc::now() - Duration::days(35),
-            current_period_end: Utc::now() - Duration::days(5),
+            current_period_start: (Utc::now() - Duration::days(35)).into(),
+            current_period_end: (Utc::now() - Duration::days(5)).into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(true),
-            last_credit_grant: Some(Utc::now() - Duration::days(35)),
+            last_credit_grant: Some((Utc::now() - Duration::days(35)).into()),
             soft_limit_override: None,
             paddle_sync_attempted: false,
-            first_payment_date: Some(Utc::now() - Duration::days(60)),
+            first_payment_date: Some((Utc::now() - Duration::days(60)).into()),
             has_ever_paid: Some(true),
             cancellation_date: None,
             trial_start_date: None,
-            last_payment_date: Some(Utc::now() - Duration::days(35)),
-            grace_period_end: Some(grace_end),
+            last_payment_date: Some((Utc::now() - Duration::days(35)).into()),
+            grace_period_end: Some(grace_end.into()),
             scheduled_plan_change: None,
             scheduled_change_date: None,
         };
@@ -340,7 +341,7 @@ mod subscription_past_due_tests {
 
         assert_eq!(sub.status, "past_due");
         assert!(sub.grace_period_end.is_some());
-        assert!(sub.grace_period_end.unwrap() > Utc::now());
+        assert!(sub.grace_period_end.unwrap() > Utc::now().into());
 
         // In a real integration test, we would make an API request here
         // and verify it's allowed (the middleware checks grace_period_end > now)
@@ -360,26 +361,26 @@ mod subscription_past_due_tests {
         let subscription_id = Uuid::new_v4();
         let grace_end = Utc::now() - Duration::days(1); // Expired 1 day ago
         let subscription = NewSubscription {
-            id: subscription_id,
-            user_id,
+            id: subscription_id.into(),
+            user_id: user_id.into(),
             paddle_customer_id: Some("cus_test_expired".to_string()),
             paddle_subscription_id: Some("sub_test_expired".to_string()),
             plan_type: "premium".to_string(),
             status: "past_due".to_string(),
-            current_period_start: Utc::now() - Duration::days(40),
-            current_period_end: Utc::now() - Duration::days(10),
+            current_period_start: (Utc::now() - Duration::days(40)).into(),
+            current_period_end: (Utc::now() - Duration::days(10)).into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(true),
-            last_credit_grant: Some(Utc::now() - Duration::days(40)),
+            last_credit_grant: Some((Utc::now() - Duration::days(40)).into()),
             soft_limit_override: None,
             paddle_sync_attempted: false,
-            first_payment_date: Some(Utc::now() - Duration::days(60)),
+            first_payment_date: Some((Utc::now() - Duration::days(60)).into()),
             has_ever_paid: Some(true),
             cancellation_date: None,
             trial_start_date: None,
-            last_payment_date: Some(Utc::now() - Duration::days(40)),
-            grace_period_end: Some(grace_end),
+            last_payment_date: Some((Utc::now() - Duration::days(40)).into()),
+            grace_period_end: Some(grace_end.into()),
             scheduled_plan_change: None,
             scheduled_change_date: None,
         };
@@ -409,7 +410,7 @@ mod subscription_past_due_tests {
 
         assert_eq!(sub.status, "past_due");
         assert!(sub.grace_period_end.is_some());
-        assert!(sub.grace_period_end.unwrap() < Utc::now());
+        assert!(sub.grace_period_end.unwrap() < Utc::now().into());
 
         // In a real integration test, we would make an API request here
         // and verify it's blocked (the middleware checks grace_period_end > now)
@@ -430,26 +431,26 @@ mod subscription_past_due_tests {
         let paddle_subscription_id = "sub_test_payment_recovery";
         let grace_end = Utc::now() + Duration::days(4);
         let subscription = NewSubscription {
-            id: subscription_id,
-            user_id,
+            id: subscription_id.into(),
+            user_id: user_id.into(),
             paddle_customer_id: Some("cus_test_recovery".to_string()),
             paddle_subscription_id: Some(paddle_subscription_id.to_string()),
             plan_type: "premium".to_string(),
             status: "past_due".to_string(),
-            current_period_start: Utc::now() - Duration::days(35),
-            current_period_end: Utc::now() - Duration::days(5),
+            current_period_start: (Utc::now() - Duration::days(35)).into(),
+            current_period_end: (Utc::now() - Duration::days(5)).into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(true),
-            last_credit_grant: Some(Utc::now() - Duration::days(35)),
+            last_credit_grant: Some((Utc::now() - Duration::days(35)).into()),
             soft_limit_override: None,
             paddle_sync_attempted: false,
-            first_payment_date: Some(Utc::now() - Duration::days(60)),
+            first_payment_date: Some((Utc::now() - Duration::days(60)).into()),
             has_ever_paid: Some(true),
             cancellation_date: None,
             trial_start_date: None,
-            last_payment_date: Some(Utc::now() - Duration::days(35)),
-            grace_period_end: Some(grace_end),
+            last_payment_date: Some((Utc::now() - Duration::days(35)).into()),
+            grace_period_end: Some(grace_end.into()),
             scheduled_plan_change: None,
             scheduled_change_date: None,
         };
@@ -532,25 +533,25 @@ mod subscription_past_due_tests {
         let subscription_id = Uuid::new_v4();
         let period_end = Utc::now() - Duration::days(8); // 8 days overdue (beyond 7-day grace)
         let subscription = NewSubscription {
-            id: subscription_id,
-            user_id,
+            id: subscription_id.into(),
+            user_id: user_id.into(),
             paddle_customer_id: Some("cus_test_auto_cancel".to_string()),
             paddle_subscription_id: Some("sub_test_auto_cancel".to_string()),
             plan_type: "premium".to_string(),
             status: "active".to_string(),
-            current_period_start: period_end - Duration::days(30),
-            current_period_end: period_end,
+            current_period_start: (period_end - Duration::days(30)).into(),
+            current_period_end: period_end.into(),
             cancel_at_period_end: Some(false),
             trial_end: None,
             credits_allocated_this_period: Some(true),
-            last_credit_grant: Some(Utc::now() - Duration::days(30)),
+            last_credit_grant: Some((Utc::now() - Duration::days(30)).into()),
             soft_limit_override: None,
             paddle_sync_attempted: false,
-            first_payment_date: Some(Utc::now() - Duration::days(60)),
+            first_payment_date: Some((Utc::now() - Duration::days(60)).into()),
             has_ever_paid: Some(true),
             cancellation_date: None,
             trial_start_date: None,
-            last_payment_date: Some(Utc::now() - Duration::days(30)),
+            last_payment_date: Some((Utc::now() - Duration::days(30)).into()),
             grace_period_end: None,
             scheduled_plan_change: None,
             scheduled_change_date: None,

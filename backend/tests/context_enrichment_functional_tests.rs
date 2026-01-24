@@ -919,6 +919,7 @@ async fn test_context_enrichment_message_patterns() {
                 None,
                 None,
                 None,
+                None,
             )
             .await;
 

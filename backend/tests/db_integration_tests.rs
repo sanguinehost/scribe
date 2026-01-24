@@ -16,7 +16,7 @@ use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use dotenvy::dotenv;
 use reqwest::{header, Client, StatusCode};
 use scribe_backend::crypto; // For generate_salt
-use scribe_backend::db::DbBigInt;
+use scribe_backend::db::{DbBigInt, DbId};
 use scribe_backend::models::character_card::NewCharacter; // Keep NewCharacter import from card
 use scribe_backend::models::characters::Character; // Import canonical Character struct
 use scribe_backend::models::chats::{
@@ -248,7 +248,7 @@ impl TestDataGuard {
 
         // 1. Delete Chat Messages (depend on sessions)
         if !self.session_ids.is_empty() {
-            let session_ids_clone = self.session_ids.clone();
+            let session_ids_clone: Vec<Uuid> = self.session_ids.iter().map(|id| **id).collect();
             // Get connection first
             let conn = self
                 .pool
@@ -258,11 +258,9 @@ impl TestDataGuard {
             let delete_msgs_result = conn
                 .interact(move |conn_interaction| {
                     // Use conn_interaction from interact
-                    diesel::delete(
-                        chat_messages::table
-                            .filter(chat_messages::session_id.eq_any(session_ids_clone)),
-                    )
-                    .execute(conn_interaction) // Use conn_interaction
+                    diesel::delete(chat_messages::table)
+                        .filter(chat_messages::session_id.eq_any(session_ids_clone))
+                        .execute(conn_interaction) // Use conn_interaction
                 })
                 .await;
             match delete_msgs_result {
@@ -280,7 +278,7 @@ impl TestDataGuard {
 
         // 2. Delete Chat Sessions (depend on users/characters, messages deleted above)
         if !self.session_ids.is_empty() {
-            let session_ids_clone = self.session_ids.clone();
+            let session_ids_clone: Vec<Uuid> = self.session_ids.iter().map(|id| **id).collect();
             // Get connection first
             let conn = self
                 .pool
@@ -290,10 +288,9 @@ impl TestDataGuard {
             let delete_sessions_result = conn
                 .interact(move |conn_interaction| {
                     // Use conn_interaction from interact
-                    diesel::delete(
-                        chat_sessions::table.filter(chat_sessions::id.eq_any(session_ids_clone)),
-                    )
-                    .execute(conn_interaction) // Use conn_interaction
+                    diesel::delete(chat_sessions::table)
+                        .filter(chat_sessions::id.eq_any(session_ids_clone))
+                        .execute(conn_interaction) // Use conn_interaction
                 })
                 .await;
             match delete_sessions_result {
@@ -311,8 +308,8 @@ impl TestDataGuard {
 
         // 3. Delete Characters (depend on users)
         if !self.character_ids.is_empty() {
-            let ids = self.character_ids.clone(); // Clone IDs for the interact closure
-                                                  // Get connection first
+            let ids: Vec<Uuid> = self.character_ids.iter().map(|id| **id).collect(); // Clone IDs for the interact closure
+                                                                                     // Get connection first
             let conn = self
                 .pool
                 .get()
@@ -322,7 +319,8 @@ impl TestDataGuard {
                 .interact(move |conn_interaction| {
                     // Use conn_interaction from interact
                     // Force move
-                    diesel::delete(characters::table.filter(characters::id.eq_any(ids)))
+                    diesel::delete(characters::table)
+                        .filter(characters::id.eq_any(ids))
                         .execute(conn_interaction) // Execute uses the conn passed by interact
                 })
                 .await;
@@ -342,8 +340,8 @@ impl TestDataGuard {
 
         // 4. Delete Users (base dependency)
         if !self.user_ids.is_empty() {
-            let ids = self.user_ids.clone(); // Clone IDs for the interact closure
-                                             // Get connection first
+            let ids: Vec<Uuid> = self.user_ids.iter().map(|id| **id).collect(); // Clone IDs for the interact closure
+                                                                                // Get connection first
             let conn = self
                 .pool
                 .get()
@@ -353,7 +351,8 @@ impl TestDataGuard {
                 .interact(move |conn_interaction| {
                     // Use conn_interaction from interact
                     // Force move
-                    diesel::delete(users::table.filter(users::id.eq_any(ids)))
+                    diesel::delete(users::table)
+                        .filter(users::id.eq_any(ids))
                         .execute(conn_interaction) // Execute uses the conn passed by interact
                 })
                 .await; // await the interact future
@@ -499,7 +498,7 @@ fn insert_test_user_with_password(
         id: Uuid::new_v4().into(),
         username: username_param.to_string(),
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt: dummy_kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(dummy_encrypted_dek),
         encrypted_dek_by_recovery: None,
@@ -875,8 +874,8 @@ fn test_chat_session_insert_and_query() {
             top_p: None,
             seed: None,
             stop_sequences: scribe_backend::models::OptionalStringArray(None),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,

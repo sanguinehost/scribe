@@ -9,7 +9,7 @@ pub use qdrant_client::qdrant::{
     Condition, CreateCollection, CreateFieldIndexCollection, Distance, FieldCondition, FieldType,
     Filter, HnswConfigDiff, Match, OptimizersConfigDiff, PayloadIncludeSelector, PointId,
     PointStruct, ReadConsistency, ReadConsistencyType, ScoredPoint, UpdateCollection, Value,
-    VectorParams, VectorsConfig, WalConfigDiff, WithPayloadSelector,
+    VectorParams, Vectors, VectorsConfig, WalConfigDiff, WithPayloadSelector,
 };
 use qdrant_client::Qdrant;
 use std::collections::HashMap;
@@ -780,14 +780,7 @@ pub fn create_qdrant_point(
     // Convert UUID to string for PointId
     let point_id_str = id.to_string();
 
-    let vectors = qdrant_client::qdrant::Vectors {
-        vectors_options: Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(
-            qdrant_client::qdrant::Vector {
-                data: vector,
-                ..Default::default()
-            },
-        )),
-    };
+    let vectors = Vectors::from(vector);
 
     let point = PointStruct {
         id: Some(point_id_str.into()), // Convert String to Qdrant PointId
@@ -796,23 +789,10 @@ pub fn create_qdrant_point(
     };
 
     // Final sanity check before returning
-    if let Some(v) = &point.vectors {
-        if let Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(vec_data)) =
-            &v.vectors_options
-        {
-            if vec_data.data.is_empty() {
-                error!(
-                    "CRITICAL: PointStruct created with EMPTY vector! ID: {}",
-                    id
-                );
-            } else {
-                info!(
-                    "PointStruct created successfully with vector length: {} for ID: {}",
-                    vec_data.data.len(),
-                    id
-                );
-            }
-        }
+    if point.vectors.is_none() {
+        error!("CRITICAL: PointStruct created with NO vectors! ID: {}", id);
+    } else {
+        info!("PointStruct created successfully for ID: {}", id);
     }
 
     Ok(point)

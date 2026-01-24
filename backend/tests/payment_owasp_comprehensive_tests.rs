@@ -493,17 +493,19 @@ mod payment_owasp_comprehensive_tests {
                 let service = CreditService::new(config.clone());
 
                 // Initialize user credits
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
 
                 // Add credits - this should be logged
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     100,
                     "test_audit",
                     "Test credit addition for logging verification",
                     None,
-                    Some(json!({"test_field": "audit_test"})),
+                    Some(scribe_backend::db::Json(
+                        json!({"test_field": "audit_test"}),
+                    )),
                 )?;
 
                 Ok::<_, scribe_backend::errors::AppError>(())
@@ -590,19 +592,19 @@ mod payment_owasp_comprehensive_tests {
         let _result = conn
             .interact(move |conn| {
                 let service = CreditService::new(config.clone());
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     50,
                     "test_sensitive",
                     "Credit purchase via Paddle transaction",
                     None,
-                    Some(json!({
+                    Some(scribe_backend::db::Json(json!({
                         "paddle_transaction_id": "txn_paddle_sensitive_test_123",
                         "paddle_customer_id": "ctm_paddle_test_456",
                         "billing_address": "123 Secret St"
-                    })),
+                    }))),
                 )
             })
             .await

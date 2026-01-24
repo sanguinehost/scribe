@@ -24,7 +24,7 @@ use diesel::RunQueryDsl;
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHasher};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use scribe_backend::db::SqliteInteractExt;
+// use scribe_backend::db::SqliteInteractExt;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
@@ -69,7 +69,7 @@ async fn create_test_user_with_dek(
         id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -115,8 +115,8 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Utc::now().into(),
-        updated_at: Utc::now().into(),
+        created_at: Some(Utc::now().into()),
+        updated_at: Some(Utc::now().into()),
         ..Default::default()
     };
 
@@ -195,6 +195,7 @@ async fn create_test_message(
         crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
     let new_message = NewChatMessage {
+        rag_embedding_id: None,
         id: scribe_backend::db::DbId::new(),
         session_id,
         user_id,
@@ -274,9 +275,6 @@ async fn create_message_variant_with_raw_prompt(
         user_id,
         session_dek,
         None,
-        None,
-        Some("gemini-1.5-pro".to_string()),
-        Some(raw_prompt),
         None,
     )?;
 

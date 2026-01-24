@@ -37,7 +37,7 @@ impl From<User> for DefaultPersonaResponse {
         Self {
             id: user.id,
             username: user.username,
-            email: user.email,
+            email: user.email.clone(),
             default_persona_id: user.default_persona_id,
         }
     }
