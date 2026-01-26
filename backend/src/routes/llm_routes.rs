@@ -161,18 +161,18 @@ pub fn llm_router() -> Router<AppState> {
         use axum::routing::{delete, post}; // Add delete and post methods
         Router::new()
             .route("/info", get(get_llm_info))
-            .route("/models/download"(download_model))
+            .route("/models/download", post(download_model))
             .route("/models/{model_id}", delete(delete_model))
             .route("/models/{model_id}/activate", post(activate_model))
-            .route("/models/deactivate"(deactivate_model))
+            .route("/models/deactivate", post(deactivate_model))
             .route("/download/progress", get(download_progress_stream))
             .route("/download/status/{model_id}", get(get_download_status))
             .route("/recommendations", get(get_model_recommendations))
             .route("/recommendations/best", get(get_best_recommendation))
-            .route("/download/best"(download_best_model))
+            .route("/download/best", post(download_best_model))
             .route("/models/grouped", get(get_grouped_models))
             .route("/status", get(get_llm_status))
-            .route("/test"(test_llm))
+            .route("/test", post(test_llm))
             .route("/preferences", get(get_user_preferences))
             .route("/preferences", put(update_user_preferences))
             // Model capabilities endpoints
@@ -183,8 +183,8 @@ pub fn llm_router() -> Router<AppState> {
             )
             // Server management endpoints
             .route("/server/status", get(get_server_status))
-            .route("/server/restart"(restart_server))
-            .route("/server/shutdown"(shutdown_server))
+            .route("/server/restart", post(restart_server))
+            .route("/server/shutdown", post(shutdown_server))
             .route("/models/switch/{model_id}", post(switch_model))
             .route("/models/current", get(get_current_model))
     }
@@ -1118,31 +1118,22 @@ async fn test_llm(
     };
 
     // Create a simple chat request
-    use genai::chat::{ChatMessage, ChatRequest, ChatRole, MessageContent};
-    let chat_request = ChatRequest {
-        messages: vec![ChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::Text(request.prompt),
-            options: Default::default(),
-        }],
+    use crate::llm::RigCompletionRequest;
+    let rig_req = RigCompletionRequest {
+        model_name: request
+            .model_id
+            .clone()
+            .unwrap_or_else(|| "default".to_string()),
+        provider: "gemini".to_string(), // Default to gemini
+        prompt: request.prompt,
         ..Default::default()
     };
 
     let model_name = request.model_id.as_deref().unwrap_or("default");
-    match secure_client
-        .exec_chat(model_name, chat_request, None)
-        .await
-    {
+    match secure_client.completion(rig_req).await {
         Ok(response) => {
             let model_used = request.model_id.unwrap_or_else(|| "default".to_string());
-            let response_text = response
-                .contents
-                .first()
-                .and_then(|content| match content {
-                    MessageContent::Text(text) => Some(text.clone()),
-                    _ => None,
-                })
-                .unwrap_or_else(|| "No response content".to_string());
+            let response_text = response.content;
 
             info!(
                 "Secure LLM test completed successfully for user {}",

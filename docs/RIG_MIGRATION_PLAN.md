@@ -29,7 +29,7 @@
 
 ---
 
-## Phase 2: Cloud Provider Migration (Rig) [/]
+## Phase 2: Cloud Provider Migration (Rig) [x]
 
 ### Task 2.1: Unified Cloud Adapter Port [x]
 - [x] **Subtask:** Implement `RigProvider` (as `RigClient`)
@@ -41,15 +41,15 @@
     - Implement `Stream<Item = ScribeSseEvent>` for Rig's output.
     - **Test:** Verify real-time token streaming.
 
-### Task 2.2: LLM Abstraction & Naming Cleanup [/]
-- [ ] **Subtask:** Rename provider-specific variables in `generation.rs`
+### Task 2.2: LLM Abstraction & Naming Cleanup [x]
+- [x] **Subtask:** Rename provider-specific variables in `generation.rs`
     - `gemini_thinking_budget` -> `thinking_budget`
     - `gemini_thinking_level` -> `thinking_level`
     - `gemini_enable_code_execution` -> `enable_code_execution`
-- [ ] **Subtask:** Rename provider-specific services
+- [x] **Subtask:** Rename provider-specific services
     - `GeminiTokenClient` -> `TokenClient`
     - `GeminiEmbeddingClient` -> `CloudEmbeddingClient`
-- [ ] **Subtask:** Update API request/response types to be provider-agnostic.
+- [x] **Subtask:** Update API request/response types to be provider-agnostic.
 
 ---
 

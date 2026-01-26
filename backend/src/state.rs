@@ -3,7 +3,6 @@
 // Import AuthError enum
 // Removed AppError import as it's not directly used here
 use crate::config::Config; // Use Config instead
-                           // use genai::Client as GeminiApiClient; // Remove Gemini client for now
 use std::sync::Arc;
 // Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
 use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
@@ -72,8 +71,6 @@ pub struct AppState {
     pub pool: DbPool,
     // Change to Arc<Config> and make public
     pub config: Arc<Config>,
-    // Remove gemini_client field for now
-    // pub gemini_client: GeminiApiClient,
     // #[cfg(test)] // Remove cfg(test)
     // pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>, // Keep for now if other tests use it
     // Change to use the AiClient trait object

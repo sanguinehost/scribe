@@ -1,4 +1,5 @@
 // backend/src/auth/user_store.rs
+use async_trait::async_trait;
 
 use axum_login::{AuthnBackend, UserId};
 use std::collections::HashMap;
@@ -68,6 +69,7 @@ impl Backend {
     }
 }
 
+#[async_trait]
 impl AuthnBackend for Backend {
     type User = User;
     type Credentials = LoginPayload;

@@ -186,7 +186,7 @@ impl TokenClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
-            return Err(AppError::GeminiError(format!(
+            return Err(AppError::AiError(format!(
                 "Gemini API returned error {status}: {error_text}"
             )));
         }
@@ -277,7 +277,7 @@ impl TokenClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
-            return Err(AppError::GeminiError(format!(
+            return Err(AppError::AiError(format!(
                 "Gemini API returned error {status}: {error_text}"
             )));
         }
@@ -291,7 +291,7 @@ impl TokenClient {
         content_response.usage_metadata.map_or_else(
             || {
                 error!("Gemini API response did not include usage metadata");
-                Err(AppError::GeminiError(
+                Err(AppError::AiError(
                     "Gemini API response did not include usage metadata".to_string(),
                 ))
             },
@@ -361,7 +361,7 @@ impl TokenClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             error!("Gemini API returned error {}: {}", status, error_text);
-            return Err(AppError::GeminiError(format!(
+            return Err(AppError::AiError(format!(
                 "Gemini API returned error {status}: {error_text}"
             )));
         }

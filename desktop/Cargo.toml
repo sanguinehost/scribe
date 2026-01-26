@@ -30,7 +30,7 @@ tokio = { version = "1", features = ["full"] }
 
 # HTTP client for custom protocol handler (uses native-tls to avoid aws-lc-sys GCC issues)
 # CRITICAL FIX: Added "blocking" feature for synchronous health check
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "cookies", "blocking"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["rustls", "stream", "cookies", "blocking"] }
 
 # SSE (Server-Sent Events) parsing for streaming chat responses
 eventsource-stream = "0.2"

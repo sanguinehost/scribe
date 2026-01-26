@@ -15,16 +15,15 @@ use std::net::SocketAddr;
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
 use crate::llm::{
-    AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient, RigChatResponse,
-    RigCompletionRequest, RigStreamEvent,
+    AiClient, BatchEmbeddingContentRequest, EmbeddingClient, RigChatResponse, RigCompletionRequest,
+    RigStreamEvent,
 };
 use crate::services::embeddings::{
     metadata::{CognitiveFactMetadata, EntityMetadata, OpinionMetadata},
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
-use genai::chat::Usage; // Added ChunkConfig
-                        // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
+// Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
 use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
@@ -86,11 +85,7 @@ use diesel::RunQueryDsl;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
-use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
-use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd, ToolCall};
-use genai::ModelIden; // Import ModelIden directly
-                      // use http_body_util::BodyExt; // Removed unused import
+// use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -133,48 +128,30 @@ type BatchEmbeddingCalls = Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>
 type SearchParams = Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>;
 type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>;
 type ChatEventStream =
-    std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
+    std::sync::Arc<std::sync::Mutex<Option<Vec<Result<RigStreamEvent, AppError>>>>>;
 type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
 type FactResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, CognitiveFactMetadata)>, AppError>>>>;
 type OpinionResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, OpinionMetadata)>, AppError>>>>;
 
 #[derive(Clone)]
 pub struct MockAiClient {
-    // Add fields to store mock state, similar to previous mock impl
-    // These need Arc<Mutex<...>> for thread safety if mock is shared across awaits
-    last_request: std::sync::Arc<std::sync::Mutex<Option<ChatRequest>>>,
-    last_options: std::sync::Arc<std::sync::Mutex<Option<ChatOptions>>>,
-    response_to_return: std::sync::Arc<std::sync::Mutex<Result<ChatResponse, AppError>>>,
+    last_request: std::sync::Arc<std::sync::Mutex<Option<RigCompletionRequest>>>,
+    response_to_return: std::sync::Arc<std::sync::Mutex<Result<RigChatResponse, AppError>>>,
     stream_to_return: ChatEventStream,
-    // Field to capture the messages sent to the stream_chat method
-    last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
-    // model_name: String, // Removed unused
-    // provider_model_name: String, // Removed unused
-    // embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>, // Removed unused
-    // text_gen_response: Arc<Mutex<Result<String, AppError>>>, // Removed unused
+    last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<rig::message::Message>>>>,
 }
 
 impl MockAiClient {
     #[must_use]
     pub fn new() -> Self {
-        // Initialize fields with default values, using realistic token usage for testing
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            // Default to a simple OK response with realistic token counts
-            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
-                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from("Mock AI response"),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(RigChatResponse {
+                content: "Mock AI response".to_string(),
+                prompt_tokens: Some(20),
+                completion_tokens: Some(10),
+                total_tokens: Some(30),
                 reasoning_content: None,
-                usage: Usage {
-                    prompt_tokens: Some(20),     // Simulate ~20 tokens for prompt
-                    completion_tokens: Some(10), // Simulate ~10 tokens for completion
-                    total_tokens: Some(30),      // Total of prompt + completion
-                    prompt_tokens_details: None,
-                    completion_tokens_details: None,
-                },
-                captured_raw_body: None,
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -184,26 +161,17 @@ impl MockAiClient {
     /// Create a new MockAiClient with a specific response text
     #[must_use]
     pub fn new_with_response(response_text: String) -> Self {
-        // Estimate token count based on response text length (rough approximation: 1 token per 4 characters)
-        let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as i32).max(1);
-        let prompt_tokens = 15; // Default prompt token count
+        let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as u64).max(1);
+        let prompt_tokens = 15;
 
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
-                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from(response_text),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(RigChatResponse {
+                content: response_text,
+                prompt_tokens: Some(prompt_tokens),
+                completion_tokens: Some(completion_tokens),
+                total_tokens: Some(prompt_tokens + completion_tokens),
                 reasoning_content: None,
-                usage: Usage {
-                    prompt_tokens: Some(prompt_tokens),
-                    completion_tokens: Some(completion_tokens),
-                    total_tokens: Some(prompt_tokens + completion_tokens),
-                    prompt_tokens_details: None,
-                    completion_tokens_details: None,
-                },
-                captured_raw_body: None,
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -215,7 +183,6 @@ impl MockAiClient {
     pub fn new_with_error(error: AppError) -> Self {
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Err(error))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -229,30 +196,13 @@ impl MockAiClient {
     ///
     /// Panics if the mutex is poisoned
     #[must_use]
-    pub fn get_last_request(&self) -> Option<ChatRequest> {
-        // TODO: Implement mock logic
+    pub fn get_last_request(&self) -> Option<RigCompletionRequest> {
         self.last_request.lock().unwrap().clone()
     }
 
-    /// Gets the last options sent to the mock client
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned
-    #[must_use]
-    pub fn get_last_options(&self) -> Option<ChatOptions> {
-        // TODO: Implement mock logic
-        self.last_options.lock().unwrap().clone()
-    }
-
     // Method to retrieve the captured messages
-    /// Gets the last received messages from the mock client
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned
     #[must_use]
-    pub fn get_last_received_messages(&self) -> Option<Vec<genai::chat::ChatMessage>> {
+    pub fn get_last_received_messages(&self) -> Option<Vec<rig::message::Message>> {
         self.last_received_messages.lock().unwrap().clone()
     }
 
@@ -261,8 +211,7 @@ impl MockAiClient {
     /// # Panics
     ///
     /// Panics if the mutex lock is poisoned
-    pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
-        // TODO: Implement mock logic
+    pub fn set_response(&self, response: Result<RigChatResponse, AppError>) {
         *self.response_to_return.lock().unwrap() = response;
     }
 
@@ -271,8 +220,7 @@ impl MockAiClient {
     /// # Panics
     ///
     /// Panics if the mutex lock is poisoned
-    pub fn set_stream_response(&self, stream_items: Vec<Result<ChatStreamEvent, AppError>>) {
-        // TODO: Implement mock logic
+    pub fn set_stream_response(&self, stream_items: Vec<Result<RigStreamEvent, AppError>>) {
         *self.stream_to_return.lock().unwrap() = Some(stream_items);
     }
 }
@@ -286,109 +234,43 @@ impl Default for MockAiClient {
 // Basic trait implementation to satisfy AppState::new
 #[async_trait]
 impl AiClient for MockAiClient {
-    async fn exec_chat(
-        &self,
-        _model_name: &str,
-        request: ChatRequest,
-        config_override: Option<ChatOptions>,
-    ) -> Result<ChatResponse, AppError> {
-        *self.last_request.lock().unwrap() = Some(request.clone()); // Clone request
-        *self.last_options.lock().unwrap() = config_override;
-        // Capture messages for exec_chat as well, if needed, though stream_chat is primary for this task
-        *self.last_received_messages.lock().unwrap() = Some(request.messages);
-        // TODO: Implement proper mock logic using stored response
-        self.response_to_return.lock().unwrap().clone()
-        // unimplemented!("MockAiClient exec_chat not implemented")
-    }
-    async fn stream_chat(
-        &self,
-        _model_name: &str,
-        request: ChatRequest,
-        config_override: Option<ChatOptions>,
-    ) -> Result<ChatStream, AppError> {
-        *self.last_request.lock().unwrap() = Some(request.clone()); // Clone request before moving messages
-        *self.last_options.lock().unwrap() = config_override;
-        // Capture the incoming messages
-        *self.last_received_messages.lock().unwrap() = Some(request.messages);
-
-        // Manually reconstruct the stream items because ChatStreamEvent is not Clone
-        let items = {
-            let guard = self.stream_to_return.lock().unwrap();
-            (*guard).as_ref().map_or_else(Vec::new, |item_results| {
-                let mut new_items = Vec::with_capacity(item_results.len());
-                for item_result in item_results {
-                    match item_result {
-                        Ok(event) => {
-                            // Rebuild the event based on its type
-                            let new_event = match event {
-                                ChatStreamEvent::Chunk(chunk) => {
-                                    ChatStreamEvent::Chunk(genai::chat::StreamChunk {
-                                        content: chunk.content.clone(),
-                                    })
-                                }
-                                ChatStreamEvent::Start => ChatStreamEvent::Start,
-                                ChatStreamEvent::ReasoningChunk(chunk) => {
-                                    ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk {
-                                        content: chunk.content.clone(),
-                                    })
-                                }
-                                ChatStreamEvent::ToolCallChunk(tool_chunk) => {
-                                    // ToolCall now has thought_signature field
-                                    ChatStreamEvent::ToolCallChunk(genai::chat::ToolChunk {
-                                        tool_call: ToolCall {
-                                            call_id: tool_chunk.tool_call.call_id.clone(),
-                                            fn_name: tool_chunk.tool_call.fn_name.clone(),
-                                            fn_arguments: tool_chunk.tool_call.fn_arguments.clone(),
-                                            thought_signature: tool_chunk
-                                                .tool_call
-                                                .thought_signature
-                                                .clone(),
-                                        },
-                                    })
-                                }
-                                ChatStreamEvent::End(_) => {
-                                    ChatStreamEvent::End(StreamEnd::default())
-                                } // StreamEnd is not Clone, use Default
-                            };
-                            new_items.push(Ok(new_event));
-                        }
-                        Err(err) => {
-                            // Clone the error (assuming AppError is Clone)
-                            new_items.push(Err(err.clone()));
-                        }
-                    }
-                }
-                new_items
-            })
-        }; // Mutex guard is dropped here
-
-        let stream = futures::stream::iter(items);
-        Ok(Box::pin(stream) as ChatStream)
-    }
-
     async fn completion(
         &self,
-        _req: RigCompletionRequest,
+        req: RigCompletionRequest,
     ) -> Result<RigChatResponse, anyhow::Error> {
-        // TODO: Implement mock logic if needed
-        Err(anyhow::anyhow!(
-            "completion not implemented for MockAiClient"
-        ))
+        *self.last_request.lock().unwrap() = Some(req.clone());
+        *self.last_received_messages.lock().unwrap() = Some(req.history);
+        self.response_to_return
+            .lock()
+            .unwrap()
+            .clone()
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     async fn completion_stream(
         &self,
-        _req: RigCompletionRequest,
+        req: RigCompletionRequest,
     ) -> Result<
         std::pin::Pin<
             Box<dyn futures::Stream<Item = Result<RigStreamEvent, anyhow::Error>> + Send>,
         >,
         anyhow::Error,
     > {
-        // TODO: Implement mock logic if needed
-        Err(anyhow::anyhow!(
-            "completion_stream not implemented for MockAiClient"
-        ))
+        *self.last_request.lock().unwrap() = Some(req.clone());
+        *self.last_received_messages.lock().unwrap() = Some(req.history);
+
+        let items = {
+            let guard = self.stream_to_return.lock().unwrap();
+            (*guard).as_ref().map_or_else(Vec::new, |item_results| {
+                item_results
+                    .iter()
+                    .map(|res| res.clone().map_err(|e| anyhow::anyhow!(e)))
+                    .collect()
+            })
+        };
+
+        let stream = futures::stream::iter(items);
+        Ok(Box::pin(stream))
     }
 }
 
@@ -2058,7 +1940,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     ) = if use_real_ai {
         let api_key =
             std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-api-key".to_string());
-        let real_ai_client = crate::llm::rig_client::RigClient::new(Some(api_key));
+        let real_ai_client = crate::llm::rig_client::RigClient::new(Some(api_key), None);
         (Arc::new(real_ai_client), None)
     } else {
         let mock_client = Arc::new(MockAiClient::new());
@@ -3534,33 +3416,43 @@ pub fn assert_ai_history(
         .get_last_request()
         .expect("Mock AI client did not receive a request");
 
-    let mut history_start_index = 0;
-    if let Some(first_msg) = last_request.messages.first() {
-        if matches!(first_msg.role, genai::chat::ChatRole::System) {
-            history_start_index = 1;
-            debug!("[DEBUG] System prompt detected, starting history comparison from index 1.");
-        }
-    }
-    let history_end_index = last_request.messages.len().saturating_sub(1);
-    let history_start_index = history_start_index.min(history_end_index);
-    let history_sent_to_ai = &last_request.messages[history_start_index..history_end_index];
+    let history_sent_to_ai = &last_request.history;
 
-    println!(
-        "\n[DEBUG] All messages sent to AI client (including system prompt and current prompt):"
-    );
-    for (i, msg) in last_request.messages.iter().enumerate() {
-        let role_str = match msg.role {
-            genai::chat::ChatRole::User => "User",
-            genai::chat::ChatRole::Assistant => "Assistant",
-            genai::chat::ChatRole::System => "System",
-            genai::chat::ChatRole::Tool => "Tool",
+    println!("\n[DEBUG] All messages sent to AI client (excluding preamble and current prompt):");
+    if let Some(preamble) = &last_request.preamble {
+        println!("  [Preamble] System: {}", preamble);
+    }
+    for (i, msg) in history_sent_to_ai.iter().enumerate() {
+        let (role_str, content) = match msg {
+            rig::message::Message::User { content } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::UserContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("User", text)
+            }
+            rig::message::Message::Assistant { content, .. } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::AssistantContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("Assistant", text)
+            }
         };
-        let content = msg.content.first_text().unwrap_or("<non-text content>");
         println!("  [{i}] {role_str}: {content}");
     }
+    println!("  [Current] User: {}", last_request.prompt);
 
     println!(
-        "\n[DEBUG] Comparing {} expected messages against {} actual messages in history (excluding current prompt)",
+        "\n[DEBUG] Comparing {} expected messages against {} actual messages in history",
         expected_history.len(),
         history_sent_to_ai.len()
     );
@@ -3568,35 +3460,37 @@ pub fn assert_ai_history(
     assert_eq!(
         history_sent_to_ai.len(),
         expected_history.len(),
-        "Number of history messages sent to AI mismatch. Actual: {:?}, Expected: {:?}",
-        history_sent_to_ai
-            .iter()
-            .map(|m| (
-                format!("{:?}", m.role),
-                m.content.first_text().unwrap_or("").to_string()
-            ))
-            .collect::<Vec<_>>(),
-        expected_history
+        "Number of history messages sent to AI mismatch."
     );
 
     for (i, expected) in expected_history.iter().enumerate() {
         let actual = &history_sent_to_ai[i];
         let (expected_role_str, expected_content) = expected;
 
-        let actual_role_str = match actual.role {
-            genai::chat::ChatRole::User => "User",
-            genai::chat::ChatRole::Assistant => "Assistant",
-            genai::chat::ChatRole::System => "System",
-            genai::chat::ChatRole::Tool => {
-                panic!("Unexpected role in AI history: {:?}", actual.role)
+        let (actual_role_str, actual_content) = match actual {
+            rig::message::Message::User { content } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::UserContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("User", text)
+            }
+            rig::message::Message::Assistant { content, .. } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::AssistantContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("Assistant", text)
             }
         };
-        let actual_content = actual.content.first_text().unwrap_or_else(|| {
-            panic!(
-                "Expected text content in AI history, got: {:?}",
-                actual.content
-            )
-        });
 
         println!(
             "[DEBUG] Compare message {i}: Expected {expected_role_str}:'{expected_content}' vs Actual {actual_role_str}:'{actual_content}'"

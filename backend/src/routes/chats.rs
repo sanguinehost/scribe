@@ -33,7 +33,7 @@ use axum::{
     Json, Router,
 };
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
+use rig::message::Message as RigMessage;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
@@ -1422,28 +1422,31 @@ pub async fn create_message_handler(
                         _rag_token_budget,
                     ) = data;
 
-                    // 2. Convert history to GenAiChatMessage
-                    let mut incoming_genai_messages = Vec::new();
+                    // 2. Convert history to RigMessage
+                    let mut incoming_messages = Vec::new();
 
                     // Add history
                     if let Some(dek_arc) = &user_dek_for_gen {
                         for msg in managed_recent_history {
-                            let role = match msg.message_type {
-                                crate::services::chat::types::MessageRole::User => ChatRole::User,
+                            let _role = match msg.message_type {
+                                crate::services::chat::types::MessageRole::User => {
+                                    MessageRole::User
+                                }
                                 crate::services::chat::types::MessageRole::Assistant => {
-                                    ChatRole::Assistant
+                                    MessageRole::Assistant
                                 }
                                 crate::services::chat::types::MessageRole::System => {
-                                    ChatRole::System
+                                    MessageRole::System
                                 }
                             };
 
                             match msg.decrypt_content_field(&dek_arc) {
                                 Ok(content) => {
-                                    incoming_genai_messages.push(GenAiChatMessage {
-                                        role,
-                                        content: genai::chat::MessageContent::from(content),
-                                        options: None,
+                                    incoming_messages.push(RigMessage::Assistant {
+                                        id: None,
+                                        content: rig::one_or_many::OneOrMany::one(
+                                            rig::message::AssistantContent::text(content),
+                                        ),
                                     });
                                 }
                                 Err(e) => {
@@ -1454,17 +1457,24 @@ pub async fn create_message_handler(
                     }
 
                     // Add the current user message
-                    let last_msg_content = incoming_genai_messages
-                        .last()
-                        .and_then(|m| m.content.first_text().map(|t| t.to_string()));
+                    let last_msg_content = incoming_messages.last().and_then(|m| match m {
+                        RigMessage::User { content } => content.iter().find_map(|c| match c {
+                            rig::message::UserContent::Text(t) => Some(t.text.clone()),
+                            _ => None,
+                        }),
+                        RigMessage::Assistant { content, .. } => {
+                            content.iter().find_map(|c| match c {
+                                rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                                _ => None,
+                            })
+                        }
+                    });
 
                     if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
-                        incoming_genai_messages.push(GenAiChatMessage {
-                            role: ChatRole::User,
-                            content: genai::chat::MessageContent::from(
-                                user_message_content_for_gen,
+                        incoming_messages.push(RigMessage::User {
+                            content: rig::one_or_many::OneOrMany::one(
+                                rig::message::UserContent::text(user_message_content_for_gen),
                             ),
-                            options: None,
                         });
                     }
 
@@ -1475,7 +1485,7 @@ pub async fn create_message_handler(
                             state: state_for_gen,
                             session_id: session_id_for_gen,
                             user_id: user_id_for_gen,
-                            incoming_genai_messages,
+                            history: incoming_messages,
                             system_prompt,
                             temperature,
                             max_output_tokens,

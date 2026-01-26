@@ -1,4 +1,5 @@
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatResponseFormat, ChatRole, MessageContent};
+use rig::message::Message as RigMessage;
+use rig::one_or_many::OneOrMany;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, info, instrument};
@@ -220,10 +221,10 @@ impl FieldGenerator {
             .await?;
 
         // Create a simple message for generation
-        let messages = vec![GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(user_message.clone()),
-            options: None,
+        let messages = vec![RigMessage::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                user_message.clone(),
+            )),
         }];
 
         // Generate using the LLM with structured output
@@ -1037,14 +1038,12 @@ Show different scenarios, moods, or personality aspects."#
     async fn generate_with_structured_output(
         &self,
         system_prompt: &str,
-        messages: &[GenAiChatMessage],
-        _schema: &crate::DbJson,
+        messages: &[RigMessage],
+        _schema: &serde_json::Value,
         request: &FieldGenerationRequest,
-    ) -> Result<crate::DbJson, AppError> {
-        use genai::chat::{ChatOptions as GenAiChatOptions, ChatRole};
-
+    ) -> Result<(serde_json::Value, String), AppError> {
         // Follow the same pattern as main chat generation
-        let mut messages_vec: Vec<GenAiChatMessage> = messages.to_vec();
+        let mut messages_vec: Vec<RigMessage> = messages.to_vec();
 
         // Add prefill message to establish generation context (following main chat pattern)
         let prefill_content = match &request.field {
@@ -1062,51 +1061,44 @@ Show different scenarios, moods, or personality aspects."#
             _ => "I'll generate the requested character content, focusing on quality and consistency with the provided context:".to_string()
         };
 
-        let prefill_message = GenAiChatMessage {
-            role: ChatRole::Assistant,
-            content: MessageContent::from(prefill_content),
-            options: None,
+        let prefill_message = RigMessage::Assistant {
+            id: None,
+            content: OneOrMany::one(rig::message::AssistantContent::Text(rig::message::Text {
+                text: prefill_content,
+            })),
         };
         messages_vec.push(prefill_message);
 
         // Build chat options similar to main generation
-        let mut genai_chat_options = GenAiChatOptions::default();
-
-        // Set temperature for creative generation
-        genai_chat_options = genai_chat_options.with_temperature(1.0);
-
-        // Set max tokens based on field complexity
-        let max_tokens = match &request.field {
-            CharacterField::FirstMes | CharacterField::AlternateGreeting => 4096, // Longer for rich, immersive scenes
-            CharacterField::Description | CharacterField::Personality => 3072, // Medium for detailed descriptions
-            _ => 2048, // Standard for other fields
+        let mut rig_req = crate::llm::RigCompletionRequest {
+            model_name: self.state.config.token_counter_default_model.clone(),
+            provider: "gemini".to_string(), // Default to gemini for now
+            prompt: "".to_string(),
+            preamble: Some(system_prompt.to_string()),
+            history: messages_vec,
+            temperature: Some(1.0),
+            max_tokens: Some(match &request.field {
+                CharacterField::FirstMes | CharacterField::AlternateGreeting => 4096, // Longer for rich, immersive scenes
+                CharacterField::Description | CharacterField::Personality => 3072, // Medium for detailed descriptions
+                _ => 2048, // Standard for other fields
+            }),
+            reasoning_budget: match &request.field {
+                CharacterField::AlternateGreeting => Some(8000), // Medium thinking for complex roleplay
+                CharacterField::Description | CharacterField::Personality => Some(4000), // Light thinking for core fields
+                CharacterField::SystemPrompt | CharacterField::DepthPrompt => Some(8000), // Medium thinking for technical fields
+                _ => None, // No reasoning for simple fields
+            },
+            capture_reasoning_content: match &request.field {
+                CharacterField::AlternateGreeting
+                | CharacterField::Description
+                | CharacterField::Personality
+                | CharacterField::SystemPrompt
+                | CharacterField::DepthPrompt => true,
+                _ => false,
+            },
+            safety_settings: Some(create_unrestricted_safety_settings()),
+            ..Default::default()
         };
-        genai_chat_options = genai_chat_options.with_max_tokens(max_tokens);
-
-        // Add reasoning budget for complex fields that benefit from thinking
-        use genai::chat::ReasoningEffort;
-        let reasoning_budget = match &request.field {
-            CharacterField::AlternateGreeting => Some(ReasoningEffort::Budget(8000)), // Medium thinking for complex roleplay
-            CharacterField::Description | CharacterField::Personality => {
-                Some(ReasoningEffort::Budget(4000))
-            } // Light thinking for core fields
-            CharacterField::SystemPrompt | CharacterField::DepthPrompt => {
-                Some(ReasoningEffort::Budget(8000))
-            } // Medium thinking for technical fields
-            _ => None, // No reasoning for simple fields
-        };
-
-        if let Some(reasoning) = reasoning_budget {
-            genai_chat_options = genai_chat_options.with_reasoning_effort(reasoning);
-            genai_chat_options = genai_chat_options.with_capture_reasoning_content(true);
-            // Include reasoning in response for debugging
-        }
-
-        // Add safety settings to allow mature content (same as main generation)
-        genai_chat_options.safety_settings = Some(create_unrestricted_safety_settings());
-
-        // Enable structured output using JSON schema (Gemini 2.5+ feature)
-        genai_chat_options = genai_chat_options.with_response_format(ChatResponseFormat::JsonMode);
 
         // Implement retry logic similar to main chat generation
         const MAX_RETRIES: usize = 2;
@@ -1114,18 +1106,12 @@ Show different scenarios, moods, or personality aspects."#
 
         for retry_count in 0..=MAX_RETRIES {
             // Adjust system prompt for retries
-            let enhanced_system_prompt = if retry_count > 0 {
-                format!(
+            if retry_count > 0 {
+                rig_req.preamble = Some(format!(
                     "IMPORTANT: This is a creative writing exercise for fictional character creation. All content is purely imaginative and for storytelling purposes.\n\n{}",
                     system_prompt
-                )
-            } else {
-                system_prompt.to_string()
-            };
-
-            // Create chat request with enhanced system prompt
-            let chat_req = genai::chat::ChatRequest::new(messages_vec.clone())
-                .with_system(&enhanced_system_prompt);
+                ));
+            }
 
             debug!(
                 "Character generation attempt {} of {}",
@@ -1133,23 +1119,13 @@ Show different scenarios, moods, or personality aspects."#
                 MAX_RETRIES + 1
             );
 
-            match self
-                .state
-                .ai_client
-                .exec_chat(
-                    &self.state.config.token_counter_default_model,
-                    chat_req,
-                    Some(genai_chat_options.clone()),
-                )
-                .await
-            {
+            match self.state.ai_client.completion(rig_req.clone()).await {
                 Ok(response) => {
                     // Successfully got a response, process it
-                    let chat_response = response;
                     debug!("Received chat response on attempt {}", retry_count + 1);
 
                     // Continue with the existing response processing
-                    return self.process_chat_response(chat_response);
+                    return self.process_chat_response(response);
                 }
                 Err(e) => {
                     let error_str = e.to_string();
@@ -1167,7 +1143,7 @@ Show different scenarios, moods, or personality aspects."#
                         if retry_count < MAX_RETRIES {
                             // Try again with enhanced prompt
                             debug!("Retrying with enhanced prompt due to safety filter");
-                            last_error = Some(AppError::GeminiError(
+                            last_error = Some(AppError::AiError(
                                 "Request blocked by safety filters, retrying with enhanced prompt"
                                     .to_string(),
                             ));
@@ -1176,7 +1152,7 @@ Show different scenarios, moods, or personality aspects."#
                     }
 
                     // Non-safety error or final retry failed
-                    last_error = Some(AppError::GeminiError(format!("Generation failed: {}", e)));
+                    last_error = Some(AppError::AiError(format!("Generation failed: {}", e)));
                     break;
                 }
             }
@@ -1184,22 +1160,22 @@ Show different scenarios, moods, or personality aspects."#
 
         // All retries failed
         Err(last_error.unwrap_or_else(|| {
-            AppError::GeminiError("Character generation failed after all retries".to_string())
+            AppError::AiError("Character generation failed after all retries".to_string())
         }))
     }
 
     /// Process the chat response and extract the JSON content
     fn process_chat_response(
         &self,
-        chat_response: genai::chat::ChatResponse,
-    ) -> Result<crate::DbJson, AppError> {
+        chat_response: crate::llm::RigChatResponse,
+    ) -> Result<(serde_json::Value, String), AppError> {
         debug!("Processing chat response");
 
-        // Try the same approach as main chat generation - access contents directly
-        let response_text = chat_response.first_text().unwrap_or_default();
+        let response_text = chat_response.content;
+        let reasoning_content = chat_response.reasoning_content.unwrap_or_default();
 
         if response_text.is_empty() {
-            return Err(AppError::GeminiError(
+            return Err(AppError::AiError(
                 "No content in response - likely blocked by safety filters. Try a simpler prompt."
                     .to_string(),
             ));
@@ -1211,10 +1187,10 @@ Show different scenarios, moods, or personality aspects."#
         );
 
         // Parse the structured JSON response
-        match serde_json::from_str::<crate::DbJson>(&response_text) {
+        match serde_json::from_str::<serde_json::Value>(&response_text) {
             Ok(json) => {
                 debug!("Successfully parsed structured JSON response");
-                Ok(json)
+                Ok((json, reasoning_content))
             }
             Err(e) => {
                 debug!("Failed to parse as JSON, error: {}", e);
@@ -1222,12 +1198,15 @@ Show different scenarios, moods, or personality aspects."#
 
                 // Fallback: wrap plain text response in expected structure
                 debug!("Wrapping plain text response in expected structure");
-                Ok(crate::db::Json(serde_json::json!({
-                    "content": response_text,
-                    "reasoning": "Generated as plain text response due to JSON parsing failure",
-                    "style_applied": "auto",
-                    "quality_score": 7
-                })))
+                Ok((
+                    serde_json::json!({
+                        "content": response_text,
+                        "reasoning": "Generated as plain text response due to JSON parsing failure",
+                        "style_applied": "auto",
+                        "quality_score": 7
+                    }),
+                    reasoning_content,
+                ))
             }
         }
     }
@@ -1236,39 +1215,43 @@ Show different scenarios, moods, or personality aspects."#
     async fn count_tokens(
         &self,
         system_prompt: &str,
-        messages: &[GenAiChatMessage],
+        messages: &[RigMessage],
     ) -> Result<usize, AppError> {
-        let mut total_tokens = 0;
-
-        // Count system prompt tokens
-        total_tokens += self
+        let mut total = self
             .state
             .token_counter
-            .count_tokens(
-                system_prompt,
-                CountingMode::LocalOnly,
-                Some(&self.state.config.token_counter_default_model),
-            )
+            .count_tokens(system_prompt, CountingMode::LocalOnly, None)
             .await?
             .total;
 
-        // Count message tokens
-        for message in messages {
-            if let Some(text) = message.content.first_text() {
-                total_tokens += self
-                    .state
-                    .token_counter
-                    .count_tokens(
-                        text,
-                        CountingMode::LocalOnly,
-                        Some(&self.state.config.token_counter_default_model),
-                    )
-                    .await?
-                    .total;
-            }
+        for msg in messages {
+            let text = match msg {
+                RigMessage::User { content } => content
+                    .iter()
+                    .filter_map(|c| match c {
+                        rig::message::UserContent::Text(t) => Some(t.text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                RigMessage::Assistant { content, .. } => content
+                    .iter()
+                    .filter_map(|c| match c {
+                        rig::message::AssistantContent::Text(t) => Some(t.text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            };
+            total += self
+                .state
+                .token_counter
+                .count_tokens(&text, CountingMode::LocalOnly, None)
+                .await?
+                .total;
         }
 
-        Ok(total_tokens)
+        Ok(total)
     }
 
     /// Analyze the style of existing content using structured output
@@ -1336,10 +1319,10 @@ Provide a detailed analysis including:
         );
 
         // Create messages for generation
-        let messages = vec![GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(user_message),
-            options: None,
+        let messages = vec![RigMessage::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                user_message.clone(),
+            )),
         }];
 
         // Create a dummy request for compatibility with generate_with_structured_output
@@ -1364,8 +1347,8 @@ Provide a detailed analysis including:
             .await?;
 
         // Parse the structured output
-        let style_analysis: StyleAnalysisOutput =
-            serde_json::from_value(generated_output.0.clone()).map_err(|e| {
+        let style_analysis: StyleAnalysisOutput = serde_json::from_value(generated_output.0)
+            .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!(
                     "Failed to parse style analysis output: {}",
                     e

@@ -17,7 +17,6 @@ use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::db::DbPool;
 #[cfg(feature = "desktop")]
 use scribe_backend::desktop; // Desktop mode initialization
-use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::middleware::unified_login_required;
 use scribe_backend::routes::admin::admin_routes;
@@ -319,17 +318,23 @@ fn setup_database_pool(config: &Config) -> DbPool {
 
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppStateServices> {
+    // --- Initialize MistralRs Service (if feature enabled) ---
     #[cfg(feature = "local-llm")]
-    let mut llamacpp_server_manager: Option<
-        Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>,
+    let mistralrs_service = {
+        // For now, we initialize with a default model if it exists, or None
+        // Real model loading will happen on-demand or via settings
+        None
+    };
+    #[cfg(not(feature = "local-llm"))]
+    let mistralrs_service: Option<
+        Arc<scribe_backend::services::ai::mistralrs_service::MistralRsService>,
     > = None;
-    // --- Initialize GenAI Client Asynchronously ---
-    let api_key = config
-        .gemini_api_key
-        .as_ref()
-        .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY is required".to_string()))?;
+
     // Use RigClient instead of ScribeGeminiClient
-    let ai_client = scribe_backend::llm::rig_client::RigClient::new(Some(api_key.clone()));
+    let ai_client = scribe_backend::llm::rig_client::RigClient::new(
+        config.gemini_api_key.clone(),
+        mistralrs_service,
+    );
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---
@@ -444,61 +449,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     // --- Initialize Local LLM Server (if feature enabled) ---
     #[cfg(feature = "local-llm")]
     {
-        use scribe_backend::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
-        use tracing::{info, warn};
-
-        info!("Initializing local LLM server...");
-        let llm_config = LlamaCppConfig::from_env();
-
-        if llm_config.enabled {
-            match ModelManager::new(llm_config.clone()).await {
-                Ok(model_manager) => {
-                    let model_manager_arc = Arc::new(model_manager);
-
-                    // Check if there are any downloaded models
-                    let downloaded_models =
-                        model_manager_arc.list_models().await.unwrap_or_default();
-
-                    if downloaded_models.is_empty() {
-                        info!(
-                            "No models downloaded yet. Local LLM UI will be available for model downloads."
-                        );
-                    } else {
-                        info!(
-                            "Found {} downloaded models. Server will start on-demand when a model is activated.",
-                            downloaded_models.len()
-                        );
-                    }
-
-                    // Create server manager but don't start it - it will start on-demand
-                    match LlamaCppServerManager::new(llm_config, model_manager_arc).await {
-                        Ok(server_manager) => {
-                            let server_manager_arc: Arc<LlamaCppServerManager> =
-                                Arc::new(server_manager);
-                            info!(
-                                "Local LLM server manager initialized. Server will start when a model is activated."
-                            );
-                            // Store the server manager for UI management
-                            llamacpp_server_manager = Some(server_manager_arc);
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to initialize local LLM server manager: {}. Local LLM features will be unavailable.",
-                                e
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to initialize model manager: {}. Local LLM features will be unavailable.",
-                        e
-                    );
-                }
-            }
-        } else {
-            info!("Local LLM disabled in configuration");
-        }
+        use scribe_backend::services::ai::mistralrs_service::MistralRsService;
+        // TODO: Implement MistralRs equivalent of LlamaCppServerManager if needed
+        // For now, we've integrated MistralRs into RigClient
     }
 
     // --- Initialize Narrative Intelligence Service ---
@@ -536,7 +489,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         ),
         recall_pipeline,
         #[cfg(feature = "local-llm")]
-        llamacpp_server_manager: llamacpp_server_manager,
+        llamacpp_server_manager: None, // Removed LlamaCppServerManager
         #[cfg(feature = "local-llm")]
         security_audit_logger: None, // Will be set by the builder if needed
         #[cfg(feature = "local-llm")]

@@ -60,10 +60,7 @@ use axum::{
 use bigdecimal::ToPrimitive;
 use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use futures_util::StreamExt;
-use genai::chat::{
-    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    JsonSpec, MessageContent, ReasoningEffort,
-};
+use rig::message::Message as RigMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -660,35 +657,41 @@ pub async fn generate_chat_response(
         debug!(%session_id, %credits_required, %should_track_usage, has_reservation = credit_reservation.is_some(), "Credit reservation completed");
     }
 
-    // Convert DbChatMessage history to GenAiChatMessage history
-    let mut gen_ai_recent_history: Vec<GenAiChatMessage> = Vec::new();
-    let mut recent_text_history: Vec<String> = Vec::new();
+    // Convert DbChatMessage history to RigMessage history
+    let mut rig_recent_history: Vec<RigMessage> = Vec::new();
     for db_msg in managed_db_history {
-        // managed_db_history is Vec<DbChatMessage>
-        // Content in managed_db_history from get_session_data_for_generation should already be decrypted
         let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
-        recent_text_history.push(content_str.clone());
-        let chat_role = match db_msg.message_type {
-            MessageRole::User => ChatRole::User,
-            MessageRole::Assistant => ChatRole::Assistant,
-            MessageRole::System => ChatRole::System, // Should not happen in recent history
+        let rig_msg = match db_msg.message_type {
+            MessageRole::User => RigMessage::User {
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    content_str,
+                )),
+            },
+            MessageRole::Assistant => RigMessage::Assistant {
+                id: None,
+                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
+                    content_str,
+                )),
+            },
+            MessageRole::System => RigMessage::User {
+                // Should not happen in recent history, but map to User as fallback
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    content_str,
+                )),
+            },
         };
-        gen_ai_recent_history.push(GenAiChatMessage {
-            role: chat_role,
-            content: MessageContent::from_text(content_str),
-            options: None,
-        });
+        rig_recent_history.push(rig_msg);
     }
 
-    // Extract text for later use in saving to DB
-    let current_user_content_text = current_user_content.clone();
-
-    // Prepare current user message as GenAiChatMessage
-    let current_user_genai_message = GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::from_text(current_user_content),
-        options: None,
+    // Prepare current user message as RigMessage
+    let current_user_rig_message = RigMessage::User {
+        content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+            current_user_content.clone(),
+        )),
     };
+
+    let mut full_history = rig_recent_history.clone();
+    full_history.push(current_user_rig_message.clone());
 
     // Before saving new messages, supersede any failed or partial messages from this session
     // This handles retry scenarios where the user might be retrying after an error
@@ -730,7 +733,7 @@ pub async fn generate_chat_response(
             .session_id(session_id)
             .user_id(user_id_value)
             .message_type(DbMessageRole::User)
-            .content(current_user_content_text.as_bytes().to_vec())
+            .content(current_user_content.as_bytes().to_vec())
             .model_name(model_to_use.clone())
             .status("completed".to_string())
             .build()
@@ -741,7 +744,7 @@ pub async fn generate_chat_response(
             session_id,
             user_id: user_id_value,
             message_type_enum: MessageRole::User,
-            content: &current_user_content_text,
+            content: &current_user_content,
             role_str: user_message_struct_to_save.role.clone(),
             parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
             attachments: user_message_struct_to_save.attachments.clone().map(|j| j.0),
@@ -924,24 +927,44 @@ pub async fn generate_chat_response(
                     );
 
                     // Prepare messages for the agent (last 10 messages)
-                    let recent_messages: Vec<(String, String)> = gen_ai_recent_history
+                    let rig_recent_history_clone = rig_recent_history.clone();
+                    let recent_messages: Vec<(String, String)> = rig_recent_history_clone
                         .iter()
                         .take(10)
                         .map(|msg| {
-                            let role = match msg.role {
-                                ChatRole::User => "User".to_string(),
-                                ChatRole::Assistant => "Assistant".to_string(),
-                                _ => "System".to_string(),
+                            let (role, content) = match msg {
+                                RigMessage::User { content } => {
+                                    let text = content
+                                        .iter()
+                                        .find_map(|c| match c {
+                                            rig::message::UserContent::Text(t) => {
+                                                Some(t.text.clone())
+                                            }
+                                            _ => None,
+                                        })
+                                        .unwrap_or_default();
+                                    ("User".to_string(), text)
+                                }
+                                RigMessage::Assistant { content, .. } => {
+                                    let text = content
+                                        .iter()
+                                        .find_map(|c| match c {
+                                            rig::message::AssistantContent::Text(t) => {
+                                                Some(t.text.clone())
+                                            }
+                                            _ => None,
+                                        })
+                                        .unwrap_or_default();
+                                    ("Assistant".to_string(), text)
+                                }
                             };
-                            let content = msg.content.first_text().unwrap_or_default().to_string();
                             (role, content)
                         })
                         .collect();
 
                     // Add the current user message
                     let mut messages_for_agent = recent_messages;
-                    messages_for_agent
-                        .push(("User".to_string(), current_user_content_text.clone()));
+                    messages_for_agent.push(("User".to_string(), current_user_content.clone()));
 
                     // Run the agent with the user message ID
                     match agent
@@ -979,8 +1002,8 @@ pub async fn generate_chat_response(
         (None, None)
     };
 
-    // Clone gen_ai_recent_history before moving it, as we'll need it later for post-processing
-    let gen_ai_recent_history_for_agent = gen_ai_recent_history.clone();
+    // Clone rig_recent_history before moving it, as we'll need it later for post-processing
+    let rig_recent_history_for_agent = rig_recent_history.clone();
 
     // Get session settings to retrieve the prompt template ID
     let session_settings = chat::settings::get_session_settings(
@@ -1154,11 +1177,31 @@ pub async fn generate_chat_response(
         let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
 
         // Build a richer recall query using recent history for better semantic matching
+        let recent_text_history: Vec<String> = rig_recent_history
+            .iter()
+            .map(|msg| match msg {
+                RigMessage::User { content } => content
+                    .iter()
+                    .find_map(|c| match c {
+                        rig::message::UserContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_default(),
+                RigMessage::Assistant { content, .. } => content
+                    .iter()
+                    .find_map(|c| match c {
+                        rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_default(),
+            })
+            .collect();
+
         let mut recall_query_parts = Vec::new();
         for text in recent_text_history.iter().rev().take(2).rev() {
             recall_query_parts.push(text.clone());
         }
-        recall_query_parts.push(current_user_content_text.clone());
+        recall_query_parts.push(current_user_content.clone());
         let recall_query = recall_query_parts.join("\n");
 
         match state_arc
@@ -1227,16 +1270,16 @@ pub async fn generate_chat_response(
 
     // Call the new prompt builder
 
-    let (final_system_prompt_str, final_genai_message_list) =
+    let (final_system_prompt_str, final_rig_message_list) =
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
             token_counter: state_arc.token_counter.clone(),
-            recent_history: gen_ai_recent_history,
+            recent_history: rig_recent_history,
             rag_items: rag_context_items_from_service,
             system_prompt_base: system_prompt_from_service, // This is the system_prompt_base (persona/override only)
             raw_character_system_prompt, // This is the new raw_character_system_prompt
             character_metadata: Some(&character_metadata_for_prompt_builder),
-            current_user_message: current_user_genai_message,
+            current_user_message: current_user_rig_message.clone(),
             model_name: model_to_use.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
@@ -1263,7 +1306,7 @@ pub async fn generate_chat_response(
             }
         };
 
-    trace!(history_len = final_genai_message_list.len(), %session_id, "Prepared final message list for AI using new prompt builder.");
+    trace!(history_len = final_rig_message_list.len(), %session_id, "Prepared final message list for AI using new prompt builder.");
 
     let accept_header = headers
         .get(axum::http::header::ACCEPT)
@@ -1284,42 +1327,41 @@ pub async fn generate_chat_response(
 
             // The assistant's message will be saved by stream_ai_response_and_save_message.
 
-            let dek_for_stream_service = session_dek_arc.clone();
-            match chat::generation::stream_ai_response_and_save_message_with_retry(
-                chat::generation::StreamAiParams {
-                    state: state_arc.clone(),
-                    session_id,
-                    user_id: user_id_value,
-                    incoming_genai_messages: final_genai_message_list.clone(),
-                    system_prompt: Some(final_system_prompt_str.clone()),
-                    temperature: gen_temperature,
-                    max_output_tokens: gen_max_output_tokens,
-                    frequency_penalty: gen_frequency_penalty,
-                    presence_penalty: gen_presence_penalty,
-                    top_k: gen_top_k,
-                    top_p: gen_top_p,
-                    stop_sequences: None,
-                    seed: gen_seed,
-                    model_name: model_to_use.clone(),
-                    model_provider: gen_model_provider_from_service,
-                    thinking_budget: gen_thinking_budget,
-                    thinking_level: gen_thinking_level.clone(),
-                    enable_code_execution: gen_enable_code_execution,
-                    request_thinking,
-                    user_dek: dek_for_stream_service,
-                    character_name: Some(character_db_model.name.clone()),
-                    player_chronicle_id,
-                    variant_of: payload.variant_of,
-                    #[cfg(feature = "payment")]
-                    charge_credits: credit_reservation.is_some(), // Charge if reservation was made
-                    #[cfg(not(feature = "payment"))]
-                    charge_credits: false,
-                    game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
-                    initial_game_state,
-                    parent_message_id: payload.parent_message_id,
-                },
-            )
-            .await
+            // Create StreamAiParams for the generation service with full pipeline
+            let stream_params = chat::generation::StreamAiParams {
+                state: state_arc.clone(),
+                session_id,
+                user_id: user_id_value,
+                history: final_rig_message_list, // Use the history from the prompt builder
+                system_prompt: Some(final_system_prompt_str), // Use the system prompt from the prompt builder
+                temperature: gen_temperature,
+                max_output_tokens: gen_max_output_tokens,
+                frequency_penalty: gen_frequency_penalty,
+                presence_penalty: gen_presence_penalty,
+                top_k: gen_top_k,
+                top_p: gen_top_p,
+                stop_sequences: None, // Will be handled by prompt_builder
+                seed: gen_seed,
+                model_name: model_to_use,
+                model_provider: gen_model_provider_from_service,
+                thinking_budget: gen_thinking_budget,
+                thinking_level: gen_thinking_level,
+                enable_code_execution: gen_enable_code_execution,
+                request_thinking,
+                user_dek: session_dek_arc.clone(),
+                character_name: Some(character_db_model.name.clone()),
+                player_chronicle_id,
+                variant_of: payload.variant_of,
+                #[cfg(feature = "payment")]
+                charge_credits: credit_reservation.is_some(), // Charge if reservation was made
+                #[cfg(not(feature = "payment"))]
+                charge_credits: false,
+                game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
+                initial_game_state,
+                parent_message_id: payload.parent_message_id,
+            };
+            match chat::generation::stream_ai_response_and_save_message_with_retry(stream_params)
+                .await
             {
                 Ok(service_stream) => {
                     debug!(%session_id, "Successfully obtained stream from chat_service::stream_ai_response_and_save_message");
@@ -1436,8 +1478,8 @@ pub async fn generate_chat_response(
                                         let player_chronicle_id_clone = player_chronicle_id;  // Clone chronicle_id for scoped search
                                         let state_clone = state_arc.clone();
                                         let session_dek_clone = session_dek_arc.clone();
-                                        let recent_history_clone = gen_ai_recent_history_for_agent.clone();
-                                        let current_user_text = current_user_content_text.clone();
+                                        let recent_history_clone = rig_recent_history_for_agent.clone();
+                                        let current_user_text = current_user_content.clone();
 
                                     tokio::spawn(async move {
                                         info!(session_id = %session_id_clone, "Starting post-processing agent in background");
@@ -1466,12 +1508,22 @@ pub async fn generate_chat_response(
                                             .iter()
                                             .take(10)
                                             .map(|msg| {
-                                                let role = match msg.role {
-                                                    ChatRole::User => "User".to_string(),
-                                                    ChatRole::Assistant => "Assistant".to_string(),
-                                                    _ => "System".to_string(),
+                                                let (role, content) = match msg {
+                                                    RigMessage::User { content } => {
+                                                        let text = content.iter().find_map(|c| match c {
+                                                            rig::message::UserContent::Text(t) => Some(t.text.clone()),
+                                                            _ => None,
+                                                        }).unwrap_or_default();
+                                                        ("User".to_string(), text)
+                                                    }
+                                                    RigMessage::Assistant { content, .. } => {
+                                                        let text = content.iter().find_map(|c| match c {
+                                                            rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                                                            _ => None,
+                                                        }).unwrap_or_default();
+                                                        ("Assistant".to_string(), text)
+                                                    }
                                                 };
-                                                let content = msg.content.first_text().map(|t| t.to_string()).unwrap_or_default();
                                                 (role, content)
                                             })
                                             .collect();
@@ -1562,65 +1614,23 @@ pub async fn generate_chat_response(
             // RAG context is handled by build_final_llm_prompt.
             // The old RAG logic here is removed.
 
-            let chat_request = ChatRequest::new(final_genai_message_list.clone())
-                .with_system(final_system_prompt_str.clone());
+            let rig_params = chat::generation::ExecChatWithRetryParams {
+                state: state_arc.clone(),
+                model_name: model_to_use.clone(),
+                model_provider: gen_model_provider_from_service,
+                history: final_rig_message_list,
+                system_prompt: Some(final_system_prompt_str.clone()),
+                temperature: gen_temperature.and_then(|t| t.to_f64()),
+                max_tokens: gen_max_output_tokens,
+                session_id,
+                user_id: user_id_value,
+                character_name: Some(character_db_model.name.clone()),
+                user_dek: session_dek_arc.clone(),
+            };
 
-            let mut chat_options = ChatOptions::default();
-            if let Some(temp_bd) = gen_temperature {
-                if let Some(temp_f32) = temp_bd.to_f32() {
-                    chat_options = chat_options.with_temperature(temp_f32.into());
-                }
-            }
-            if let Some(tokens_i32) = gen_max_output_tokens {
-                // tokens_i32 is Option<i32>
-                if let Ok(tokens_u32) = u32::try_from(tokens_i32) {
-                    chat_options = chat_options.with_max_tokens(tokens_u32);
-                } else {
-                    warn!("max_output_tokens is invalid ({}), ignoring", tokens_i32);
-                }
-            }
-            if let Some(p_bd) = gen_top_p {
-                // p_bd is Option<BigDecimal>
-                if let Some(p_f32) = p_bd.to_f32() {
-                    chat_options = chat_options.with_top_p(p_f32.into());
-                }
-            }
-            // Add other gen_... parameters to chat_options as needed
-            if let Some(budget_i32) = gen_thinking_budget {
-                // budget_i32 is Option<i32>
-                if budget_i32 > 0 {
-                    if let Ok(budget_u32) = u32::try_from(budget_i32) {
-                        chat_options =
-                            chat_options.with_reasoning_effort(ReasoningEffort::Budget(budget_u32));
-                    } else {
-                        warn!("thinking_budget overflow ({}), ignoring", budget_i32);
-                    }
-                } else {
-                    warn!("thinking_budget is not positive ({}), ignoring", budget_i32);
-                }
-            }
-            // `with_enable_code_execution` removed as it's no longer a direct ChatOption.
-            // The `gen_enable_code_execution` variable is still available if needed for other logic.
+            trace!(%session_id, ?rig_params, "Prepared RigParams for AI (non-streaming, JSON path)");
 
-            // TODO: Add other gen_ parameters like top_k, frequency_penalty etc. if supported by ChatOptions
-
-            trace!(%session_id, chat_request = ?chat_request, chat_options = ?chat_options, "Prepared ChatRequest and Options for AI (non-streaming, JSON path)");
-
-            match chat::generation::exec_chat_with_retry(
-                chat::generation::ExecChatWithRetryParams {
-                    state: state_arc.clone(),
-                    model_name: model_to_use.clone(),
-                    model_provider: gen_model_provider_from_service,
-                    chat_request,
-                    chat_options: Some(chat_options),
-                    session_id,
-                    user_id: user_id_value,
-                    character_name: Some(character_db_model.name.clone()),
-                    user_dek: session_dek_arc.clone(),
-                },
-            )
-            .await
-            {
+            match chat::generation::completion_with_retry(rig_params).await {
                 Ok(chat_response) => {
                     debug!(%session_id, "Received successful non-streaming AI response (JSON path)");
 
@@ -1978,8 +1988,8 @@ pub async fn generate_chat_response(
                                 let player_chronicle_id_clone = player_chronicle_id; // Clone chronicle_id for scoped search
                                 let state_clone = state_arc.clone();
                                 let session_dek_clone = session_dek_arc.clone();
-                                let recent_history_clone = gen_ai_recent_history_for_agent.clone();
-                                let current_user_text = current_user_content_text.clone();
+                                let recent_history_clone = rig_recent_history_for_agent.clone();
+                                let current_user_text = current_user_content.clone();
                                 let assistant_response = response_content.clone();
 
                                 tokio::spawn(async move {
@@ -2010,16 +2020,22 @@ pub async fn generate_chat_response(
                                             .iter()
                                             .take(10)
                                             .map(|msg| {
-                                                let role = match msg.role {
-                                                    ChatRole::User => "User".to_string(),
-                                                    ChatRole::Assistant => "Assistant".to_string(),
-                                                    _ => "System".to_string(),
+                                                let (role, content) = match msg {
+                                                    RigMessage::User { content } => {
+                                                        let text = content.iter().find_map(|c| match c {
+                                                            rig::message::UserContent::Text(t) => Some(t.text.clone()),
+                                                            _ => None,
+                                                        }).unwrap_or_default();
+                                                        ("User".to_string(), text)
+                                                    }
+                                                    RigMessage::Assistant { content, .. } => {
+                                                        let text = content.iter().find_map(|c| match c {
+                                                            rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                                                            _ => None,
+                                                        }).unwrap_or_default();
+                                                        ("Assistant".to_string(), text)
+                                                    }
                                                 };
-                                                let content = msg
-                                                    .content
-                                                    .first_text()
-                                                    .unwrap_or_default()
-                                                    .to_string();
                                                 (role, content)
                                             })
                                             .collect();
@@ -2165,7 +2181,7 @@ pub async fn generate_chat_response(
                     state: state_arc.clone(),
                     session_id,
                     user_id: user_id_value,
-                    incoming_genai_messages: final_genai_message_list.clone(),
+                    history: final_rig_message_list.clone(),
                     system_prompt: Some(final_system_prompt_str.clone()),
                     temperature: gen_temperature,
                     max_output_tokens: gen_max_output_tokens,
@@ -2940,7 +2956,7 @@ pub async fn generate_suggested_actions(
         _gen_top_p,
         _gen_seed,
         _gen_model_name_from_service, // We use a fixed model for suggestions
-        _gen_model_provider_from_service, // Model provider field
+        gen_model_provider_from_service, // Model provider field
         _gen_thinking_budget,
         _gen_thinking_level,
         _gen_enable_code_execution,
@@ -3084,28 +3100,38 @@ pub async fn generate_suggested_actions(
     );
     trace!(%session_id, "Constructed prompt for LLM suggested actions: {}", prompt_text_for_llm_suggestions);
 
-    let suggestion_request_genai_message = GenAiChatMessage {
-        role: ChatRole::User, // We are "asking" the LLM on behalf of the system/user for suggestions
-        content: MessageContent::from(prompt_text_for_llm_suggestions),
-        options: None,
+    let suggestion_request_rig_message = RigMessage::User {
+        content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+            prompt_text_for_llm_suggestions,
+        )),
     };
 
-    // Convert DbChatMessage history (already decrypted) to GenAiChatMessage history for prompt builder
-    // This history is what *precedes* our special suggestion_request_genai_message
-    let mut gen_ai_processed_history: Vec<GenAiChatMessage> = Vec::new();
+    // Convert DbChatMessage history (already decrypted) to RigMessage history for prompt builder
+    // This history is what *precedes* our special suggestion_request_rig_message
+    let mut rig_processed_history: Vec<RigMessage> = Vec::new();
     for db_msg in managed_db_history {
         // This is the full relevant history
         let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
-        let chat_role = match db_msg.message_type {
-            MessageRole::User => ChatRole::User,
-            MessageRole::Assistant => ChatRole::Assistant,
-            MessageRole::System => ChatRole::System,
+        let rig_msg = match db_msg.message_type {
+            MessageRole::User => RigMessage::User {
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    content_str,
+                )),
+            },
+            MessageRole::Assistant => RigMessage::Assistant {
+                id: None,
+                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
+                    content_str,
+                )),
+            },
+            MessageRole::System => RigMessage::User {
+                // Fallback
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    content_str,
+                )),
+            },
         };
-        gen_ai_processed_history.push(GenAiChatMessage {
-            role: chat_role,
-            content: MessageContent::from_text(content_str),
-            options: None,
-        });
+        rig_processed_history.push(rig_msg);
     }
 
     // Use Flash for suggestions - it's fast and cheap for simple action generation
@@ -3115,12 +3141,12 @@ pub async fn generate_suggested_actions(
         match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
             config: state_arc.config.clone(),
             token_counter: state_arc.token_counter.clone(),
-            recent_history: gen_ai_processed_history, // The actual chat history
-            rag_items: Vec::new(),                    // No RAG for suggestions
+            recent_history: rig_processed_history, // The actual chat history
+            rag_items: Vec::new(),                 // No RAG for suggestions
             system_prompt_base: system_prompt_from_service,
             raw_character_system_prompt,
             character_metadata: Some(&character_metadata_for_prompt_builder),
-            current_user_message: suggestion_request_genai_message, // Our special message asking for suggestions
+            current_user_message: suggestion_request_rig_message, // Our special message asking for suggestions
             model_name: model_for_suggestions.clone(),
             user_dek: Some(&*session_dek_arc), // Add DEK for character description decryption
             user_persona_name,                 // Pass user persona name for template substitution
@@ -3147,45 +3173,26 @@ pub async fn generate_suggested_actions(
             }
         };
 
-    let chat_request = ChatRequest::new(final_messages_for_suggestions_llm)
-        .with_system(final_system_prompt_for_suggestions);
+    let rig_req = crate::llm::rig_client::RigCompletionRequest {
+        model_name: model_for_suggestions.clone(),
+        provider: gen_model_provider_from_service.unwrap_or_else(|| "gemini".to_string()),
+        prompt: "".to_string(),
+        preamble: Some(final_system_prompt_for_suggestions),
+        history: final_messages_for_suggestions_llm,
+        temperature: gen_temperature.and_then(|t| t.to_f64()).or(Some(0.7)),
+        max_tokens: Some(1000),
+        ..Default::default()
+    };
 
-    let suggested_actions_schema_value = json!({
-        "type": "array",
-        "items": {
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "description": "A concise suggested action or question."
-                }
-            },
-            "required": ["action"]
-        }
-    });
+    trace!(%session_id, model = %model_for_suggestions, ?rig_req, "Sending request to Rig for suggested actions");
 
-    let chat_options = ChatOptions::default()
-        .with_temperature(
-            gen_temperature
-                .and_then(|t| t.to_f32())
-                .unwrap_or(0.7)
-                .into(),
-        ) // Use session temp or default
-        .with_max_tokens(1000) // Increased max tokens for suggestions
-        .with_response_format(ChatResponseFormat::JsonSpec(JsonSpec::new(
-            "suggested_actions",
-            suggested_actions_schema_value,
-        )));
-
-    trace!(%session_id, model = %model_for_suggestions, ?chat_request, ?chat_options, "Sending request to Gemini for suggested actions");
-
-    let gemini_response = state_arc
+    let rig_response = state_arc
         .ai_client
-        .exec_chat(&model_for_suggestions, chat_request, Some(chat_options))
+        .completion(rig_req)
         .await
         .map_err(|e| {
             let error_str = e.to_string();
-            error!(%session_id, "Gemini API error for suggested actions: {:?}", e);
+            error!(%session_id, "Rig API error for suggested actions: {:?}", e);
             // Provide more specific error messages for common issues
             if error_str.contains("PropertyNotFound(\"/content/parts\")") {
                 AppError::AiServiceError("AI safety filters blocked the suggestion request. Please try again with different conversation context.".to_string())
@@ -3196,21 +3203,20 @@ pub async fn generate_suggested_actions(
             } else if error_str.contains("quota") || error_str.contains("rate limit") {
                 AppError::AiServiceError("AI service is temporarily busy. Please wait and try again.".to_string())
             } else {
-                AppError::AiServiceError(format!("Gemini API error: {e}"))
+                AppError::AiServiceError(format!("Rig API error: {e}"))
             }
         })?;
 
-    debug!(%session_id, "Received response from Gemini for suggested actions");
-    trace!(%session_id, ?gemini_response, "Full Gemini response object for suggested actions");
+    debug!(%session_id, "Received response from Rig for suggested actions");
+    trace!(%session_id, ?rig_response, "Full Rig response object for suggested actions");
 
-    let response_text = if let Some(text) = gemini_response.first_text() {
-        text.to_string()
-    } else {
-        error!(%session_id, "Gemini response for suggested actions (JsonSchemaSpec) did not contain text content or was empty. Full response: {:?}", gemini_response);
+    let response_text = rig_response.content.clone();
+    if response_text.is_empty() {
+        error!(%session_id, "Rig response for suggested actions was empty. Full response: {:?}", rig_response);
         return Err(AppError::AiServiceError(
             "AI safety filters blocked the suggestion request. Please try again with different conversation context.".to_string()
         ));
-    };
+    }
     debug!(%session_id, "Gemini response text (JsonSchemaSpec) for suggested actions: {}", response_text);
 
     // Parse the JSON response text as an array of suggested actions
@@ -3229,9 +3235,9 @@ pub async fn generate_suggested_actions(
 
     // Extract token usage from Gemini response
     let token_usage = Some(crate::models::chats::SuggestedActionsTokenUsage {
-        input_tokens: gemini_response.usage.prompt_tokens.unwrap_or(0) as usize,
-        output_tokens: gemini_response.usage.completion_tokens.unwrap_or(0) as usize,
-        total_tokens: gemini_response.usage.total_tokens.unwrap_or(0) as usize,
+        input_tokens: rig_response.prompt_tokens.unwrap_or(0) as usize,
+        output_tokens: rig_response.completion_tokens.unwrap_or(0) as usize,
+        total_tokens: rig_response.total_tokens.unwrap_or(0) as usize,
     });
 
     if let Some(ref token_info) = token_usage {
@@ -3610,29 +3616,30 @@ pub async fn expand_text_handler(
         When the user asks you to expand text, take their brief input and elaborate it while writing AS THE USER."
     );
 
-    // Convert API messages to GenAI format for the generation service
-    let mut genai_messages = chat_history
+    // Convert API messages to Rig format for the generation service
+    let mut rig_messages = chat_history
         .into_iter()
-        .map(|msg| GenAiChatMessage {
-            role: match msg.role.as_str() {
-                "user" => ChatRole::User,
-                "assistant" => ChatRole::Assistant,
-                "system" => ChatRole::System,
-                _ => ChatRole::User,
+        .map(|msg| match msg.role.as_str() {
+            "assistant" => RigMessage::Assistant {
+                id: None,
+                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
+                    msg.content,
+                )),
             },
-            content: MessageContent::from(msg.content),
-            options: None,
+            _ => RigMessage::User {
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    msg.content,
+                )),
+            },
         })
         .collect::<Vec<_>>();
 
     // Add the user's text to be expanded as the final message
-    genai_messages.push(GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::from(format!(
+    rig_messages.push(RigMessage::User {
+        content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(format!(
             "Please expand this text: \"{}\"",
             payload.original_text
-        )),
-        options: None,
+        ))),
     });
 
     // Create StreamAiParams for the generation service with full pipeline
@@ -3640,7 +3647,7 @@ pub async fn expand_text_handler(
         state: state_arc,
         session_id,
         user_id,
-        incoming_genai_messages: genai_messages,
+        history: rig_messages,
         system_prompt: Some(expansion_system_prompt),
         temperature: session_data.temperature,
         max_output_tokens: session_data.max_output_tokens,
@@ -3967,19 +3974,22 @@ pub async fn impersonate_handler(
         Do not break character or mention that you are an AI.",
     );
 
-    // Convert API messages to GenAI format for the generation service
-    let genai_messages = generation_request
+    // Convert API messages to Rig format for the generation service
+    let rig_messages = generation_request
         .history
         .into_iter()
-        .map(|msg| GenAiChatMessage {
-            role: match msg.role.as_str() {
-                "user" => ChatRole::User,
-                "assistant" => ChatRole::Assistant,
-                "system" => ChatRole::System,
-                _ => ChatRole::User,
+        .map(|msg| match msg.role.as_str() {
+            "assistant" => RigMessage::Assistant {
+                id: None,
+                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
+                    msg.content,
+                )),
             },
-            content: MessageContent::from(msg.content),
-            options: None,
+            _ => RigMessage::User {
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    msg.content,
+                )),
+            },
         })
         .collect();
 
@@ -3988,7 +3998,7 @@ pub async fn impersonate_handler(
         state: state_arc,
         session_id,
         user_id,
-        incoming_genai_messages: genai_messages,
+        history: rig_messages,
         system_prompt: Some(impersonation_system_prompt),
         temperature: session_data
             .temperature

@@ -148,98 +148,51 @@ pub async fn generate_character_field_stream_handler(
 
     // Create the SSE stream
     let stream = async_stream::stream! {
+        use crate::llm::{RigCompletionRequest, RigStreamEvent};
+
         let start_time = std::time::Instant::now();
+        let model_name = state_arc.config.token_counter_default_model.clone();
 
-        use genai::chat::{ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatRole, MessageContent};
+        let rig_req = RigCompletionRequest {
+            model_name: model_name.clone(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: internal_request.user_prompt.clone(),
+            preamble: Some(system_prompt.clone()),
+            history: vec![],
+            temperature: internal_request.generation_options.as_ref().and_then(|o| o.temperature).map(|t| t as f64),
+            max_tokens: internal_request.generation_options.as_ref().and_then(|o| o.max_length).map(|l| l as i32),
+            ..Default::default()
+        };
 
-        // Create the chat request for streaming
-        let chat_request = ChatRequest::new(vec![GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from_text(internal_request.user_prompt.clone()),
-            options: None,
-        }])
-        .with_system(system_prompt);
-
-        // Set up chat options
-        let mut chat_options = ChatOptions::default();
-        if let Some(temp) = internal_request.generation_options.as_ref().and_then(|o| o.temperature) {
-            chat_options = chat_options.with_temperature(temp.into());
-        }
-        if let Some(max_len) = internal_request.generation_options.as_ref().and_then(|o| o.max_length) {
-            if let Ok(max_tokens) = u32::try_from(max_len) {
-                chat_options = chat_options.with_max_tokens(max_tokens);
-            }
-        }
-
-        // Get the AI client and stream
-        let model_name = "gemini-2.5-flash"; // TODO: Make configurable
-
-        match state_arc.ai_client.stream_chat(model_name, chat_request, Some(chat_options)).await {
+        match state_arc.ai_client.completion_stream(rig_req).await {
             Ok(mut chat_stream) => {
                 let mut _full_content = String::new();
-                let prompt_tokens_count = 0;
-                let completion_tokens_count = 0;
+                let mut prompt_tokens_count = 0;
+                let mut completion_tokens_count = 0;
 
                 // Stream the content chunks
                 while let Some(event_result) = chat_stream.next().await {
                     match event_result {
-                        Ok(stream_event) => {
-                            use genai::chat::ChatStreamEvent;
-                            match stream_event {
-                                ChatStreamEvent::Start => {
-                                    // Stream started, no content yet
-                                }
-                                ChatStreamEvent::Chunk(chunk) | ChatStreamEvent::ReasoningChunk(chunk) => {
-                                    _full_content.push_str(&chunk.content);
+                        Ok(RigStreamEvent::Content(content)) => {
+                            _full_content.push_str(&content);
 
-                                    // Yield content chunk
-                                    let chunk_data = serde_json::json!({
-                                        "content": chunk.content,
-                                        "done": false
-                                    });
-                                    yield Ok::<_, AppError>(Event::default()
-                                        .event("chunk")
-                                        .data(chunk_data.to_string()));
-                                }
-                                ChatStreamEvent::End(_) => {
-                                    // StreamEnd doesn't contain token counts in the genai crate
-                                    // Use accumulated counts from chunks if available, or estimate
-                                    let total_tokens = prompt_tokens_count + completion_tokens_count;
-
-                                    let generation_time_ms = start_time.elapsed().as_millis() as u64;
-
-                                    // Create metadata
-                                    let metadata = ApiGenerationMetadata {
-                                        model: model_name.to_string(),
-                                        tokens_used: total_tokens,
-                                        cost: 0.0, // TODO: Calculate based on token pricing
-                                        generation_time_ms,
-                                        finish_reason: Some("stop".to_string()), // Default finish reason for streaming
-                                        style_detected: internal_request.style.clone(),
-                                        system_prompt: None, // Don't include in streaming response
-                                        user_prompt: None,
-                                        lorebook_context_included: Some(false),
-                                        lorebook_entries_count: Some(0),
-                                        query_text_used: None,
-                                    };
-
-                                    // Yield final chunk with metadata
-                                    let final_chunk = ApiGenerationChunk {
-                                        content: String::new(),
-                                        done: true,
-                                        metadata: Some(metadata),
-                                    };
-
-                                    let final_data = serde_json::to_string(&final_chunk).unwrap_or_default();
-                                    yield Ok(Event::default()
-                                        .event("done")
-                                        .data(final_data));
-                                }
-                                _ => {
-                                    // Ignore other event types (ReasoningChunk, ToolCall, etc.)
-                                }
-                            }
+                            // Yield content chunk
+                            let chunk_data = serde_json::json!({
+                                "content": content,
+                                "done": false
+                            });
+                            yield Ok::<_, AppError>(Event::default()
+                                .event("chunk")
+                                .data(chunk_data.to_string()));
                         }
+                        Ok(RigStreamEvent::TokenUsage { input_tokens, output_tokens }) => {
+                            prompt_tokens_count = input_tokens;
+                            completion_tokens_count = output_tokens;
+                        }
+                        Ok(RigStreamEvent::Reasoning(_)) => {
+                            // Skip reasoning for now in this endpoint
+                        }
+                        Ok(_) => {} // Ignore other events
                         Err(e) => {
                             error!("Stream error: {:?}", e);
                             let error_msg = format!("Generation error: {}", e);
@@ -248,6 +201,37 @@ pub async fn generate_character_field_stream_handler(
                         }
                     }
                 }
+
+                // Stream ended, send final metadata
+                let total_tokens = (prompt_tokens_count + completion_tokens_count) as usize;
+                let generation_time_ms = start_time.elapsed().as_millis() as u64;
+
+                // Create metadata
+                let metadata = ApiGenerationMetadata {
+                    model: model_name,
+                    tokens_used: total_tokens,
+                    cost: 0.0,
+                    generation_time_ms,
+                    finish_reason: Some("stop".to_string()),
+                    style_detected: internal_request.style.clone(),
+                    system_prompt: None,
+                    user_prompt: None,
+                    lorebook_context_included: Some(false),
+                    lorebook_entries_count: Some(0),
+                    query_text_used: None,
+                };
+
+                // Yield final chunk with metadata
+                let final_chunk = ApiGenerationChunk {
+                    content: String::new(),
+                    done: true,
+                    metadata: Some(metadata),
+                };
+
+                let final_data = serde_json::to_string(&final_chunk).unwrap_or_default();
+                yield Ok(Event::default()
+                    .event("done")
+                    .data(final_data));
             }
             Err(e) => {
                 error!("Failed to create stream: {:?}", e);
@@ -307,11 +291,6 @@ pub async fn enhance_character_handler(
         user.id
     );
 
-    use genai::chat::{
-        ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-        ChatResponseFormat, ChatRole, MessageContent,
-    };
-
     // Build system prompt for enhancement
     let system_prompt = format!(
         r#"You are an AI assistant specialized in enhancing character content for interactive storytelling and roleplay.
@@ -367,52 +346,34 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
         "Please enhance the content according to the instructions while maintaining consistency with the character context.",
     );
 
-    // Create messages for generation
-    let messages = vec![GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::from(user_message),
-        options: None,
-    }];
+    use crate::llm::RigCompletionRequest;
 
-    // Set up chat options with structured output
-    let mut chat_options = GenAiChatOptions::default();
-
-    // Apply user-provided generation options if available
-    if let Some(gen_options) = &payload.generation_options {
-        if let Some(temp) = gen_options.temperature {
-            chat_options = chat_options.with_temperature(temp.into());
-        }
-        if let Some(max_len) = gen_options.max_length {
-            if let Ok(max_tokens) = u32::try_from(max_len) {
-                chat_options = chat_options.with_max_tokens(max_tokens);
-            }
-        }
-    } else {
-        // Default: moderate temperature for balanced enhancement
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(2048);
-    }
-
-    // Enable structured output using JSON schema
-    chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
-    // Create chat request
-    let chat_request = ChatRequest::new(messages).with_system(&system_prompt);
+    // Create Rig completion request
+    let rig_req = RigCompletionRequest {
+        model_name: state.config.token_counter_default_model.clone(),
+        provider: "gemini".to_string(), // Default to gemini
+        prompt: user_message,
+        preamble: Some(system_prompt),
+        history: vec![],
+        temperature: payload
+            .generation_options
+            .as_ref()
+            .and_then(|o| o.temperature)
+            .map(|t| t as f64)
+            .or(Some(1.0)),
+        ..Default::default()
+    };
 
     // Execute generation
     let start_time = std::time::Instant::now();
     let response = state
         .ai_client
-        .exec_chat(
-            &state.config.token_counter_default_model,
-            chat_request,
-            Some(chat_options),
-        )
+        .completion(rig_req)
         .await
-        .map_err(|e| AppError::GeminiError(format!("Enhancement failed: {}", e)))?;
+        .map_err(|e| AppError::AiError(format!("Enhancement failed: {}", e)))?;
 
     // Extract and parse the response
-    let response_text = response.first_text().unwrap_or_default().to_string();
+    let response_text = response.content;
 
     let enhancement_output: EnhancementOutput =
         serde_json::from_str(&response_text).map_err(|e| {
@@ -427,7 +388,7 @@ Be thoughtful and preserve the creator's original vision while elevating the qua
 
     // Create metadata
     let metadata = crate::services::character_generation::types::GenerationMetadata {
-        tokens_used: 0, // TODO: Calculate token usage
+        tokens_used: response.total_tokens.unwrap_or(0) as usize,
         generation_time_ms,
         style_detected: None,
         model_used: state.config.token_counter_default_model.clone(),
@@ -475,11 +436,6 @@ pub async fn generate_lorebook_entries_handler(
     use crate::services::character_generation::types::{
         CharacterField, DescriptionStyle, GenerationMode,
     };
-    use genai::chat::{
-        ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-        ChatResponseFormat, ChatRole, MessageContent,
-    };
-
     // Use FieldGenerator for comprehensive prompt engineering
     let field_generator = FieldGenerator::new(Arc::new(state.clone()));
 
@@ -540,51 +496,29 @@ pub async fn generate_lorebook_entries_handler(
         payload.count
     ));
 
-    // Create messages for generation
-    let messages = vec![GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::from(user_message),
-        options: None,
-    }];
+    use crate::llm::RigCompletionRequest;
 
-    // Set up chat options with structured output
-    let mut chat_options = GenAiChatOptions::default();
-
-    // Apply temperature from payload or use default
-    if let Some(temp) = payload.temperature {
-        chat_options = chat_options.with_temperature(temp as f64);
-    } else {
-        chat_options = chat_options.with_temperature(1.0);
-    }
-
-    // Increase max tokens for batch generation
-    let max_tokens = if let Some(max) = payload.max_tokens {
-        max
-    } else {
-        (payload.count * 800).min(8192) as u32
+    // Create Rig completion request
+    let rig_req = RigCompletionRequest {
+        model_name: state.config.token_counter_default_model.clone(),
+        provider: "gemini".to_string(), // Default to gemini
+        prompt: user_message,
+        preamble: Some(system_prompt),
+        history: vec![],
+        temperature: payload.temperature.map(|t| t as f64).or(Some(1.0)),
+        ..Default::default()
     };
-    chat_options = chat_options.with_max_tokens(max_tokens);
-
-    // Enable structured output using JSON schema for batch entries
-    chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
-    // Create chat request with comprehensive system prompt from FieldGenerator
-    let chat_request = ChatRequest::new(messages).with_system(&system_prompt);
 
     // Execute generation
     let start_time = std::time::Instant::now();
     let response = state
         .ai_client
-        .exec_chat(
-            &state.config.token_counter_default_model,
-            chat_request,
-            Some(chat_options),
-        )
+        .completion(rig_req)
         .await
-        .map_err(|e| AppError::GeminiError(format!("Batch lorebook generation failed: {}", e)))?;
+        .map_err(|e| AppError::AiError(format!("Batch lorebook generation failed: {}", e)))?;
 
     // Extract and parse the response
-    let response_text = response.first_text().unwrap_or_default().to_string();
+    let response_text = response.content;
 
     let batch_output: BatchLorebookEntriesOutput =
         serde_json::from_str(&response_text).map_err(|e| {
@@ -661,11 +595,6 @@ pub async fn generate_lorebook_entry_handler(
     use crate::services::character_generation::types::{
         CharacterField, DescriptionStyle, GenerationMode,
     };
-    use genai::chat::{
-        ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-        ChatResponseFormat, ChatRole, MessageContent,
-    };
-
     // Use FieldGenerator for comprehensive prompt engineering
     let field_generator = FieldGenerator::new(Arc::new(state.clone()));
 
@@ -718,53 +647,29 @@ pub async fn generate_lorebook_entry_handler(
 
     user_message.push_str("Generate a detailed, engaging lorebook entry that enriches the world and maintains consistency with the provided context.");
 
-    // Create messages for generation
-    let messages = vec![GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::from(user_message),
-        options: None,
-    }];
+    use crate::llm::RigCompletionRequest;
 
-    // Set up chat options with structured output
-    let mut chat_options = GenAiChatOptions::default();
-
-    // Apply temperature from payload or use default
-    if let Some(temp) = payload.temperature {
-        chat_options = chat_options.with_temperature(temp as f64);
-    } else {
-        chat_options = chat_options.with_temperature(1.0);
-    }
-
-    // Apply max_tokens from payload or use default
-    if let Some(max_tokens) = payload.max_tokens {
-        chat_options = chat_options.with_max_tokens(max_tokens);
-    } else {
-        chat_options = chat_options.with_max_tokens(2048); // Reasonable length for lorebook entries
-    }
-
-    // Enable structured output using JSON schema
-    chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
-    // Create chat request with comprehensive system prompt from FieldGenerator
-    let chat_request = ChatRequest::new(messages).with_system(&system_prompt);
+    // Create Rig completion request
+    let rig_req = RigCompletionRequest {
+        model_name: state.config.token_counter_default_model.clone(),
+        provider: "gemini".to_string(), // Default to gemini
+        prompt: user_message,
+        preamble: Some(system_prompt),
+        history: vec![],
+        temperature: payload.temperature.map(|t| t as f64).or(Some(1.0)),
+        ..Default::default()
+    };
 
     // Execute generation
     let start_time = std::time::Instant::now();
     let response = state
         .ai_client
-        .exec_chat(
-            &state.config.token_counter_default_model,
-            chat_request,
-            Some(chat_options),
-        )
+        .completion(rig_req)
         .await
-        .map_err(|e| AppError::GeminiError(format!("Lorebook generation failed: {}", e)))?;
+        .map_err(|e| AppError::AiError(format!("Lorebook generation failed: {}", e)))?;
 
     // Extract and parse the response
-    let response_text = response
-        .first_text()
-        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?
-        .to_string();
+    let response_text = response.content;
 
     let entry_output: LorebookEntryOutput = serde_json::from_str(&response_text).map_err(|e| {
         AppError::InternalServerErrorGeneric(format!(
@@ -835,11 +740,6 @@ pub async fn scribe_assistant_handler(
 
     info!("Scribe assistant chat request from user {}", user.id);
 
-    use genai::chat::{
-        ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest, ChatRole,
-        MessageContent,
-    };
-
     // Build system prompt for Scribe assistant
     let system_prompt = r#"You are Scribe, an AI assistant specialized in helping creators develop compelling characters for interactive storytelling, roleplay, and creative writing.
 
@@ -861,22 +761,31 @@ Guidelines:
 
 You have access to character context when provided, which helps you give more relevant advice."#;
 
+    use crate::llm::RigCompletionRequest;
+    use rig::message::Message as RigMessage;
+
     // Build conversation messages
-    let mut messages = Vec::new();
+    let mut history = Vec::new();
 
     // Add conversation history if provided
-    if let Some(history) = &payload.conversation_history {
-        for msg in history {
-            let role = match msg.role.as_str() {
-                "user" => ChatRole::User,
-                "assistant" => ChatRole::Assistant,
-                _ => continue, // Skip unknown roles
+    if let Some(history_payload) = &payload.conversation_history {
+        for msg in history_payload {
+            let rig_msg = match msg.role.as_str() {
+                "assistant" => RigMessage::Assistant {
+                    id: None,
+                    content: rig::one_or_many::OneOrMany::one(
+                        rig::message::AssistantContent::Text(rig::message::Text {
+                            text: msg.content.clone(),
+                        }),
+                    ),
+                },
+                _ => RigMessage::User {
+                    content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                        msg.content.clone(),
+                    )),
+                },
             };
-            messages.push(GenAiChatMessage {
-                role,
-                content: MessageContent::from(msg.content.clone()),
-                options: None,
-            });
+            history.push(rig_msg);
         }
     }
 
@@ -900,51 +809,28 @@ You have access to character context when provided, which helps you give more re
         }
     }
 
-    // Add current user message
-    messages.push(GenAiChatMessage {
-        role: ChatRole::User,
-        content: MessageContent::from(user_message),
-        options: None,
-    });
-
-    // Set up chat options
-    let mut chat_options = GenAiChatOptions::default();
-
-    // Apply user-provided options
-    if let Some(temp) = payload.temperature {
-        chat_options = chat_options.with_temperature(temp.into());
-    } else {
-        // Default: balanced creativity for helpful assistant
-        chat_options = chat_options.with_temperature(1.0);
-    }
-
-    if let Some(max_tokens) = payload.max_tokens {
-        chat_options = chat_options.with_max_tokens(max_tokens);
-    } else {
-        // Default: reasonable response length
-        chat_options = chat_options.with_max_tokens(1024);
-    }
-
-    // Create chat request
-    let chat_request = ChatRequest::new(messages).with_system(system_prompt);
+    // Create Rig completion request
+    let rig_req = RigCompletionRequest {
+        model_name: state.config.token_counter_default_model.clone(),
+        provider: "gemini".to_string(), // Default to gemini
+        prompt: user_message,
+        preamble: Some(system_prompt.to_string()),
+        history,
+        temperature: payload.temperature.map(|t| t as f64).or(Some(1.0)),
+        max_tokens: payload.max_tokens.map(|l| l as i32).or(Some(1024)),
+        ..Default::default()
+    };
 
     // Execute chat
     let start_time = std::time::Instant::now();
     let response = state
         .ai_client
-        .exec_chat(
-            &state.config.token_counter_default_model,
-            chat_request,
-            Some(chat_options),
-        )
+        .completion(rig_req)
         .await
-        .map_err(|e| AppError::GeminiError(format!("Scribe assistant failed: {}", e)))?;
+        .map_err(|e| AppError::AiError(format!("Scribe assistant failed: {}", e)))?;
 
     // Extract response text
-    let response_text = response
-        .first_text()
-        .ok_or_else(|| AppError::GeminiError("No content in response".to_string()))?
-        .to_string();
+    let response_text = response.content;
 
     // Calculate generation time
     let generation_time_ms = start_time.elapsed().as_millis() as u64;

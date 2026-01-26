@@ -452,6 +452,7 @@ impl QdrantClientService {
                 points,
                 ordering: None, // Default ordering
                 shard_key_selector: None,
+                ..Default::default()
             })
             .await
             .map_err(|e| {

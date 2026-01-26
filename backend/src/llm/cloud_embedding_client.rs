@@ -243,7 +243,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                                 serde_json::from_str(&error_body_text);
                             let error_message =
                                 parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
-                            return Err(AppError::GeminiError(format!(
+                            return Err(AppError::AiError(format!(
                                 "Gemini API error ({}): {} after {} retries with model {}",
                                 status, error_message, MAX_RETRIES, self.model_name
                             )));
@@ -271,7 +271,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                             |e| format!("Failed to parse error body: {e}"),
                             |b| b.error.message,
                         );
-                        return Err(AppError::GeminiError(format!(
+                        return Err(AppError::AiError(format!(
                             "Gemini API error ({status}): {error_message}"
                         )));
                     }
@@ -380,7 +380,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                                 serde_json::from_str(&error_body_text);
                             let error_message =
                                 parsed_error.map_or_else(|_| error_body_text, |b| b.error.message);
-                            return Err(AppError::GeminiError(format!(
+                            return Err(AppError::AiError(format!(
                                 "Gemini Batch API error ({}): {} after {} retries with model {}",
                                 status, error_message, MAX_RETRIES, self.model_name
                             )));
@@ -408,7 +408,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                             |e| format!("Failed to parse error body: {e}"),
                             |b| b.error.message,
                         );
-                        return Err(AppError::GeminiError(format!(
+                        return Err(AppError::AiError(format!(
                             "Gemini Batch API error ({status}): {error_message}"
                         )));
                     }
@@ -632,11 +632,11 @@ mod tests {
         // Verify the result is an error
         assert!(result.is_err());
         match result.unwrap_err() {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("400"));
                 assert!(msg.contains("Invalid task type"));
             }
-            err => panic!("Expected GeminiError, got {err:?}"),
+            err => panic!("Expected AiError, got {err:?}"),
         }
     }
 
@@ -721,10 +721,10 @@ mod tests {
         // Verify the result is an error
         assert!(result.is_err());
         match result.unwrap_err() {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("500"));
             }
-            err => panic!("Expected GeminiError, got {err:?}"),
+            err => panic!("Expected AiError, got {err:?}"),
         }
     }
 
@@ -916,20 +916,20 @@ mod tests {
         assert!(result.is_err(), "Expected an error due to invalid API key");
 
         match result.err().unwrap() {
-            AppError::GeminiError(msg) => {
-                println!("Received expected GeminiError: {msg}");
+            AppError::AiError(msg) => {
+                println!("Received expected AiError: {msg}");
                 assert!(
                     msg.contains("API key not valid") || msg.contains("400"), // Gemini API might return 400 for invalid key
                     "Error message should indicate an invalid API key problem. Actual: {msg}"
                 );
             }
             other_err => {
-                panic!("Expected AppError::GeminiError, but got {other_err:?}");
+                panic!("Expected AppError::AiError, but got {other_err:?}");
             }
         }
     }
 
-    // Test for API error status with a body that is *not* valid GeminiError JSON
+    // Test for API error status with a body that is *not* valid AiError JSON
     #[tokio::test]
     async fn test_embed_content_api_error_malformed_body() {
         let server = MockServer::start();
@@ -956,11 +956,11 @@ mod tests {
 
         assert!(result.is_err());
         match result.err().unwrap() {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("Gemini API error (500 Internal Server Error)"));
                 assert!(msg.contains("Failed to parse error body")); // Check that parsing failure is mentioned
             }
-            _ => panic!("Expected AppError::GeminiError"),
+            _ => panic!("Expected AppError::AiError"),
         }
         mock.assert();
     }
@@ -1042,11 +1042,11 @@ mod tests {
 
         assert!(result.is_err());
         match result.err().unwrap() {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("400"));
                 assert!(msg.contains("Invalid content format."));
             }
-            _ => panic!("Expected AppError::GeminiError"),
+            _ => panic!("Expected AppError::AiError"),
         }
         mock.assert();
     }
@@ -1120,7 +1120,7 @@ mod tests {
 
         assert!(result.is_err(), "Expected failure after max retries");
         match result.unwrap_err() {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("429"));
                 assert!(msg.contains("Persistently rate limited"));
                 assert!(msg.contains(&format!(
@@ -1128,7 +1128,7 @@ mod tests {
                     MAX_RETRIES, client.model_name
                 ))); // Corrected to use client.model_name
             }
-            other_err => panic!("Expected GeminiError, got {other_err:?}"),
+            other_err => panic!("Expected AiError, got {other_err:?}"),
         }
 
         // Primary model should have been called MAX_RETRIES + 1 times (initial attempt + MAX_RETRIES)
@@ -1199,7 +1199,7 @@ mod tests {
 
         assert!(result.is_err(), "Expected batch failure after max retries");
         match result.unwrap_err() {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("429"));
                 assert!(msg.contains("Batch persistently rate limited"));
                 assert!(msg.contains(&format!(
@@ -1207,7 +1207,7 @@ mod tests {
                     MAX_RETRIES, client.model_name
                 ))); // Corrected to use client.model_name
             }
-            other_err => panic!("Expected GeminiError, got {other_err:?}"),
+            other_err => panic!("Expected AiError, got {other_err:?}"),
         }
 
         assert_eq!(primary_batch_429_mock.hits(), MAX_RETRIES as usize + 1);

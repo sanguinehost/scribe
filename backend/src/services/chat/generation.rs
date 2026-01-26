@@ -5,10 +5,7 @@ use bigdecimal::ToPrimitive;
 use diesel::{result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl};
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
-use genai::chat::{
-    ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-    ChatRequest as GenAiChatRequest, ChatRole, ReasoningEffort, ThinkingLevel,
-};
+use rig::message::Message as RigMessage;
 use secrecy::{ExposeSecret, SecretBox};
 // Required for stream_ai_response_and_save_message
 use tracing::{debug, error, info, instrument, trace, warn}; // Added trace
@@ -2013,7 +2010,7 @@ pub struct StreamAiParams {
     pub state: Arc<AppState>,
     pub session_id: crate::db::DbId,
     pub user_id: crate::db::DbId,
-    pub incoming_genai_messages: Vec<GenAiChatMessage>, // MODIFIED: Changed type and name
+    pub history: Vec<RigMessage>,
     pub system_prompt: Option<String>,
     pub temperature: Option<crate::db::DbDecimal>,
     pub max_output_tokens: Option<i32>,
@@ -2082,12 +2079,15 @@ fn is_safety_filter_error(error_str: &str) -> bool {
 }
 
 /// Parameters for non-streaming AI chat execution with retry mechanism
+#[derive(Debug)]
 pub struct ExecChatWithRetryParams {
     pub state: Arc<AppState>,
     pub model_name: String,
     pub model_provider: Option<String>,
-    pub chat_request: genai::chat::ChatRequest,
-    pub chat_options: Option<genai::chat::ChatOptions>,
+    pub history: Vec<RigMessage>,
+    pub system_prompt: Option<String>,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<i32>,
     pub session_id: crate::db::DbId,
     pub user_id: crate::db::DbId, // Added for per-user AI client selection
     pub character_name: Option<String>, // For prefill generation
@@ -2101,9 +2101,9 @@ pub struct ExecChatWithRetryParams {
 ///
 /// Returns the original AI client errors after all retry attempts are exhausted.
 #[instrument(skip_all, err, fields(session_id = %params.session_id, model_name = %params.model_name))]
-pub async fn exec_chat_with_retry(
+pub async fn completion_with_retry(
     params: ExecChatWithRetryParams,
-) -> Result<crate::llm::rig_client::RigChatResponse, AppError> {
+) -> Result<crate::llm::RigChatResponse, AppError> {
     const MAX_RETRIES: u8 = 2;
     let mut retry_count = 0;
 
@@ -2123,11 +2123,11 @@ pub async fn exec_chat_with_retry(
         .await?;
 
     // Store original system prompt for retry attempts
-    let original_system_prompt = params.chat_request.system.clone();
+    let original_system_prompt = params.system_prompt.clone();
 
     loop {
         // Create chat request for this attempt
-        let (attempt_system_prompt, attempt_messages) = {
+        let (attempt_system_prompt, attempt_history) = {
             let system_prompt = if retry_count == 0 {
                 // First attempt: use original system prompt
                 original_system_prompt.clone().unwrap_or_default()
@@ -2140,7 +2140,7 @@ pub async fn exec_chat_with_retry(
             };
 
             // Add prefill as fake assistant message for all attempts
-            let mut messages_with_prefill = params.chat_request.messages.clone();
+            let mut history_with_prefill = params.history.clone();
             let prefill_content = if retry_count == 0 {
                 // First attempt: use standard prefill
                 create_standard_prefill(params.character_name.as_deref())
@@ -2149,37 +2149,19 @@ pub async fn exec_chat_with_retry(
                 create_jailbreak_prefill(params.character_name.as_deref())
             };
 
-            let prefill_message = genai::chat::ChatMessage {
-                role: genai::chat::ChatRole::Assistant,
-                content: genai::chat::MessageContent::from(prefill_content),
-                options: None,
+            let prefill_message = rig::message::Message::Assistant {
+                id: None,
+                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
+                    prefill_content,
+                )),
             };
-            messages_with_prefill.push(prefill_message);
+            history_with_prefill.push(prefill_message);
 
-            (Some(system_prompt), messages_with_prefill)
+            (Some(system_prompt), history_with_prefill)
         };
 
-        // Convert genai messages to rig messages
-        let mut rig_messages = Vec::new();
-        for m in attempt_messages {
-            let role = match m.role {
-                genai::chat::ChatRole::User => rig::message::Message::User {
-                    content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
-                        m.content.texts().join("\n"),
-                    )),
-                },
-                genai::chat::ChatRole::Assistant => rig::message::Message::Assistant {
-                    id: None,
-                    content: rig::one_or_many::OneOrMany::one(
-                        rig::message::AssistantContent::text(m.content.texts().join("\n")),
-                    ),
-                },
-                _ => continue,
-            };
-            rig_messages.push(role);
-        }
-
-        let rig_req = crate::llm::rig_client::RigCompletionRequest {
+        // Build RigCompletionRequest
+        let rig_req = crate::llm::RigCompletionRequest {
             model_name: params.model_name.clone(),
             provider: params
                 .model_provider
@@ -2187,13 +2169,10 @@ pub async fn exec_chat_with_retry(
                 .unwrap_or_else(|| "gemini".to_string()),
             prompt: "".to_string(), // We use history for everything
             preamble: attempt_system_prompt,
-            history: rig_messages,
-            temperature: params.chat_options.as_ref().and_then(|o| o.temperature),
-            max_tokens: params
-                .chat_options
-                .as_ref()
-                .and_then(|o| o.max_tokens)
-                .map(|t| t as i32),
+            history: attempt_history,
+            temperature: params.temperature,
+            max_tokens: params.max_tokens,
+            ..Default::default()
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting non-streaming AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -2255,16 +2234,18 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             thinking_budget: params.thinking_budget,
             thinking_level: params.thinking_level.clone(),
             enable_code_execution: params.enable_code_execution,
-            incoming_genai_messages: {
-                let mut messages_with_prefill = params.incoming_genai_messages.clone();
+            history: {
+                let mut messages_with_prefill = params.history.clone();
 
                 // Check if the last message is from User and contains guidance
-                let has_guidance = messages_with_prefill.last().map_or(false, |msg| {
-                    matches!(msg.role, genai::chat::ChatRole::User)
-                        && msg
-                            .content
-                            .first_text()
-                            .map_or(false, |text| text.contains("(SYSTEM INSTRUCTION:"))
+                let has_guidance = messages_with_prefill.last().map_or(false, |msg| match msg {
+                    RigMessage::User { content } => content.iter().any(|c| match c {
+                        rig::message::UserContent::Text(t) => {
+                            t.text.contains("(SYSTEM INSTRUCTION:")
+                        }
+                        _ => false,
+                    }),
+                    _ => false,
                 });
 
                 if !has_guidance {
@@ -2277,10 +2258,11 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                     };
 
                     // Add fake assistant message with prefill for all attempts
-                    let prefill_message = genai::chat::ChatMessage {
-                        role: genai::chat::ChatRole::Assistant,
-                        content: genai::chat::MessageContent::from(prefill_content),
-                        options: None,
+                    let prefill_message = RigMessage::Assistant {
+                        id: None,
+                        content: rig::one_or_many::OneOrMany::one(
+                            rig::message::AssistantContent::text(prefill_content),
+                        ),
                     };
                     messages_with_prefill.push(prefill_message);
                 } else {
@@ -2351,7 +2333,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
 ///
 /// # Errors
 ///
-/// Returns `AppError::from(genai::Error)` if the AI client fails to initiate or process the stream,
+/// Returns `AppError::from(anyhow::Error)` if the AI client fails to initiate or process the stream,
 /// or database-related errors from the save_message function if saving fails.
 /// The function handles errors gracefully by attempting to save partial responses.
 #[instrument(skip_all, err, fields(session_id = %params.session_id, user_id = %params.user_id, model_name = %params.model_name))]
@@ -2362,21 +2344,21 @@ pub async fn stream_ai_response_and_save_message(
         state,
         session_id,
         user_id,
-        incoming_genai_messages,
+        history,
         system_prompt,
         temperature,
         max_output_tokens,
         frequency_penalty: _,
         presence_penalty: _,
         top_k: _,
-        top_p,
-        stop_sequences,
+        top_p: _top_p,
+        stop_sequences: _stop_sequences,
         seed: _,
         model_name,
         model_provider,
         thinking_budget,
-        thinking_level,
-        enable_code_execution,
+        thinking_level: _thinking_level,
+        enable_code_execution: _enable_code_execution,
         request_thinking,
         user_dek,
         character_name: _, // Ignore character_name in the actual generation function
@@ -2450,161 +2432,38 @@ pub async fn stream_ai_response_and_save_message(
         "System prompt to be used for GenAiChatRequest construction"
     );
 
-    let mut chat_request = GenAiChatRequest::new(incoming_genai_messages.clone()) // MODIFIED: Use incoming_genai_messages directly
-        .with_system(system_prompt.clone().unwrap_or_default());
-
-    let mut genai_chat_options = GenAiChatOptions::default();
-    if let Some(ref temp_val) = temperature {
-        if let Some(f_val) = temp_val.to_f32() {
-            genai_chat_options = genai_chat_options.with_temperature(f_val.into());
-        }
-    }
-    if let Some(tokens) = max_output_tokens {
-        genai_chat_options = genai_chat_options.with_max_tokens(u32::try_from(tokens).unwrap_or(0));
-    }
-    if let Some(p_val) = top_p {
-        if let Some(f_val) = p_val.to_f32() {
-            genai_chat_options = genai_chat_options.with_top_p(f_val.into());
-        }
-    }
-    if let Some(seqs) = stop_sequences {
-        genai_chat_options = genai_chat_options.with_stop_sequences(seqs);
-    }
-    if let Some(budget) = thinking_budget {
-        if budget > 0 {
-            genai_chat_options = genai_chat_options
-                .with_reasoning_effort(ReasoningEffort::Budget(u32::try_from(budget).unwrap_or(0)));
-        }
-    }
-    if let Some(level_str) = thinking_level {
-        let thinking_level = match level_str.to_lowercase().as_str() {
-            "low" => Some(ThinkingLevel::Low),
-            "medium" => Some(ThinkingLevel::Medium),
-            "high" => Some(ThinkingLevel::High),
-            "disabled" | "off" => {
-                // Explicitly disable thinking by setting budget to 0 if possible
-                genai_chat_options =
-                    genai_chat_options.with_reasoning_effort(ReasoningEffort::Budget(0));
-                None
-            }
-            _ => None,
-        };
-        if let Some(level) = thinking_level {
-            genai_chat_options = genai_chat_options.with_thinking_level(level);
-        }
-    }
-
-    // Safety settings are now set on the ChatRequest in create_jailbreak_request
-
-    // NEW LOGIC FOR TOOL CONFIGURATION
-    let mut tools_to_declare: Vec<genai::chat::Tool> = Vec::new();
-
-    // Declare scribe_tool_invoker if thinking is requested or code execution is enabled
-    // (as it's our stand-in for a generic tool for now when code execution is on)
-    if request_thinking || enable_code_execution == Some(true) {
-        debug!("'scribe_tool_invoker' will be declared for Gemini.");
-        let scribe_tool_schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "tool_name": { "type": "string", "description": "The name of the Scribe tool to invoke." },
-                "tool_arguments": { "type": "object", "description": "The arguments for the Scribe tool, as a JSON object." }
-            },
-            "required": ["tool_name", "tool_arguments"]
-        });
-        let scribe_tool = genai::chat::Tool::new("scribe_tool_invoker".to_string())
-            .with_description("Invokes a Scribe-defined tool with the given arguments. Used for complex reasoning or actions.".to_string())
-            .with_schema(scribe_tool_schema);
-        tools_to_declare.push(scribe_tool);
-    }
-
-    // TODO: Add other specific tools if gemini_enable_code_execution is true and they are defined.
-
-    if !tools_to_declare.is_empty() {
-        chat_request = chat_request.with_tools(tools_to_declare.clone());
-        info!(?tools_to_declare, "Tools added to ChatRequest for Gemini.");
-    }
-    // END NEW LOGIC FOR TOOL CONFIGURATION
-    // The explicit FunctionCallingMode, FunctionCallingConfig, and with_gemini_tool_config
-    // have been removed as the new genai adapter handles tools via `ChatRequest::with_tools`.
-
-    trace!(
-        ?chat_request,
-        ?genai_chat_options,
-        "Prepared ChatRequest and Options for AI"
-    );
-    // Added detailed debug logging for the request and options
-    debug!(
-        target: "chat_service_payload_details",
-        "Final GenAI ChatRequest before sending: {:#?}",
-        chat_request
-    );
-    debug!(
-        target: "chat_service_payload_details",
-        "Final GenAI ChatOptions before sending: {:#?}",
-        genai_chat_options
-    );
-
-    // Build raw prompt for debugging before sending to AI
-    let raw_prompt_debug =
-        build_raw_prompt_debug(&chat_request, &genai_chat_options, &tools_to_declare);
-
-    // Temporary debug: log the raw prompt length to see if it's being built correctly
-    tracing::debug!("Raw prompt debug built, length: {}", raw_prompt_debug.len());
-
     // Build RigCompletionRequest
-    let rig_req = crate::llm::rig_client::RigCompletionRequest {
+    let mut rig_req = crate::llm::RigCompletionRequest {
         model_name: model_name.clone(),
         provider: model_provider
             .clone()
             .unwrap_or_else(|| "gemini".to_string()),
-        prompt: incoming_genai_messages
-            .last()
-            .and_then(|m| m.content.texts().first().map(|t| t.to_string()))
-            .unwrap_or_default(),
-        preamble: Some(system_prompt.unwrap_or_default()),
-        history: incoming_genai_messages
-            .iter()
-            .take(incoming_genai_messages.len().saturating_sub(1))
-            .map(|m| {
-                // Map genai::chat::ChatMessage to rig::message::Message
-                match m.role {
-                    genai::chat::ChatRole::User => {
-                        let content = m.content.texts().join("\n");
-                        rig::message::Message::User {
-                            content: rig::one_or_many::OneOrMany::one(
-                                rig::message::UserContent::text(content),
-                            ),
-                        }
-                    }
-                    genai::chat::ChatRole::Assistant => {
-                        let content = m.content.texts().join("\n");
-                        rig::message::Message::Assistant {
-                            id: None,
-                            content: rig::one_or_many::OneOrMany::one(
-                                rig::message::AssistantContent::text(content),
-                            ),
-                        }
-                    }
-                    _ => rig::message::Message::User {
-                        content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
-                            "".to_string(),
-                        )),
-                    },
-                }
-            })
-            .collect(),
-        temperature: temperature.and_then(|t| t.to_f64()),
+        prompt: "".to_string(), // We use history for everything
+        preamble: system_prompt.clone(),
+        history: history.clone(),
+        temperature: temperature.as_ref().and_then(|t| t.to_f64()),
         max_tokens: max_output_tokens,
+        ..Default::default()
     };
 
-    let rig_client = crate::llm::rig_client::RigClient::new(None); // Gemini uses env var or we can pass it
-    let rig_stream_result = rig_client.completion_stream(rig_req).await;
+    // Add thinking/reasoning if requested
+    if request_thinking {
+        rig_req.reasoning_budget = thinking_budget;
+        rig_req.capture_reasoning_content = true;
+    }
+
+    // Build raw prompt for debugging before sending to AI
+    let raw_prompt_debug = format!("{:#?}", rig_req);
+
+    // Temporary debug: log the raw prompt length to see if it's being built correctly
+    tracing::debug!("Raw prompt debug built, length: {}", raw_prompt_debug.len());
+
+    let rig_stream_result = state.ai_client.completion_stream(rig_req).await;
 
     let rig_stream: std::pin::Pin<
         Box<
-            dyn futures_util::Stream<
-                    Item = Result<crate::llm::rig_client::RigStreamEvent, anyhow::Error>,
-                > + Send,
+            dyn futures_util::Stream<Item = Result<crate::llm::RigStreamEvent, anyhow::Error>>
+                + Send,
         >,
     > = match rig_stream_result {
         Ok(s) => {
@@ -2642,7 +2501,7 @@ pub async fn stream_ai_response_and_save_message(
         while let Some(event_result) = rig_stream.next().await {
             trace!("Received event from rig_stream in chat_service: {:?}", event_result);
             match event_result {
-                Ok(crate::llm::rig_client::RigStreamEvent::Content(chunk_content)) => {
+                Ok(crate::llm::RigStreamEvent::Content(chunk_content)) => {
                     if chunk_content.is_empty() {
                         trace!("Skipping empty content chunk from Rig in chat_service");
                     } else {
@@ -2678,17 +2537,17 @@ pub async fn stream_ai_response_and_save_message(
                         }
                     }
                 }
-                Ok(crate::llm::rig_client::RigStreamEvent::Reasoning(reasoning)) => {
+                Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
                     if !reasoning.is_empty() {
                         yield Ok(ScribeSseEvent::Thinking(reasoning));
                     }
                 }
-                Ok(crate::llm::rig_client::RigStreamEvent::ToolCall { id, name, .. }) => {
+                Ok(crate::llm::RigStreamEvent::ToolCall { id, name, .. }) => {
                     debug!(tool_call_id = %id, tool_fn_name = %name, "Received ToolCall from Rig stream in chat_service");
                     let thinking_message = format!("Attempting to use tool: {} with ID: {}", name, id);
                     yield Ok(ScribeSseEvent::Thinking(thinking_message));
                 }
-                Ok(crate::llm::rig_client::RigStreamEvent::TokenUsage { input_tokens, output_tokens }) => {
+                Ok(crate::llm::RigStreamEvent::TokenUsage { input_tokens, output_tokens }) => {
                     debug!(input_tokens, output_tokens, "Received TokenUsage from Rig stream");
                     token_sender.send(ScribeSseEvent::TokenUsage {
                         prompt_tokens: input_tokens as i32,
@@ -2764,7 +2623,7 @@ pub async fn stream_ai_response_and_save_message(
                         // Handle Gemini JSON parsing errors more gracefully
                         if detailed_error.contains("trailing characters") {
                             "LLM API error: The AI service returned a malformed response (trailing characters). This is a known issue with the Gemini 3 Preview streaming format in the current adapter. Please try disabling reasoning or using a stable model.".to_string()
-                        } else if detailed_error.contains("GeminiError") {
+                        } else if detailed_error.contains("AiError") {
                             "LLM API error: The AI service encountered a parsing error. Please try again or consider rephrasing your message.".to_string()
                         } else {
                             let sanitized_error = crate::errors::sanitize_error_message(&detailed_error);
@@ -3226,96 +3085,6 @@ pub async fn stream_ai_response_and_save_message(
     };
 
     Ok(Box::pin(sse_stream))
-}
-
-/// Builds a debug representation of the raw prompt content sent to AI
-/// This shows only the actual prompt content, not API configuration parameters
-fn build_raw_prompt_debug(
-    chat_request: &GenAiChatRequest,
-    _chat_options: &GenAiChatOptions,
-    tools: &[genai::chat::Tool],
-) -> String {
-    use std::fmt::Write;
-
-    let mut debug_prompt = String::new();
-
-    // Header
-    writeln!(&mut debug_prompt, "```").unwrap();
-    writeln!(&mut debug_prompt, "Raw Prompt Sent to AI:").unwrap();
-    writeln!(&mut debug_prompt, "=== RAW AI PROMPT DEBUG ===").unwrap();
-    writeln!(
-        &mut debug_prompt,
-        "Generated at: {}",
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-    )
-    .unwrap();
-    writeln!(&mut debug_prompt).unwrap();
-
-    // System prompt
-    if let Some(system) = &chat_request.system {
-        if !system.is_empty() {
-            writeln!(&mut debug_prompt, "--- SYSTEM PROMPT ---").unwrap();
-            writeln!(&mut debug_prompt, "{}", system).unwrap();
-        }
-    }
-
-    // Tools configuration (only if tools are declared, as they affect the prompt)
-    if !tools.is_empty() {
-        writeln!(&mut debug_prompt).unwrap();
-        writeln!(&mut debug_prompt, "--- TOOLS DECLARED ---").unwrap();
-        for (i, tool) in tools.iter().enumerate() {
-            writeln!(&mut debug_prompt, "Tool {}: {:#?}", i + 1, tool).unwrap();
-        }
-    }
-
-    // Conversation history
-    writeln!(&mut debug_prompt).unwrap();
-    writeln!(&mut debug_prompt, "--- CONVERSATION HISTORY ---").unwrap();
-    let messages = &chat_request.messages;
-    for (i, message) in messages.iter().enumerate() {
-        let role_display = match message.role {
-            ChatRole::System => "System",
-            ChatRole::User => "User",
-            ChatRole::Assistant => "Assistant",
-            ChatRole::Tool => "Tool",
-        };
-
-        writeln!(&mut debug_prompt, "Message {} [{}]:", i + 1, role_display).unwrap();
-
-        // Extract and format the actual text content using MessageContent API
-        // MessageContent is a struct with parts, not an enum
-        if !message.content.tool_calls().is_empty() {
-            writeln!(
-                &mut debug_prompt,
-                "[Tool Calls: {} calls]",
-                message.content.tool_calls().len()
-            )
-            .unwrap();
-        } else if !message.content.tool_responses().is_empty() {
-            writeln!(
-                &mut debug_prompt,
-                "[Tool Responses: {} responses]",
-                message.content.tool_responses().len()
-            )
-            .unwrap();
-        } else if let Some(text) = message.content.first_text() {
-            writeln!(&mut debug_prompt, "{}", text).unwrap();
-        } else {
-            // Check for multiple text parts
-            let texts = message.content.texts();
-            if !texts.is_empty() {
-                for text in texts {
-                    writeln!(&mut debug_prompt, "{}", text).unwrap();
-                }
-            } else {
-                writeln!(&mut debug_prompt, "[Non-text content]").unwrap();
-            }
-        }
-        writeln!(&mut debug_prompt, "---").unwrap();
-    }
-    writeln!(&mut debug_prompt, "```").unwrap();
-
-    debug_prompt
 }
 
 /// Helper function to get message content respecting variant selection

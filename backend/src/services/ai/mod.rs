@@ -1,4 +1,4 @@
 // Future modules:
 // pub mod gemini;
 // pub mod ollama;
-// pub mod mistral;
+pub mod mistralrs_service;

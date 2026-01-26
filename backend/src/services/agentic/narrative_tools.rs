@@ -443,38 +443,29 @@ Respond with JSON:
 impl AnalyzeTextSignificanceTool {
     /// Helper method to call AI for triage analysis using structured outputs
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, MessageContent,
+        use crate::llm::RigCompletionRequest;
+
+        let rig_req = RigCompletionRequest {
+            model_name: "gemini-2.5-flash-lite".to_string(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: prompt.to_string(),
+            preamble: Some("You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.".to_string()),
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some(1024),
+            ..Default::default()
         };
-
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(prompt.to_string()),
-            options: None,
-        };
-
-        let mut genai_chat_options = GenAiChatOptions::default();
-        genai_chat_options = genai_chat_options.with_temperature(1.0);
-        genai_chat_options = genai_chat_options.with_max_tokens(1024);
-
-        // Add structured output format to chat options
-        genai_chat_options = genai_chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
-        // CLEAN: No "Respond only with valid JSON" needed - Gemini 2.5+ enforces schema natively
-        let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.";
-        let chat_req = ChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         let response = self
             .ai_client
-            .exec_chat("gemini-2.5-flash-lite", chat_req, Some(genai_chat_options))
+            .completion(rig_req)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("AI call failed: {}", e)))?;
 
-        let content = response.first_text().unwrap_or_default();
+        let content = response.content;
 
         // CLEAN: Direct JSON parsing (no markdown fence stripping needed)
-        serde_json::from_str(content)
+        serde_json::from_str(&content)
             .map_err(|e| ToolError::ExecutionFailed(format!("JSON parse failed: {}", e)))
     }
 }
@@ -2027,48 +2018,39 @@ Return your analysis as a JSON object with these four arrays."#,
         );
 
         // Call AI with structured output
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, MessageContent,
+        use crate::llm::RigCompletionRequest;
+
+        let rig_req = RigCompletionRequest {
+            model_name: "gemini-2.5-flash".to_string(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: analysis_prompt,
+            preamble: None,
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some(2048),
+            ..Default::default()
         };
 
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(analysis_prompt),
-            options: None,
-        };
-
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(2048);
-
-        // Enable structured output using JSON schema
-        let response_format = ChatResponseFormat::JsonMode;
-        chat_options = chat_options.with_response_format(response_format);
-
-        let chat_request = ChatRequest::new(vec![user_message]);
-
-        let response = self
-            .ai_client
-            .exec_chat("gemini-2.5-flash", chat_request, Some(chat_options))
-            .await
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!("AI call for lorebook analysis failed: {}", e))
-            })?;
+        let response = self.ai_client.completion(rig_req).await.map_err(|e| {
+            ToolError::ExecutionFailed(format!("AI call for lorebook analysis failed: {}", e))
+        })?;
 
         // Extract token usage for cost tracking
-        let prompt_tokens = response.usage.prompt_tokens.unwrap_or(0);
-        let completion_tokens = response.usage.completion_tokens.unwrap_or(0);
-        let total_tokens = response.usage.total_tokens.unwrap_or(0);
+        let prompt_tokens = response.prompt_tokens.unwrap_or(0);
+        let completion_tokens = response.completion_tokens.unwrap_or(0);
+        let total_tokens = response.total_tokens.unwrap_or(0);
 
         info!(
             "AI token usage - prompt: {}, completion: {}, total: {}",
             prompt_tokens, completion_tokens, total_tokens
         );
 
-        let ai_content = response
-            .first_text()
-            .ok_or_else(|| ToolError::ExecutionFailed("AI response had no content".to_string()))?;
+        let ai_content = &response.content;
+        if ai_content.is_empty() {
+            return Err(ToolError::ExecutionFailed(
+                "AI response had no content".to_string(),
+            ));
+        }
 
         // Parse AI response as JSON
         let analysis: crate::DbJson = serde_json::from_str(ai_content).map_err(|e| {
@@ -2244,64 +2226,31 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
 
         // Use AI to generate entries with structured outputs
         use crate::services::character_generation::structured_output::BatchLorebookEntriesOutput;
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, MessageContent,
+        // Call AI with structured output
+        use crate::llm::RigCompletionRequest;
+
+        let rig_req = RigCompletionRequest {
+            model_name: "gemini-2.5-flash-lite".to_string(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: prompt.to_string(),
+            preamble: None,
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some((count * 800).min(8192) as i32),
+            ..Default::default()
         };
-
-        let system_prompt = format!(
-            r#"You are a world-building assistant creating {} lorebook entries.
-
-Each entry should include:
-1. **Name**: Clear, concise title
-2. **Content**: Rich, detailed information (150-500 words)
-3. **Keys**: 3-5 trigger keywords (names, places, concepts)
-4. **Category**: Optional category (character, location, lore, item, faction, event)
-
-Guidelines:
-- Write engaging, immersive content
-- Maintain consistency with provided context
-- Ensure entries are related and complement each other
-- Generate appropriate trigger keys with variations
-- Focus on information useful during roleplay
-- Avoid redundancy between entries
-
-You must respond with a JSON object containing an array of {} entries."#,
-            count, count
-        );
-
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(prompt),
-            options: None,
-        };
-
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        let max_tokens = (count * 800).min(8192) as u32; // ~800 tokens per entry
-        chat_options = chat_options.with_max_tokens(max_tokens);
-
-        // Enable structured output using JSON schema
-        let response_format = ChatResponseFormat::JsonMode;
-        chat_options = chat_options.with_response_format(response_format);
-
-        let chat_request = ChatRequest::new(vec![user_message]).with_system(&system_prompt);
 
         // Execute AI generation
         let start_time = std::time::Instant::now();
-        let response = self
-            .ai_client
-            .exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options))
-            .await
-            .map_err(|e| {
-                error!("AI batch generation failed: {}", e);
-                ToolError::ExecutionFailed(format!("AI generation failed: {}", e))
-            })?;
+        let response = self.ai_client.completion(rig_req).await.map_err(|e| {
+            error!("AI batch generation failed: {}", e);
+            ToolError::ExecutionFailed(format!("AI generation failed: {}", e))
+        })?;
 
         // Extract token usage for cost tracking
-        let prompt_tokens = response.usage.prompt_tokens.unwrap_or(0);
-        let completion_tokens = response.usage.completion_tokens.unwrap_or(0);
-        let total_tokens = response.usage.total_tokens.unwrap_or(0);
+        let prompt_tokens = response.prompt_tokens.unwrap_or(0);
+        let completion_tokens = response.completion_tokens.unwrap_or(0);
+        let total_tokens = response.total_tokens.unwrap_or(0);
 
         info!(
             "AI token usage - prompt: {}, completion: {}, total: {}",
@@ -2309,9 +2258,12 @@ You must respond with a JSON object containing an array of {} entries."#,
         );
 
         // Parse structured output
-        let response_text = response
-            .first_text()
-            .ok_or_else(|| ToolError::ExecutionFailed("No content in AI response".to_string()))?;
+        let response_text = &response.content;
+        if response_text.is_empty() {
+            return Err(ToolError::ExecutionFailed(
+                "No content in AI response".to_string(),
+            ));
+        }
 
         let batch_output: BatchLorebookEntriesOutput = serde_json::from_str(response_text)
             .map_err(|e| {

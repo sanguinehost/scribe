@@ -276,19 +276,20 @@ impl ChronicleDeduplicationService {
             candidate.summary, new_event.summary
         );
 
-        let request = genai::chat::ChatRequest::from_user(prompt);
-        let options = genai::chat::ChatOptions {
+        let request = crate::llm::RigCompletionRequest {
+            model_name: "gemini-2.5-flash-lite".to_string(),
+            provider: "gemini".to_string(),
+            prompt,
+            preamble: None,
+            history: vec![],
             temperature: Some(0.0),
+            max_tokens: None,
             ..Default::default()
         };
 
-        let response = self
-            .ai_client
-            .exec_chat("gemini-2.5-flash-lite", request, Some(options))
-            .await
-            .map_err(|e| {
-                AppError::GenerationError(format!("Failed to check duplicates with LLM: {}", e))
-            })?;
+        let response = self.ai_client.completion(request).await.map_err(|e| {
+            AppError::GenerationError(format!("Failed to check duplicates with LLM: {}", e))
+        })?;
 
         #[derive(serde::Deserialize)]
         struct LlmResponse {
@@ -298,11 +299,12 @@ impl ChronicleDeduplicationService {
         }
 
         // Parse JSON from the response content
-        let content = response.first_text().ok_or_else(|| {
-            AppError::GenerationError(
+        let content = &response.content;
+        if content.is_empty() {
+            return Err(AppError::GenerationError(
                 "LLM returned empty response for deduplication check".to_string(),
-            )
-        })?;
+            ));
+        }
 
         // Clean up markdown code blocks if present
         let clean_content = content
