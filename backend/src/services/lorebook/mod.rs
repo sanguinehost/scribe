@@ -21,10 +21,7 @@ use crate::{
     },
     schema::{lorebook_entries, lorebooks},
     services::{embeddings::LorebookEntryParams, EncryptionService},
-    vector_db::qdrant_client::{
-        Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue, PointId,
-        PointIdOptions, QdrantClientServiceTrait,
-    },
+    vector_db::VectorService,
     AppState,
 };
 use axum_login::AuthSession;
@@ -66,7 +63,7 @@ pub struct LorebookService {
     pool: DbPool,
     // TODO: Remove once encryption is implemented for lorebooks
     encryption_service: Arc<EncryptionService>, // Store as Arc
-    qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Added for vector cleanup
+    qdrant_service: Arc<VectorService>,         // Added for vector cleanup
 }
 
 // Module declarations
@@ -86,7 +83,7 @@ impl LorebookService {
     pub fn new(
         pool: DbPool,
         encryption_service: Arc<EncryptionService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<VectorService>,
     ) -> Self {
         // Accept Arc
         Self {

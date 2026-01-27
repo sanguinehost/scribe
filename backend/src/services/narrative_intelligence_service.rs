@@ -35,7 +35,6 @@ use crate::{
         embeddings::RetrievedChunk,
         ChronicleService, LorebookService,
     },
-    vector_db::qdrant_client::QdrantClientServiceTrait,
     AppState,
 };
 
@@ -124,7 +123,7 @@ impl NarrativeIntelligenceService {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
         config: Option<NarrativeProcessingConfig>,
@@ -671,7 +670,7 @@ impl NarrativeIntelligenceService {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) -> Self {
@@ -699,7 +698,7 @@ impl NarrativeIntelligenceService {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) -> Self {

@@ -97,7 +97,7 @@ pub fn decrypt_lorebook_title(
 
 /// Helper function to decrypt chat message content (encryption required)
 #[allow(deprecated)]
-pub(super) fn decrypt_chat_content(
+pub fn decrypt_chat_content(
     metadata: &ChatMessageChunkMetadata,
     session_dek: Option<&SessionDek>,
 ) -> String {
@@ -132,45 +132,8 @@ pub(super) fn decrypt_chat_content(
     "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
 }
 
-#[derive(Debug, Clone)]
-pub struct ChronicleEventMetadata {
-    pub event_id: crate::db::DbId,
-    pub event_type: String,
-    pub chronicle_id: crate::db::DbId,
-    pub user_id: crate::db::DbId, // SECURITY: Added user_id for access control
-    pub created_at: crate::DbTimestamp,
-}
-
-impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
-    type Error = AppError;
-
-    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
-        let event_id = extract_uuid_from_payload(&payload, "event_id", "ChronicleEventMetadata")?;
-        let event_type =
-            extract_string_from_payload(&payload, "event_type", "ChronicleEventMetadata")?;
-        let chronicle_id =
-            extract_uuid_from_payload(&payload, "chronicle_id", "ChronicleEventMetadata")?;
-        let user_id = extract_uuid_from_payload(&payload, "user_id", "ChronicleEventMetadata")?;
-        let created_at_str =
-            extract_string_from_payload(&payload, "created_at", "ChronicleEventMetadata")?;
-
-        let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
-            .map_err(|e| {
-                AppError::SerializationError(format!(
-                    "Failed to parse 'created_at' in ChronicleEventMetadata: {e}"
-                ))
-            })
-            .map(|dt| dt.with_timezone(&chrono::Utc))?;
-
-        Ok(Self {
-            event_id,
-            event_type,
-            chronicle_id,
-            user_id,
-            created_at: created_at.into(),
-        })
-    }
-}
+// ChronicleEventMetadata moved to metadata.rs
+use super::metadata::ChronicleEventMetadata;
 
 #[derive(Debug, Clone)]
 pub enum RetrievedMetadata {

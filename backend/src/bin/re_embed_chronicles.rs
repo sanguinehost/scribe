@@ -21,7 +21,6 @@ use scribe_backend::{
     },
     schema::{chronicle_events, users},
     state::AppState,
-    vector_db::QdrantClientService,
 };
 use secrecy::{ExposeSecret, SecretString};
 use std::sync::Arc;
@@ -98,13 +97,16 @@ async fn main() -> Result<()> {
         .context("GEMINI_API_KEY is required")?;
     let ai_client = Arc::new(RigClient::new(Some(api_key.clone()), None));
     let embedding_client = Arc::new(build_cloud_embedding_client(config.clone())?);
-    let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
+    let embedding_model =
+        scribe_backend::llm::UnifiedEmbeddingModel::Cloud((*embedding_client).clone());
+    let qdrant_service =
+        scribe_backend::vector_db::create_vector_service(config.clone(), embedding_model).await?;
 
     // Initialize services - build with required external services
     let app_state = AppState::builder(pool.clone(), config)
         .with_ai_client(ai_client)
         .with_embedding_client(embedding_client)
-        .with_qdrant_service(qdrant_service)
+        .with_vector_service(qdrant_service)
         .build()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to build app state: {}", e))?;

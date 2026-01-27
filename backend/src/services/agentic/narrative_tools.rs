@@ -11,13 +11,13 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         embeddings::{
-            ChatMessageChunkMetadata, ChronicleEventMetadata, CognitiveFactMetadata,
+            decrypt_lorebook_content, metadata::ChronicleEventMetadata,
+            retrieval::decrypt_chat_content, ChatMessageChunkMetadata, CognitiveFactMetadata,
             LorebookChunkMetadata,
         },
         ChronicleService, LorebookService,
     },
     state::AppState,
-    vector_db::qdrant_client::QdrantClientServiceTrait,
 };
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
@@ -632,14 +632,14 @@ impl ScribeTool for CreateLorebookEntryTool {
 
 /// Tool for searching knowledge base using vector embeddings (Step 2 of workflow)
 pub struct SearchKnowledgeBaseTool {
-    qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+    qdrant_service: Arc<crate::vector_db::VectorService>,
     embedding_client: Arc<dyn EmbeddingClient>,
     app_state: Arc<AppState>,
 }
 
 impl SearchKnowledgeBaseTool {
     pub fn new(
-        qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient>,
         app_state: Arc<AppState>,
     ) -> Self {
@@ -1436,8 +1436,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         // We have encrypted content
                         if let Some(ref session_dek) = session_dek_opt {
                             // We have the DEK to decrypt
-                            match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, &session_dek.0)
-                            {
+                            match crate::crypto::decrypt_gcm(
+                                encrypted_chunk.as_slice(),
+                                nonce.as_slice(),
+                                &session_dek.0,
+                            ) {
                                 Ok(decrypted_secret) => {
                                     let decrypted_bytes =
                                         secrecy::ExposeSecret::expose_secret(&decrypted_secret);
@@ -1464,8 +1467,8 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         // We have encrypted title
                         if let Some(ref session_dek) = session_dek_opt {
                             match crate::crypto::decrypt_gcm(
-                                encrypted_title,
-                                title_nonce,
+                                encrypted_title.as_slice(),
+                                title_nonce.as_slice(),
                                 &session_dek.0,
                             ) {
                                 Ok(decrypted_secret) => {
@@ -1539,8 +1542,11 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         // We have encrypted content
                         if let Some(ref session_dek) = session_dek_opt {
                             // We have the DEK to decrypt
-                            match crate::crypto::decrypt_gcm(encrypted_text, nonce, &session_dek.0)
-                            {
+                            match crate::crypto::decrypt_gcm(
+                                encrypted_text.as_slice(),
+                                nonce.as_slice(),
+                                &session_dek.0,
+                            ) {
                                 Ok(decrypted_secret) => {
                                     let decrypted_bytes =
                                         secrecy::ExposeSecret::expose_secret(&decrypted_secret);
@@ -1622,12 +1628,15 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 bytes
                             });
 
-                            if let (Some(encrypted), Some(nonce), Some(ref session_dek)) =
+                            if let (Some(ref encrypted), Some(ref nonce), Some(ref session_dek)) =
                                 (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref())
                             {
                                 // Decrypt the content
-                                match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0)
-                                {
+                                match crate::crypto::decrypt_gcm(
+                                    encrypted.as_slice(),
+                                    nonce.as_slice(),
+                                    &session_dek.0,
+                                ) {
                                     Ok(decrypted_secret) => {
                                         let decrypted_bytes =
                                             secrecy::ExposeSecret::expose_secret(&decrypted_secret);
@@ -2469,14 +2478,14 @@ impl ScribeTool for UpdateLorebookEntryTool {
 /// Tool for querying rulebook/game rules from lorebook entries tagged with "rules"
 /// This is used by the Game Master mode to enforce game mechanics and world consistency
 pub struct QueryRulesTool {
-    qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+    qdrant_service: Arc<crate::vector_db::VectorService>,
     embedding_client: Arc<dyn EmbeddingClient>,
     _app_state: Arc<AppState>,
 }
 
 impl QueryRulesTool {
     pub fn new(
-        qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient>,
         app_state: Arc<AppState>,
     ) -> Self {
@@ -2585,7 +2594,7 @@ impl ScribeTool for QueryRulesTool {
 
         // Build filter for rules search
         use crate::vector_db::qdrant_client::{Condition, FieldCondition, Filter, Match};
-        use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
+        use crate::vector_db::qdrant_client::{ConditionOneOf, MatchValue};
 
         // Base conditions: user_id + source_type=lorebook_entry
         let must_conditions = vec![
@@ -2646,21 +2655,21 @@ impl ScribeTool for QueryRulesTool {
             let content = payload
                 .get("content")
                 .and_then(|v| match &v.kind {
-                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    Some(crate::vector_db::qdrant_client::Kind::StringValue(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .unwrap_or("");
             let keywords = payload
                 .get("keywords")
                 .and_then(|v| match &v.kind {
-                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    Some(crate::vector_db::qdrant_client::Kind::StringValue(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .unwrap_or("");
             let entry_name = payload
                 .get("entry_name")
                 .and_then(|v| match &v.kind {
-                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    Some(crate::vector_db::qdrant_client::Kind::StringValue(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .unwrap_or("Unknown Rule");

@@ -7,6 +7,8 @@ use crate::errors::AppError;
 use qdrant_client::qdrant::Value as QdrantValue;
 use std::collections::HashMap;
 
+use rig::Embed;
+
 // Metadata for chat message chunks
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct ChatMessageChunkMetadata {
@@ -107,6 +109,14 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
         })
     }
 }
+#[derive(serde::Serialize, Embed)]
+pub struct ChatDocument {
+    #[embed]
+    pub content: String,
+    #[serde(flatten)]
+    pub metadata: ChatMessageChunkMetadata,
+}
+
 // Metadata for lorebook entry chunks
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LorebookChunkMetadata {
@@ -233,6 +243,14 @@ impl TryFrom<HashMap<String, QdrantValue>> for LorebookChunkMetadata {
         })
     }
 }
+#[derive(serde::Serialize, Embed)]
+pub struct LorebookDocument {
+    #[embed]
+    pub content: String,
+    #[serde(flatten)]
+    pub metadata: LorebookChunkMetadata,
+}
+
 /// Parameters for processing a lorebook entry
 #[derive(Debug)]
 pub struct LorebookEntryParams {
@@ -267,11 +285,67 @@ impl Clone for LorebookEntryParams {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct ChronicleEventMetadata {
+    pub event_id: crate::db::DbId,
+    pub event_type: String,
+    pub chronicle_id: crate::db::DbId,
+    pub user_id: crate::db::DbId, // SECURITY: Added user_id for access control
+    pub created_at: crate::DbTimestamp,
+}
+
+impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
+    type Error = AppError;
+
+    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
+        let event_id = extract_uuid_from_payload(&payload, "event_id", "ChronicleEventMetadata")?;
+        let event_type =
+            extract_string_from_payload(&payload, "event_type", "ChronicleEventMetadata")?;
+        let chronicle_id =
+            extract_uuid_from_payload(&payload, "chronicle_id", "ChronicleEventMetadata")?;
+        let user_id = extract_uuid_from_payload(&payload, "user_id", "ChronicleEventMetadata")?;
+        let created_at_str =
+            extract_string_from_payload(&payload, "created_at", "ChronicleEventMetadata")?;
+
+        let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
+            .map_err(|e| {
+                AppError::SerializationError(format!(
+                    "Failed to parse 'created_at' in ChronicleEventMetadata: {e}"
+                ))
+            })
+            .map(|dt| dt.with_timezone(&chrono::Utc))?;
+
+        Ok(Self {
+            event_id,
+            event_type,
+            chronicle_id,
+            user_id,
+            created_at: created_at.into(),
+        })
+    }
+}
+
+#[derive(serde::Serialize, Embed)]
+pub struct ChronicleEventDocument {
+    #[embed]
+    pub content: String,
+    #[serde(flatten)]
+    pub metadata: ChronicleEventMetadata,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct EntityMetadata {
     pub user_id: crate::db::DbId,
     pub entity_name_hash: String,
     pub source_type: String,
     pub message_variant_id: Option<crate::db::DbId>,
+}
+
+#[derive(serde::Serialize, Embed)]
+pub struct EntityDocument {
+    #[embed]
+    pub content: String,
+    #[serde(flatten)]
+    pub metadata: EntityMetadata,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for EntityMetadata {
@@ -304,6 +378,14 @@ pub struct OpinionMetadata {
     pub message_variant_id: Option<crate::db::DbId>,
 }
 
+#[derive(serde::Serialize, Embed)]
+pub struct OpinionDocument {
+    #[embed]
+    pub content: String,
+    #[serde(flatten)]
+    pub metadata: OpinionMetadata,
+}
+
 impl TryFrom<HashMap<String, QdrantValue>> for OpinionMetadata {
     type Error = AppError;
 
@@ -333,6 +415,14 @@ pub struct CognitiveFactMetadata {
     pub source_type: String,
     pub game_time: Option<serde_json::Value>,
     pub message_variant_id: Option<crate::db::DbId>,
+}
+
+#[derive(serde::Serialize, Embed)]
+pub struct CognitiveFactDocument {
+    #[embed]
+    pub content: String,
+    #[serde(flatten)]
+    pub metadata: CognitiveFactMetadata,
 }
 
 impl TryFrom<HashMap<String, QdrantValue>> for CognitiveFactMetadata {

@@ -1,9 +1,6 @@
 #[cfg(feature = "embedded-vector")]
 use scribe_backend::config::Config;
 #[cfg(feature = "embedded-vector")]
-use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait;
-#[cfg(feature = "embedded-vector")]
-use scribe_backend::vector_db::LanceDbClient;
 #[cfg(feature = "embedded-vector")]
 use std::sync::Arc;
 
@@ -12,10 +9,13 @@ use std::sync::Arc;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     let config = Arc::new(Config::load()?);
-    let client = LanceDbClient::new(config).await?;
+    let embedding_model = scribe_backend::llm::UnifiedEmbeddingModel::Cloud(
+        scribe_backend::llm::cloud_embedding_client::build_cloud_embedding_client(config.clone())?,
+    );
+    let client = scribe_backend::vector_db::create_vector_service(config, embedding_model).await?;
 
     // Retrieve some points
-    let points = client.retrieve_points(None, 100, None).await?;
+    let points = client.retrieve_points(None, 100, None, None).await?;
     println!("Retrieved {} points from LanceDB", points.len());
 
     for (i, point) in points.iter().enumerate() {

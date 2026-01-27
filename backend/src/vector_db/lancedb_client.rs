@@ -1296,6 +1296,15 @@ impl QdrantClientServiceTrait for LanceDbClient {
         Ok(scored_points)
     }
 
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        let table = self.get_table().await?;
+        table
+            .delete(&format!("id = '{}'", id))
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete point: {}", e)))?;
+        Ok(())
+    }
+
     async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
         // Check if table exists
         match self.connection.open_table(collection_name).execute().await {

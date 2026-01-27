@@ -3,6 +3,9 @@ use super::*;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
+use crate::vector_db::qdrant_client::{
+    Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue,
+};
 
 impl LorebookService {
     /// Creates a new lorebook for the authenticated user.
@@ -362,7 +365,7 @@ impl LorebookService {
             "Cleaning up vector embeddings for lorebook [REDACTED_UUID] for user [REDACTED_UUID]"
         );
 
-        let vector_filter = Filter {
+        let filter = Filter {
             must: vec![
                 Condition {
                     condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -396,11 +399,7 @@ impl LorebookService {
         };
 
         // Delete vector embeddings
-        if let Err(e) = self
-            .qdrant_service
-            .delete_points_by_filter(vector_filter)
-            .await
-        {
+        if let Err(e) = self.qdrant_service.delete_by_filter(filter).await {
             // Log the error but don't fail the entire operation since DB deletion succeeded
             error!(
                 error = %e,

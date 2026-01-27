@@ -148,3 +148,36 @@ impl CompletionModel for MistralRsRigAdapter {
         Ok(StreamingCompletionResponse::stream(Box::pin(rig_stream)))
     }
 }
+
+use rig::embeddings::Embedding;
+
+impl rig::embeddings::EmbeddingModel for MistralRsRigAdapter {
+    const MAX_DOCUMENTS: usize = 1;
+    type Client = ();
+
+    fn make(_client: &Self::Client, _model: impl Into<String>, _ndims: Option<usize>) -> Self {
+        unimplemented!("MistralRsRigAdapter must be created via constructor")
+    }
+
+    fn ndims(&self) -> usize {
+        0 // Unknown for now
+    }
+
+    #[allow(refining_impl_trait)]
+    fn embed_texts(
+        &self,
+        _documents: impl IntoIterator<Item = String> + Send,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<Embedding>, rig::embeddings::EmbeddingError>,
+                > + Send,
+        >,
+    > {
+        Box::pin(async {
+            Err(rig::embeddings::EmbeddingError::ProviderError(
+                "Embeddings not yet supported for MistralRs".to_string(),
+            ))
+        })
+    }
+}

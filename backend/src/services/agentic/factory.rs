@@ -7,6 +7,7 @@ use crate::{
     llm::AiClient,
     services::{ChronicleService, LorebookService},
     state::AppState,
+    vector_db::VectorService,
 };
 
 use super::{
@@ -70,9 +71,7 @@ impl AgenticNarrativeFactory {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<
-            dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync,
-        >,
+        qdrant_service: Arc<VectorService>,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
@@ -176,9 +175,7 @@ impl AgenticNarrativeFactory {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<
-            dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync,
-        >,
+        qdrant_service: Arc<VectorService>,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) {

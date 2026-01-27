@@ -1,6 +1,7 @@
 use super::metadata::{
-    ChatMessageChunkMetadata, CognitiveFactMetadata, EntityMetadata, LorebookChunkMetadata,
-    LorebookEntryParams, OpinionMetadata,
+    ChatDocument, ChatMessageChunkMetadata, ChronicleEventDocument, ChronicleEventMetadata,
+    CognitiveFactDocument, CognitiveFactMetadata, EntityDocument, EntityMetadata,
+    LorebookChunkMetadata, LorebookDocument, LorebookEntryParams, OpinionDocument, OpinionMetadata,
 };
 use super::retrieval::{
     decrypt_chat_content, decrypt_lorebook_content, RetrievedChunk, RetrievedMetadata,
@@ -13,7 +14,7 @@ use crate::models::chats::{ChatMessage, MessageRole};
 use crate::schema::chat_messages;
 use crate::state::AppState;
 use crate::text_processing::chunking::ChunkConfig;
-use crate::vector_db::qdrant_client::create_qdrant_point;
+// use crate::vector_db::qdrant_client::create_qdrant_point;
 use async_trait::async_trait;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
@@ -193,41 +194,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }];
         info!("Storing chat message atomically as 1 embedding (user+AI pair)");
 
-        let mut points_to_upsert = Vec::new();
+        let mut points_to_upsert: Vec<crate::vector_db::qdrant_client::ScoredPoint> = Vec::new();
 
         // 2. Process each chunk
-        for (index, chunk) in chunks.into_iter().enumerate() {
-            // 2a. Get embedding
-            let task_type = "RETRIEVAL_DOCUMENT";
-            let embedding_vector = match embedding_client
-                .embed_content(&chunk.content, task_type, None)
-                .await
-            {
-                Ok(vector) => {
-                    if vector.is_empty() {
-                        warn!(
-                            chunk_index = index,
-                            "Embedding client returned an empty vector for chat chunk"
-                        );
-                    } else {
-                        debug!(
-                            chunk_index = index,
-                            vector_len = vector.len(),
-                            "Successfully got embedding for chat chunk"
-                        );
-                    }
-                    vector
-                }
-                Err(e) => {
-                    error!(error = %e, chunk_index = index, "Failed to get embedding for chunk");
-                    continue; // Skip this chunk for now
-                }
-            };
-
-            // Add a small delay to mitigate potential rate limiting
-            sleep(Duration::from_millis(6100)).await;
-
-            // 2b. Prepare metadata
+        let mut documents = Vec::new();
+        for chunk in chunks {
             // speaker_str is already set above (either the original role or "Pair")
 
             // Encrypt chunk content if SessionDek is available
@@ -235,87 +206,59 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             {
                 // We have SessionDek, encrypt the chunk content
                 match crate::crypto::encrypt_gcm(chunk.content.as_bytes(), &dek.0) {
-                    Ok((encrypted_content, content_nonce)) => {
-                        debug!(
-                            chunk_index = index,
-                            "Successfully encrypted chat message chunk for Qdrant storage"
-                        );
-                        (
-                            "[encrypted]".to_string(),
-                            Some(encrypted_content),
-                            Some(content_nonce),
-                        )
-                    }
+                    Ok((encrypted_content, content_nonce)) => (
+                        "[encrypted]".to_string(),
+                        Some(encrypted_content),
+                        Some(content_nonce),
+                    ),
                     Err(e) => {
-                        error!(
-                            chunk_index = index,
-                            error = %e,
-                            "Failed to encrypt chat message chunk, falling back to plaintext"
-                        );
+                        error!(error = %e, "Failed to encrypt chat message chunk, falling back to plaintext");
                         (chunk.content.clone(), None, None)
                     }
                 }
             } else {
-                // No SessionDek, store plaintext (backward compatibility for tests/legacy)
-                warn!(
-                    chunk_index = index,
-                    "No SessionDek available for chat message chunk, storing plaintext in Qdrant"
-                );
                 (chunk.content.clone(), None, None)
             };
 
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
-                chronicle_id: chronicle_id.clone(), // Include the chronicle_id from the session
-                user_id: message.user_id,           // user_id is now NOT NULL
+                chronicle_id: chronicle_id.clone(),
+                user_id: message.user_id,
                 speaker: speaker_str.clone(),
                 timestamp: message.created_at.clone(),
-                text: text_for_storage, // Placeholder when encrypted, plaintext otherwise
+                text: text_for_storage,
                 source_type: "chat_message".to_string(),
-                // Encryption fields - populated when SessionDek is available
                 encrypted_text,
                 text_nonce,
                 game_time: message.game_time.clone().map(|gt| gt.0),
             };
 
-            // 2c. Create Qdrant point
-            let point_id = DbId::new(); // Unique ID per chunk point
-            let point = match create_qdrant_point(
-                point_id.into(),
-                embedding_vector,
-                Some(crate::db::Json(serde_json::to_value(metadata)?)),
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    error!(error = %e, chunk_index = index, "Failed to create Qdrant point struct");
-                    continue; // Skip this chunk
-                }
-            };
-            points_to_upsert.push(point);
+            documents.push(ChatDocument {
+                content: chunk.content,
+                metadata,
+            });
         }
 
-        // 3. Upsert points to Qdrant in batch
-        if points_to_upsert.is_empty() {
-            info!("No valid points generated for upserting.");
+        // 3. Insert documents using Rig
+        if documents.is_empty() {
+            info!("No valid documents generated for insertion.");
         } else {
-            info!("Upserting {} points to Qdrant", points_to_upsert.len());
-            if let Err(e) = qdrant_service.store_points(points_to_upsert).await {
-                error!(error = %e, "Failed to upsert points to Qdrant");
-                return Err(e);
+            info!("Inserting {} documents using Rig", documents.len());
+            let mut values = Vec::new();
+            for doc in documents {
+                values.push(
+                    serde_json::to_value(doc)
+                        .map_err(|e| AppError::SerializationError(e.to_string()))?,
+                );
             }
-            info!("Successfully upserted points for message");
+            qdrant_service.add_documents(values).await?;
+            info!("Successfully inserted documents for message");
         }
 
         Ok(())
     }
 
-    #[instrument(skip_all, fields(
-        original_lorebook_entry_id = %params.original_lorebook_entry_id,
-        lorebook_id = %params.lorebook_id,
-        user_id = %params.user_id
-    ))]
-    #[allow(deprecated)]
     async fn process_and_embed_lorebook_entry(
         &self,
         state: Arc<AppState>,
@@ -394,77 +337,47 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Clean content for display (just the main content without extra context)
         let display_content = decrypted_content.clone();
 
-        let task_type = "RETRIEVAL_DOCUMENT";
-        let embedding_vector = match embedding_client
-            .embed_content(&full_content, task_type, decrypted_title.as_deref())
-            .await
+        // Encrypt chunk content if SessionDek is available
+        let (chunk_text_for_storage, encrypted_chunk_text, chunk_text_nonce) = if let Some(
+            ref dek,
+        ) = session_dek
         {
-            Ok(vector) => {
-                if vector.is_empty() {
-                    warn!(%original_lorebook_entry_id, "Embedding client returned an empty vector for lorebook entry");
-                } else {
-                    debug!(%original_lorebook_entry_id, vector_len = vector.len(), "Successfully got embedding for lorebook entry");
+            match crate::crypto::encrypt_gcm(display_content.as_bytes(), dek) {
+                Ok((encrypted_content, content_nonce)) => (
+                    "[encrypted]".to_string(),
+                    Some(encrypted_content),
+                    Some(content_nonce),
+                ),
+                Err(e) => {
+                    error!(error = %e, "Failed to encrypt lorebook entry content, falling back to plaintext");
+                    (display_content.clone(), None, None)
                 }
-                vector
             }
-            Err(e) => {
-                error!(error = %e, %original_lorebook_entry_id, "Failed to get embedding for lorebook entry");
-                return Err(AppError::EmbeddingError(format!(
-                    "Lorebook entry embedding failed: {e}"
-                )));
-            }
+        } else {
+            (display_content.clone(), None, None)
         };
 
-        // Add a small delay to mitigate potential rate limiting
-        sleep(Duration::from_millis(100)).await;
-
-        // Encrypt clean display content if SessionDek is available
-        let (chunk_text_for_storage, encrypted_chunk_text, chunk_text_nonce) =
-            if let Some(ref dek) = session_dek {
-                // We have SessionDek, encrypt the clean display content
-                match crate::crypto::encrypt_gcm(display_content.as_bytes(), dek) {
-                    Ok((encrypted_content, content_nonce)) => {
-                        info!("Successfully encrypted lorebook content for Qdrant storage");
-                        (
-                            "[encrypted]".to_string(),
-                            Some(encrypted_content),
-                            Some(content_nonce),
-                        )
-                    }
-                    Err(e) => {
-                        error!(
-                            "Failed to encrypt lorebook content: {}, falling back to plaintext",
-                            e
-                        );
-                        (display_content.clone(), None, None)
-                    }
+        // Encrypt title if available and SessionDek is available
+        let (title_for_storage, encrypted_title, title_nonce) = if let (
+            Some(ref dek),
+            Some(title),
+        ) =
+            (session_dek.as_ref(), decrypted_title.as_ref())
+        {
+            match crate::crypto::encrypt_gcm(title.as_bytes(), dek) {
+                Ok((encrypted_content, content_nonce)) => (
+                    Some("[encrypted]".to_string()),
+                    Some(encrypted_content),
+                    Some(content_nonce),
+                ),
+                Err(e) => {
+                    error!(error = %e, "Failed to encrypt lorebook entry title, falling back to plaintext");
+                    (Some(title.clone()), None, None)
                 }
-            } else {
-                // No SessionDek, store clean display content as plaintext (backward compatibility)
-                warn!("No SessionDek available for lorebook entry, storing plaintext in Qdrant");
-                (display_content.clone(), None, None)
-            };
-
-        // Encrypt title if available and SessionDek is provided
-        let (title_for_storage, encrypted_title, title_nonce) =
-            if let (Some(title), Some(dek)) = (&decrypted_title, &session_dek) {
-                match crate::crypto::encrypt_gcm(title.as_bytes(), dek) {
-                    Ok((enc_title, nonce)) => (
-                        Some("[encrypted]".to_string()),
-                        Some(enc_title),
-                        Some(nonce),
-                    ),
-                    Err(e) => {
-                        error!(
-                            "Failed to encrypt lorebook title: {}, falling back to plaintext",
-                            e
-                        );
-                        (Some(title.clone()), None, None)
-                    }
-                }
-            } else {
-                (decrypted_title.clone(), None, None)
-            };
+            }
+        } else {
+            (decrypted_title.clone(), None, None)
+        };
 
         let metadata = LorebookChunkMetadata {
             original_lorebook_entry_id,
@@ -483,31 +396,16 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             title_nonce,
         };
 
-        let point_id = DbId::new(); // Unique ID for the atomic lorebook entry
-        let point = match create_qdrant_point(
-            point_id.into(),
-            embedding_vector,
-            Some(serde_json::to_value(metadata)?.into()),
-        ) {
-            Ok(p) => p,
-            Err(e) => {
-                error!(error = %e, %original_lorebook_entry_id, "Failed to create Qdrant point struct for lorebook entry");
-                return Err(e);
-            }
+        let document = LorebookDocument {
+            content: full_content,
+            metadata,
         };
 
-        let points_to_upsert = vec![point];
-
-        if points_to_upsert.is_empty() {
-            info!(%original_lorebook_entry_id, "No valid points generated for lorebook entry upserting.");
-        } else {
-            info!(%original_lorebook_entry_id, "Upserting {} points to Qdrant for lorebook entry", points_to_upsert.len());
-            if let Err(e) = qdrant_service.store_points(points_to_upsert).await {
-                error!(error = %e, %original_lorebook_entry_id, "Failed to upsert lorebook points to Qdrant");
-                return Err(e);
-            }
-            info!(%original_lorebook_entry_id, "Successfully upserted points for lorebook entry");
-        }
+        info!(%original_lorebook_entry_id, "Inserting lorebook entry using Rig");
+        let doc_value = serde_json::to_value(document)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
+        qdrant_service.add_document(doc_value).await?;
+        info!(%original_lorebook_entry_id, "Successfully inserted lorebook entry");
 
         Ok(())
     }
@@ -603,59 +501,36 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             debug!(?chat_filter, "Chat history filter for RAG");
 
             match qdrant_service
-                .search_points(
-                    query_embedding.clone(),
-                    limit_per_source,
+                .search_values(
+                    query_text,
+                    limit_per_source as usize,
                     Some(chat_filter.clone()),
                 )
                 .await
             {
                 Ok(search_results) => {
-                    debug!(num_results = search_results.len(), %session_id, "Raw Qdrant results for chat history (RAG)");
-                    for scored_point in search_results {
-                        debug!(point_id = ?scored_point.id, score = scored_point.score, %session_id, "Processing chat point (RAG)");
-                        match ChatMessageChunkMetadata::try_from(scored_point.payload.clone()) {
-                            Ok(chat_meta) => {
-                                debug!(?chat_meta, %session_id, "Successfully parsed chat metadata (RAG)");
-
-                                if scored_point.score < RAG_SCORE_THRESHOLD {
-                                    info!(
-                                        point_id = ?scored_point.id,
-                                        score = scored_point.score,
-                                        threshold = %RAG_SCORE_THRESHOLD,
-                                        "Filtering out chat chunk below threshold"
-                                    );
-                                    continue;
-                                }
-
-                                if !seen_ids.insert(chat_meta.message_id.to_string()) {
-                                    debug!(message_id = %chat_meta.message_id, "Skipping duplicate chat message in RAG");
-                                    continue;
-                                }
-
-                                let decrypted_text = decrypt_chat_content(&chat_meta, session_dek);
-                                combined_results.push(RetrievedChunk {
-                                    score: scored_point.score,
-                                    text: decrypted_text,
-                                    metadata: RetrievedMetadata::Chat(chat_meta),
-                                });
-                            }
-                            Err(e) => {
-                                warn!(
-                                    point_id = %scored_point.id.as_ref().map(|id| format!("{id:?}")).unwrap_or_default(),
-                                    error = %e,
-                                    payload = ?scored_point.payload,
-                                    %session_id,
-                                    "Failed to parse chat message payload during RAG search"
-                                );
-                            }
+                    for (score, chat_meta_val) in search_results {
+                        let chat_meta: ChatMessageChunkMetadata =
+                            serde_json::from_value(chat_meta_val)
+                                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+                        if score < RAG_SCORE_THRESHOLD {
+                            continue;
                         }
+
+                        if !seen_ids.insert(chat_meta.message_id.to_string()) {
+                            continue;
+                        }
+
+                        let decrypted_text = decrypt_chat_content(&chat_meta, session_dek);
+                        combined_results.push(RetrievedChunk {
+                            score,
+                            text: decrypted_text,
+                            metadata: RetrievedMetadata::Chat(chat_meta),
+                        });
                     }
                 }
                 Err(e) => {
-                    error!(error = %e, filter = ?chat_filter, %session_id, "Failed to search chat history in Qdrant (RAG)");
-                    // Decide whether to return error or continue. For now, log and continue to allow lorebook search.
-                    // return Err(e);
+                    error!(error = %e, "Failed to search chat history using Rig");
                 }
             }
         }
@@ -716,70 +591,39 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 debug!(?lorebook_filter, "Lorebook filter for RAG");
 
                 match qdrant_service
-                    .search_points(
-                        query_embedding.clone(),
-                        limit_per_source,
+                    .search_values(
+                        query_text,
+                        limit_per_source as usize,
                         Some(lorebook_filter.clone()),
                     )
                     .await
                 {
                     Ok(search_results) => {
-                        debug!(
-                            num_results = search_results.len(),
-                            ?lorebook_ids,
-                            "Raw Qdrant results for lorebooks (RAG)"
-                        );
-                        for scored_point in search_results {
-                            debug!(point_id = ?scored_point.id, score = scored_point.score, ?lorebook_ids, "Processing lorebook point (RAG)");
-                            match LorebookChunkMetadata::try_from(scored_point.payload.clone()) {
-                                Ok(lorebook_meta) => {
-                                    debug!(
-                                        ?lorebook_meta,
-                                        ?lorebook_ids,
-                                        "Successfully parsed lorebook metadata (RAG)"
-                                    );
-
-                                    if scored_point.score < RAG_SCORE_THRESHOLD {
-                                        debug!(
-                                            point_id = ?scored_point.id,
-                                            score = scored_point.score,
-                                            threshold = %RAG_SCORE_THRESHOLD,
-                                            "Filtering out lorebook chunk below threshold"
-                                        );
-                                        continue;
-                                    }
-
-                                    if !seen_ids.insert(
-                                        lorebook_meta.original_lorebook_entry_id.to_string(),
-                                    ) {
-                                        debug!(entry_id = %lorebook_meta.original_lorebook_entry_id, "Skipping duplicate lorebook entry in RAG");
-                                        continue;
-                                    }
-
-                                    let decrypted_text =
-                                        decrypt_lorebook_content(&lorebook_meta, session_dek);
-                                    combined_results.push(RetrievedChunk {
-                                        score: scored_point.score,
-                                        text: decrypted_text,
-                                        metadata: RetrievedMetadata::Lorebook(lorebook_meta),
-                                    });
-                                }
-                                Err(e) => {
-                                    warn!(
-                                        point_id = %scored_point.id.as_ref().map(|id| format!("{id:?}")).unwrap_or_default(),
-                                        error = %e,
-                                        payload = ?scored_point.payload,
-                                        ?lorebook_ids,
-                                        "Failed to parse lorebook entry payload during RAG search"
-                                    );
-                                }
+                        for (score, lorebook_meta_val) in search_results {
+                            let lorebook_meta: LorebookChunkMetadata =
+                                serde_json::from_value(lorebook_meta_val)
+                                    .map_err(|e| AppError::SerializationError(e.to_string()))?;
+                            if score < RAG_SCORE_THRESHOLD {
+                                continue;
                             }
+
+                            if !seen_ids
+                                .insert(lorebook_meta.original_lorebook_entry_id.to_string())
+                            {
+                                continue;
+                            }
+
+                            let decrypted_text =
+                                decrypt_lorebook_content(&lorebook_meta, session_dek);
+                            combined_results.push(RetrievedChunk {
+                                score,
+                                text: decrypted_text,
+                                metadata: RetrievedMetadata::Lorebook(lorebook_meta),
+                            });
                         }
                     }
                     Err(e) => {
-                        error!(error = %e, filter = ?lorebook_filter, ?lorebook_ids, "Failed to search lorebooks in Qdrant (RAG)");
-                        // Decide whether to return error or continue. For now, log and continue.
-                        // return Err(e);
+                        error!(error = %e, "Failed to search lorebooks using Rig");
                     }
                 }
             }
@@ -858,7 +702,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 // For constant entries, we use retrieve_points to get ALL matches
                 // rather than just the top-k by similarity
                 match qdrant_service
-                    .retrieve_points(Some(constant_filter.clone()), 1000, None)
+                    .retrieve_points(Some(constant_filter.clone()), 1000, None, None)
                     .await
                 {
                     Ok(retrieve_results) => {
@@ -953,10 +797,11 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             debug!(?chronicle_filter, "Chronicle filter for RAG");
 
             match qdrant_service
-                .search_points(
+                .search_points_with_threshold(
                     query_embedding.clone(),
                     limit_per_source,
                     Some(chronicle_filter.clone()),
+                    None,
                 )
                 .await
             {
@@ -1003,9 +848,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                             format!("[{}] Chronicle event", "Unknown")
                         };
 
-                        match super::retrieval::ChronicleEventMetadata::try_from(
-                            scored_point.payload.clone(),
-                        ) {
+                        match ChronicleEventMetadata::try_from(scored_point.payload.clone()) {
                             Ok(chronicle_meta) => {
                                 debug!(?chronicle_meta, %user_id, %chronicle_id, "Successfully parsed chronicle metadata (RAG)");
 
@@ -1146,7 +989,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                 ..Default::default()
             };
 
-            qdrant_service.delete_points_by_filter(filter).await?;
+            qdrant_service.delete_by_filter(filter).await?;
             info!(
                 "Successfully deleted chunks for {} messages for user {}",
                 message_ids.len(),
@@ -1161,7 +1004,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             ..Default::default()
         };
 
-        qdrant_service.delete_points_by_filter(filter).await?;
+        qdrant_service.delete_by_filter(filter).await?;
         info!(
             "Successfully deleted chunks for {} messages for user {}",
             message_ids.len(),
@@ -1220,7 +1063,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             "Constructed filter for deleting lorebook entry chunks"
         );
 
-        qdrant_service.delete_points_by_filter(filter).await?;
+        qdrant_service.delete_by_filter(filter).await?;
         info!(
             "Successfully deleted chunks for lorebook entry {} for user {}",
             original_lorebook_entry_id, user_id
@@ -1390,7 +1233,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         sleep(Duration::from_millis(6100)).await;
 
         // 2b. Prepare metadata
-        let metadata = super::retrieval::ChronicleEventMetadata {
+        let metadata = ChronicleEventMetadata {
             event_id: event.id,
             event_type: event.event_type.clone(),
             chronicle_id: event.chronicle_id,
@@ -1398,55 +1241,16 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             created_at: event.created_at,
         };
 
-        // 2c. Create Qdrant point with proper metadata structure
-        let point_id = DbId::new(); // Unique ID for the atomic chronicle event
-
-        // Build the metadata JSON
-        let mut metadata_json = serde_json::json!({
-            "event_id": metadata.event_id.to_string(),
-            "event_type": metadata.event_type,
-            "chronicle_id": metadata.chronicle_id.to_string(),
-            "created_at": metadata.created_at.to_rfc3339(),
-            "user_id": event.user_id.to_string(),
-            "source_type": "chronicle_event",
-            "chunk_text": chunk_text_for_storage, // Either "[encrypted]" or plaintext for backward compat
-            "event_json": event_json, // Store JSON for exact data retrieval
-            "keywords": keywords, // Store keywords for potential keyword search
-        });
-
-        // Add encrypted fields if available
-        if let Some(ref encrypted_content) = encrypted_chunk_text {
-            metadata_json["encrypted_chunk_text"] = serde_json::json!(encrypted_content);
-        }
-        if let Some(ref nonce) = chunk_text_nonce {
-            metadata_json["chunk_text_nonce"] = serde_json::json!(nonce);
-        }
-
-        let point = match create_qdrant_point(
-            point_id.into(),
-            embedding_vector,
-            Some(crate::db::Json(metadata_json)),
-        ) {
-            Ok(p) => p,
-            Err(e) => {
-                error!(error = %e, event_id = %event.id, "Failed to create Qdrant point struct for chronicle event");
-                return Err(e);
-            }
+        let document = ChronicleEventDocument {
+            content: content_to_embed,
+            metadata,
         };
 
-        let points_to_upsert = vec![point];
-
-        // 3. Upsert points to Qdrant in batch
-        if points_to_upsert.is_empty() {
-            info!(event_id = %event.id, "No valid points generated for chronicle event upserting.");
-        } else {
-            info!(event_id = %event.id, "Upserting {} points to Qdrant for chronicle event", points_to_upsert.len());
-            if let Err(e) = qdrant_service.store_points(points_to_upsert).await {
-                error!(error = %e, event_id = %event.id, "Failed to upsert chronicle event points to Qdrant");
-                return Err(e);
-            }
-            info!(event_id = %event.id, "Successfully upserted points for chronicle event");
-        }
+        info!(event_id = %event.id, "Inserting chronicle event using Rig");
+        let doc_value = serde_json::to_value(document)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
+        qdrant_service.add_document(doc_value).await?;
+        info!(event_id = %event.id, "Successfully inserted chronicle event");
 
         Ok(())
     }
@@ -1508,7 +1312,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             "Constructed filter for deleting chronicle event chunks"
         );
 
-        qdrant_service.delete_points_by_filter(filter).await?;
+        qdrant_service.delete_by_filter(filter).await?;
         info!(
             "Successfully deleted chunks for chronicle event {} for user {}",
             event_id, user_id
@@ -1580,7 +1384,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
 
         // Delete all matching points from Qdrant
         qdrant_service
-            .delete_points_by_filter(filter.clone())
+            .delete_by_filter(filter.clone())
             .await
             .map_err(|e| {
                 error!(
@@ -1632,15 +1436,15 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             message_variant_id,
         };
 
-        let point_id = DbId::new();
-        let point = create_qdrant_point(
-            point_id.into(),
-            embedding_vector,
-            Some(serde_json::to_value(metadata)?.into()),
-        )?;
+        let document = EntityDocument {
+            content: entity_name.to_string(),
+            metadata,
+        };
 
+        let doc_value = serde_json::to_value(document)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
         qdrant_service
-            .store_points_to_collection(collection_name, vec![point])
+            .add_document_to_collection(collection_name, doc_value)
             .await?;
 
         Ok(())
@@ -1706,18 +1510,18 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             });
         }
 
-        let search_results = qdrant_service
-            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+        let search_results_raw = qdrant_service
+            .search_values(entity_name, limit as usize, Some(filter))
             .await?;
 
-        let mut results = Vec::new();
-        for scored_point in search_results {
-            if let Ok(meta) = EntityMetadata::try_from(scored_point.payload) {
-                results.push((scored_point.score, meta));
-            }
+        let mut search_results = Vec::new();
+        for (score, val) in search_results_raw {
+            let meta: EntityMetadata = serde_json::from_value(val)
+                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            search_results.push((score, meta));
         }
 
-        Ok(results)
+        Ok(search_results)
     }
 
     /// Processes an opinion: embeds and stores it in the opinion_vectors collection.
@@ -1750,14 +1554,15 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             message_variant_id,
         };
 
-        let point = create_qdrant_point(
-            opinion_id.into(),
-            embedding_vector,
-            Some(serde_json::to_value(metadata)?.into()),
-        )?;
+        let document = OpinionDocument {
+            content: opinion_text.to_string(),
+            metadata,
+        };
 
+        let doc_value = serde_json::to_value(document)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
         qdrant_service
-            .store_points_to_collection(collection_name, vec![point])
+            .add_document_to_collection(collection_name, doc_value)
             .await?;
 
         Ok(())
@@ -1823,18 +1628,18 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             });
         }
 
-        let search_results = qdrant_service
-            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+        let search_results_raw = qdrant_service
+            .search_values(query, limit as usize, Some(filter))
             .await?;
 
-        let mut results = Vec::new();
-        for scored_point in search_results {
-            if let Ok(meta) = OpinionMetadata::try_from(scored_point.payload) {
-                results.push((scored_point.score, meta));
-            }
+        let mut search_results = Vec::new();
+        for (score, val) in search_results_raw {
+            let meta: OpinionMetadata = serde_json::from_value(val)
+                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            search_results.push((score, meta));
         }
 
-        Ok(results)
+        Ok(search_results)
     }
 
     /// Deletes an opinion vector from the opinion_vectors collection.
@@ -1848,12 +1653,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         let collection_name = "opinion_vectors";
 
         // We can delete by point ID since we use opinion_id as the point ID
-        qdrant_service
-            .delete_points_from_collection(
-                collection_name,
-                vec![PointId::from(opinion_id.to_string())],
-            )
-            .await?;
+        qdrant_service.delete_by_id(&opinion_id.to_string()).await?;
 
         Ok(())
     }
@@ -1892,14 +1692,15 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             message_variant_id,
         };
 
-        let point = create_qdrant_point(
-            fact_id.into(),
-            embedding_vector,
-            Some(serde_json::to_value(metadata)?.into()),
-        )?;
+        let document = CognitiveFactDocument {
+            content: fact_text.to_string(),
+            metadata,
+        };
 
+        let doc_value = serde_json::to_value(document)
+            .map_err(|e| AppError::SerializationError(e.to_string()))?;
         qdrant_service
-            .store_points_to_collection(collection_name, vec![point])
+            .add_document_to_collection(collection_name, doc_value)
             .await?;
 
         Ok(())
@@ -1993,17 +1794,17 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             });
         }
 
-        let search_results = qdrant_service
-            .search_points_in_collection(collection_name, query_embedding, limit, Some(filter))
+        let search_results_raw = qdrant_service
+            .search_values(query, limit as usize, Some(filter))
             .await?;
 
-        let mut results = Vec::new();
-        for scored_point in search_results {
-            if let Ok(meta) = CognitiveFactMetadata::try_from(scored_point.payload) {
-                results.push((scored_point.score, meta));
-            }
+        let mut search_results = Vec::new();
+        for (score, val) in search_results_raw {
+            let meta: CognitiveFactMetadata = serde_json::from_value(val)
+                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            search_results.push((score, meta));
         }
 
-        Ok(results)
+        Ok(search_results)
     }
 }

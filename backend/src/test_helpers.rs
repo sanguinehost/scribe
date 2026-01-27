@@ -1288,7 +1288,109 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         Ok(())
     }
 
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+
     async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+}
+
+// Implement the VectorServiceTrait for MockQdrantClientService
+#[async_trait]
+impl crate::vector_db::VectorServiceTrait for MockQdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn add_document(&self, _document: serde_json::Value) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn add_documents(&self, _documents: Vec<serde_json::Value>) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn add_document_to_collection(
+        &self,
+        _collection_name: &str,
+        _document: serde_json::Value,
+    ) -> Result<(), AppError> {
+        // Track call
+        *self.upsert_call_count.lock().unwrap() += 1;
+        Ok(())
+    }
+
+    async fn search_values(
+        &self,
+        _query: &str,
+        _limit: usize,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        // Return empty results for mock
+        Ok(vec![])
+    }
+
+    async fn delete_by_filter(
+        &self,
+        _filter: qdrant_client::qdrant::Filter,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        Ok(vec![])
+    }
+
+    async fn hybrid_search(
+        &self,
+        _vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        _limit: u64,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        Ok(vec![])
+    }
+
+    async fn retrieve_points(
+        &self,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+        _limit: u64,
+        _offset: Option<u64>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        Ok(vec![])
+    }
+
+    async fn delete_points(
+        &self,
+        _ids: Vec<qdrant_client::qdrant::PointId>,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
         Ok(())
     }
 }
@@ -1300,7 +1402,7 @@ pub struct TestAppStateBuilder {
     config: Arc<Config>,
     ai_client: Arc<dyn AiClient + Send + Sync>,
     embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
-    qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>,
     embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
@@ -1318,7 +1420,7 @@ impl TestAppStateBuilder {
         config: Arc<Config>,
         ai_client: Arc<dyn AiClient + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>,
         auth_backend: Arc<AuthBackend>,
     ) -> Self {
         Self {
@@ -1590,7 +1692,7 @@ pub struct TestApp {
     pub mock_ai_client: Option<Arc<MockAiClient>>,
     pub mock_embedding_client: Arc<MockEmbeddingClient>,
     pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>,
-    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Use trait object
+    pub qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>, // Use trait object
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     // user_persona_service field removed as per plan
@@ -1958,7 +2060,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         Arc::new(MockEmbeddingPipelineService::new());
 
     let (qdrant_service_for_state, mock_qdrant_service_for_test_app): (
-        Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        Arc<dyn crate::vector_db::VectorServiceTrait>,
         Option<Arc<MockQdrantClientService>>,
     ) = if use_real_qdrant {
         // This flag now also controls embedding components
@@ -1966,13 +2068,13 @@ pub async fn spawn_app_with_rate_limiting_options(
             .await
             .expect("Failed to create real Qdrant client for test");
         (
-            Arc::new(real_qdrant_service) as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            Arc::new(real_qdrant_service) as Arc<dyn crate::vector_db::VectorServiceTrait>,
             None,
         )
     } else {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         (
-            mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            mock_qdrant.clone() as Arc<dyn crate::vector_db::VectorServiceTrait>,
             Some(mock_qdrant),
         )
     };

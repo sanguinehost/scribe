@@ -11,8 +11,7 @@ use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
 use crate::services::embeddings::EmbeddingPipelineServiceTrait;
 // Remove concrete service import, use trait
-// use crate::vector_db::QdrantClientService;
-use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
+use crate::vector_db::VectorService;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
 use crate::auth::token_service::TokenService; // Added for token-based authentication
 use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
@@ -43,7 +42,7 @@ pub use crate::db::DbPool;
 pub struct AppStateServices {
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
     pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
-    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    pub qdrant_service: Arc<VectorService>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
     pub chat_override_service: Arc<ChatOverrideService>,
     pub character_service: Arc<CharacterService>,
@@ -76,8 +75,8 @@ pub struct AppState {
     // Change to use the AiClient trait object
     pub ai_client: Arc<dyn AiClient + Send + Sync>,
     pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>, // Add Send + Sync
-    // Change to use the trait object for Qdrant service
-    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    // Change to use the Rig-based VectorService
+    pub qdrant_service: Arc<VectorService>,
     pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
     pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
     pub character_service: Arc<CharacterService>,
@@ -111,7 +110,7 @@ impl fmt::Debug for AppState {
             .field("config", &self.config) // Config should be Debug
             .field("ai_client", &"<Arc<dyn AiClient>>")
             .field("embedding_client", &"<Arc<dyn EmbeddingClient>>")
-            .field("qdrant_service", &"<Arc<dyn QdrantClientServiceTrait>>")
+            .field("qdrant_service", &"<Arc<VectorService>>")
             .field(
                 "embedding_pipeline_service",
                 &"<Arc<dyn EmbeddingPipelineServiceTrait>>",

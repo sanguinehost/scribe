@@ -73,14 +73,7 @@ use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 
-#[cfg(feature = "embedded-vector")]
-use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait;
-#[cfg(feature = "embedded-vector")]
-use scribe_backend::vector_db::LanceDbClient;
-#[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
-use scribe_backend::vector_db::NoOpQdrantService;
-#[cfg(feature = "remote-vector")]
-use scribe_backend::vector_db::QdrantClientService;
+use scribe_backend::llm::UnifiedEmbeddingModel;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::Duration;
@@ -370,47 +363,14 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
         as Arc<dyn EmbeddingPipelineServiceTrait>;
 
-    // --- Initialize Vector DB Service (Qdrant or No-Op) ---
-    #[cfg(feature = "remote-vector")]
-    let qdrant_service = {
-        tracing::info!("Initializing Qdrant client service (remote-vector mode)...");
-        let service = Arc::new(QdrantClientService::new(config.clone()).await?);
-        tracing::info!("Qdrant client service initialized.");
-        service
-            as Arc<
-                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
-                    + Send
-                    + Sync,
-            >
-    };
+    // --- Initialize Vector DB Service (Rig-based) ---
+    let embedding_model = UnifiedEmbeddingModel::Cloud((*embedding_client_arc).clone());
 
-    #[cfg(feature = "embedded-vector")]
-    let qdrant_service = {
-        tracing::info!("Initializing LanceDB vector service (embedded-vector mode)...");
-        let service = Arc::new(LanceDbClient::new(config.clone()).await?);
-        service.ensure_collection_exists().await?;
-        tracing::info!("LanceDB vector service initialized.");
-        service
-            as Arc<
-                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
-                    + Send
-                    + Sync,
-            >
-    };
-
-    // Fallback when neither remote-vector nor embedded-vector is enabled
-    #[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
-    let qdrant_service = {
-        tracing::info!("Initializing no-op vector service (no vector features enabled)...");
-        let service = Arc::new(NoOpQdrantService::new(config.clone()).await?);
-        tracing::info!("No-op vector service initialized.");
-        service
-            as Arc<
-                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
-                    + Send
-                    + Sync,
-            >
-    };
+    tracing::info!("Initializing Vector DB service...");
+    let qdrant_service =
+        scribe_backend::vector_db::create_vector_service(config.clone(), embedding_model).await?;
+    qdrant_service.ensure_collection_exists().await?;
+    tracing::info!("Vector DB service initialized.");
 
     // --- Initialize Lorebook Service (needs qdrant_service) ---
     let lorebook_service = Arc::new(LorebookService::new(

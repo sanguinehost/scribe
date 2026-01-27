@@ -94,6 +94,7 @@ pub trait QdrantClientServiceTrait: Send + Sync {
     async fn health_check(&self) -> Result<(), AppError>;
     /// Optimize the collection (e.g., compaction, vacuuming)
     async fn optimize_collection(&self) -> Result<(), AppError>;
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError>;
     async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError>;
 }
 
@@ -674,7 +675,7 @@ impl QdrantClientService {
         fields(limit),
         name = "qdrant_retrieve_points_scroll"
     )]
-    pub async fn retrieve_points(
+    pub async fn retrieve_points_internal(
         &self,
         filter: Option<Filter>,
         limit: u64,
@@ -872,6 +873,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
         .await
     }
 
+    // This is the trait method that will now call the internal implementation and convert to ScoredPoint
     async fn retrieve_points(
         &self,
         filter: Option<Filter>,
@@ -879,7 +881,9 @@ impl QdrantClientServiceTrait for QdrantClientService {
         offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Call the implementation method which returns RetrievedPoint
-        let retrieved_points = self.retrieve_points(filter, limit, offset).await?;
+        let retrieved_points = self
+            .retrieve_points_internal(filter, limit as u64, offset)
+            .await?;
 
         // Convert RetrievedPoint to ScoredPoint
         let scored_points = retrieved_points
@@ -1114,6 +1118,13 @@ impl QdrantClientServiceTrait for QdrantClientService {
             })?;
 
         Ok(response.result)
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(id.to_string())),
+        };
+        self.delete_points(vec![point_id]).await
     }
 
     async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
@@ -1740,13 +1751,19 @@ impl QdrantClientServiceTrait for NoOpQdrantService {
         Ok(None)
     }
 
-    async fn health_check(&self) -> Result<(), AppError> {
-        tracing::debug!("NoOpQdrantService: health_check (no-op)");
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_by_id (no-op)");
         Ok(())
     }
 
     async fn optimize_collection(&self) -> Result<(), AppError> {
         tracing::debug!("NoOpQdrantService: optimize_collection (no-op)");
+        // Qdrant handles optimization automatically
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: health_check (no-op)");
         Ok(())
     }
 
@@ -1773,5 +1790,153 @@ impl QdrantClientServiceTrait for NoOpQdrantService {
     async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
         tracing::debug!("NoOpQdrantService: ensure_collection_exists_named (no-op)");
         Ok(())
+    }
+}
+
+// Implement the unified VectorServiceTrait for QdrantClientService
+#[async_trait]
+impl super::VectorServiceTrait for QdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::ensure_collection_exists(self).await
+    }
+
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        QdrantClientServiceTrait::ensure_collection_exists_named(self, collection_name).await
+    }
+
+    async fn add_document(&self, _document: serde_json::Value) -> Result<(), AppError> {
+        tracing::warn!(
+            "add_document called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(())
+    }
+
+    async fn add_documents(&self, _documents: Vec<serde_json::Value>) -> Result<(), AppError> {
+        tracing::warn!(
+            "add_documents called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(())
+    }
+
+    async fn add_document_to_collection(
+        &self,
+        _collection_name: &str,
+        _document: serde_json::Value,
+    ) -> Result<(), AppError> {
+        // This would need embedding generation - for now just log a warning
+        tracing::warn!("add_document_to_collection called on QdrantClientService directly - use RigQdrantService instead");
+        Ok(())
+    }
+
+    async fn search_values(
+        &self,
+        _query: &str,
+        _limit: usize,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        // This would need embedding generation - for now return empty
+        tracing::warn!(
+            "search_values called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(vec![])
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        self.search_points_with_threshold(vector, limit, filter, score_threshold)
+            .await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        self.hybrid_search(
+            vector,
+            text_query,
+            text_fields,
+            limit,
+            filter,
+            score_threshold,
+        )
+        .await
+    }
+
+    async fn retrieve_points(
+        &self,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        limit: u64,
+        offset: Option<u64>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        // Note: score_threshold is ignored by inherent retrieve_points_internal
+        let results = self.retrieve_points_internal(filter, limit, offset).await?;
+        Ok(results
+            .into_iter()
+            .map(|p| qdrant_client::qdrant::ScoredPoint {
+                id: p.id,
+                version: 0,
+                score: 1.0,
+                payload: p.payload,
+                vectors: p.vectors,
+                shard_key: p.shard_key,
+                order_value: p.order_value,
+            })
+            .collect())
+    }
+
+    async fn delete_points(
+        &self,
+        ids: Vec<qdrant_client::qdrant::PointId>,
+    ) -> Result<(), AppError> {
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: self.collection_name.clone(),
+                points: Some(
+                    ids.into_iter()
+                        .map(|id| id.into())
+                        .collect::<Vec<_>>()
+                        .into(),
+                ),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!("Failed to delete points from Qdrant: {}", e))
+            })?;
+        Ok(())
+    }
+
+    async fn delete_by_filter(
+        &self,
+        filter: qdrant_client::qdrant::Filter,
+    ) -> Result<(), AppError> {
+        self.delete_points_by_filter(filter).await
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        // Use the existing delete_points method
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(id.to_string())),
+        };
+        QdrantClientServiceTrait::delete_points(self, vec![point_id]).await
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::health_check(self).await
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::optimize_collection(self).await
     }
 }

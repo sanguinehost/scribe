@@ -1,9 +1,12 @@
-use super::get_user_from_session;
 use super::*;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
+use qdrant_client::qdrant::{
+    condition::ConditionOneOf, point_id::PointIdOptions, r#match::MatchValue, Condition,
+    FieldCondition, Filter, Match, PointId,
+};
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
@@ -1198,7 +1201,7 @@ AppError::InternalServerErrorGeneric(format!(
             "Cleaning up vector embeddings for lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
         );
 
-        let vector_filter = Filter {
+        let filter = Filter {
             must: vec![
                 Condition {
                     condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -1231,11 +1234,7 @@ AppError::InternalServerErrorGeneric(format!(
             ..Default::default()
         };
 
-        if let Err(e) = self
-            .qdrant_service
-            .delete_points_by_filter(vector_filter)
-            .await
-        {
+        if let Err(e) = self.qdrant_service.delete_by_filter(filter).await {
             // Log the error but don't fail the entire operation since DB deletion succeeded
             error!(
                 error = %e,
@@ -1253,10 +1252,11 @@ AppError::InternalServerErrorGeneric(format!(
         // Fallback: Also try deleting by ID directly.
         // For lorebook entries, the point ID is typically the same as the entry ID.
         // This is more robust for LanceDB/Desktop environments.
-        let point_id = PointId {
-            point_id_options: Some(PointIdOptions::Uuid(entry_id.to_string())),
-        };
-        if let Err(e) = self.qdrant_service.delete_points(vec![point_id]).await {
+        if let Err(e) = self
+            .qdrant_service
+            .delete_by_id(&entry_id.to_string())
+            .await
+        {
             debug!(
                 error = %e,
                 entry_id = %entry_id,

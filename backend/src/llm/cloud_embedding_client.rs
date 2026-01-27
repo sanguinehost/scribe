@@ -425,6 +425,60 @@ impl EmbeddingClient for CloudEmbeddingClient {
     }
 }
 
+use rig::embeddings::Embedding;
+
+impl rig::embeddings::EmbeddingModel for CloudEmbeddingClient {
+    const MAX_DOCUMENTS: usize = 64;
+    type Client = ();
+
+    fn make(_client: &Self::Client, _model: impl Into<String>, _ndims: Option<usize>) -> Self {
+        unimplemented!("CloudEmbeddingClient must be created via builder")
+    }
+
+    fn ndims(&self) -> usize {
+        768 // Default for text-embedding-004
+    }
+
+    #[allow(refining_impl_trait)]
+    fn embed_texts(
+        &self,
+        documents: impl IntoIterator<Item = String> + Send,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<Vec<Embedding>, rig::embeddings::EmbeddingError>,
+                > + Send,
+        >,
+    > {
+        let client = self.clone();
+        let documents: Vec<String> = documents.into_iter().collect();
+
+        Box::pin(async move {
+            let requests: Vec<BatchEmbeddingContentRequest> = documents
+                .iter()
+                .map(|text| BatchEmbeddingContentRequest {
+                    text,
+                    task_type: "RETRIEVAL_DOCUMENT",
+                })
+                .collect();
+
+            let embeddings = client
+                .batch_embed_contents(requests)
+                .await
+                .map_err(|e| rig::embeddings::EmbeddingError::ProviderError(e.to_string()))?;
+
+            Ok(embeddings
+                .into_iter()
+                .zip(documents.into_iter())
+                .map(|(vec, document)| Embedding {
+                    document,
+                    vec: vec.into_iter().map(|v| v as f64).collect(), // Convert f32 to f64
+                })
+                .collect())
+        })
+    }
+}
+
 // --- Builder Function ---
 /// Builds a REST-based Gemini embedding client with the provided configuration.
 ///
