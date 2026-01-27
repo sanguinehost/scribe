@@ -1970,12 +1970,12 @@ mod tests {
         use crate::errors::AppError;
         use crate::prompt_builder::{
             apply_token_limits, truncate_rag_context, truncate_recent_history_strategically,
-            TokenCalculation,
+            RigMessage, TokenCalculation,
         };
         use crate::services::embeddings::{
             ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata,
         };
-        use rig::message::AssistantContent;
+        use rig::message::{AssistantContent, UserContent};
         use rig::one_or_many::OneOrMany;
         use std::sync::Arc;
 
@@ -2079,7 +2079,18 @@ mod tests {
             // Verify tail preservation: the last messages should be preserved
             let preserved_messages = &calculation.recent_history_with_tokens;
             for (i, (message, _)) in preserved_messages.iter().enumerate() {
-                if let Some(content) = message.content.first_text() {
+                let content = match message {
+                    RigMessage::User { content } => content.iter().find_map(|c| match c {
+                        UserContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                    RigMessage::Assistant { content, .. } => content.iter().find_map(|c| match c {
+                        AssistantContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                };
+
+                if let Some(content) = content {
                     // The remaining messages should be the later ones (some from middle + tail)
                     // Due to middle-out truncation, we can't predict exact indices, but we know
                     // the last 4 should definitely be preserved
@@ -2210,7 +2221,18 @@ mod tests {
             let tail_start = preserved_messages.len() - min_tail;
 
             for (i, (message, _)) in preserved_messages[tail_start..].iter().enumerate() {
-                if let Some(content) = message.content.first_text() {
+                let content = match message {
+                    RigMessage::User { content } => content.iter().find_map(|c| match c {
+                        UserContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                    RigMessage::Assistant { content, .. } => content.iter().find_map(|c| match c {
+                        AssistantContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                };
+
+                if let Some(content) = content {
                     // These should be messages 5, 6, 7 (the tail)
                     let expected_index = 8 - min_tail + i;
                     assert!(content.contains(&format!("Message {}", expected_index)));

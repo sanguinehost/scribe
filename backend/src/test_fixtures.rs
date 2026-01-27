@@ -23,7 +23,7 @@ impl TestFixtures {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> =
             Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync> =
+        let mock_qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait> =
             Arc::new(MockQdrantClientService::new());
 
         let services = AppStateServicesBuilder::new(pool.clone(), config.clone())
@@ -45,7 +45,7 @@ impl TestFixtures {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> =
             Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync> =
+        let mock_qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait> =
             Arc::new(MockQdrantClientService::new());
 
         // All other services will be created with defaults by the builder
@@ -65,7 +65,7 @@ impl TestFixtures {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> =
             Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync> =
+        let mock_qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait> =
             Arc::new(MockQdrantClientService::new());
 
         AppStateServicesBuilder::new(pool, config)

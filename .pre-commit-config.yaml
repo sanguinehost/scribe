@@ -26,6 +26,7 @@ repos:
       - id: check-added-large-files
         name: Check for large files
         args: ['--maxkb=1000']
+        exclude: ^backend/resources/.*$
       - id: mixed-line-ending
         name: Fix mixed line endings
         args: ['--fix=lf']

@@ -25,33 +25,39 @@ pub trait VectorServiceTrait: Send + Sync {
         &self,
         query: &str,
         limit: usize,
-        filter: Option<qdrant_client::Filter>,
+        filter: Option<::qdrant_client::qdrant::Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError>;
     async fn search_points_with_threshold(
         &self,
         vector: Vec<f32>,
         limit: u64,
-        filter: Option<qdrant_client::Filter>,
+        filter: Option<::qdrant_client::qdrant::Filter>,
         score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::ScoredPoint>, AppError>;
+    ) -> Result<Vec<::qdrant_client::qdrant::ScoredPoint>, AppError>;
     async fn hybrid_search(
         &self,
         vector: Option<Vec<f32>>,
         text_query: Option<String>,
         text_fields: Vec<String>,
         limit: u64,
-        filter: Option<qdrant_client::Filter>,
+        filter: Option<::qdrant_client::qdrant::Filter>,
         score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::ScoredPoint>, AppError>;
+    ) -> Result<Vec<::qdrant_client::qdrant::ScoredPoint>, AppError>;
     async fn retrieve_points(
         &self,
-        filter: Option<qdrant_client::Filter>,
+        filter: Option<::qdrant_client::qdrant::Filter>,
         limit: u64,
         offset: Option<u64>,
         score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::ScoredPoint>, AppError>;
-    async fn delete_points(&self, ids: Vec<qdrant_client::PointId>) -> Result<(), AppError>;
-    async fn delete_by_filter(&self, filter: qdrant_client::Filter) -> Result<(), AppError>;
+    ) -> Result<Vec<::qdrant_client::qdrant::ScoredPoint>, AppError>;
+    async fn delete_points(
+        &self,
+        ids: Vec<::qdrant_client::qdrant::PointId>,
+    ) -> Result<(), AppError>;
+    async fn delete_by_filter(
+        &self,
+        filter: ::qdrant_client::qdrant::Filter,
+    ) -> Result<(), AppError>;
     async fn delete_by_id(&self, id: &str) -> Result<(), AppError>;
     async fn optimize_collection(&self) -> Result<(), AppError>;
     async fn health_check(&self) -> Result<(), AppError>;

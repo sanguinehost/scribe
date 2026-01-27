@@ -58,7 +58,7 @@ use crate::{
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
-    vector_db::qdrant_client::QdrantClientService, // Import constants module alias
+    vector_db::{self, qdrant_client::QdrantClientService, VectorServiceTrait}, // Import constants module alias
 };
 
 // Conditionally import documents module (PostgreSQL only)
@@ -1299,7 +1299,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
 
 // Implement the VectorServiceTrait for MockQdrantClientService
 #[async_trait]
-impl crate::vector_db::VectorServiceTrait for MockQdrantClientService {
+impl VectorServiceTrait for MockQdrantClientService {
     async fn ensure_collection_exists(&self) -> Result<(), AppError> {
         Ok(())
     }

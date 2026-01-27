@@ -53,23 +53,23 @@
 
 ---
 
-## Phase 3: Local Inference (Mistral.rs) [ ]
+## Phase 3: Local Inference (Mistral.rs) [x]
 
-### Task 3.1: Mistral.rs Embedding
-- [ ] **Subtask:** Implement `MistralRsService`
+### Task 3.1: Mistral.rs Embedding [x]
+- [x] **Subtask:** Implement `MistralRsService`
     - Initialize `MistralRs` engine in a separate thread/service.
     - Handle model loading (GGUF) from `resources/models`.
-- [ ] **Subtask:** Create `MistralRsRigAdapter`
+- [x] **Subtask:** Create `MistralRsRigAdapter`
     - Implement `rig::completion::CompletionModel` for `MistralRsService`.
     - Map Rig requests to `mistralrs_core::Request`.
     - **Test:** Verify local inference via Rig API.
 
 ---
 
-## Phase 4: Vector Database Abstraction [ ]
+## Phase 4: Vector Database Abstraction [x]
 
-### Task 4.1: Unified Vector Service
-- [ ] **Subtask:** Replace manual LanceDB/Qdrant code with `rig-lancedb` and `rig-qdrant`
+### Task 4.1: Unified Vector Service [x]
+- [x] **Subtask:** Replace manual LanceDB/Qdrant code with `rig-lancedb` and `rig-qdrant`
     - Abstract `backend/src/services/embeddings/` to use a unified `VectorService` trait.
     - Rename build-specific services:
         - `QdrantClientService` -> `CloudVectorService`
@@ -79,31 +79,31 @@
 
 ---
 
-## Phase 5: Core Service Refactor [ ]
+## Phase 5: Core Service Refactor [x]
 
-### Task 5.1: Switch `ChatService`
-- [ ] **Subtask:** Update `backend/src/services/chat/generation.rs`
+### Task 5.1: Switch `ChatService` [x]
+- [x] **Subtask:** Update `backend/src/services/chat/generation.rs`
     - Replace `genai::chat::*` with Rig types.
     - Use `RigClient` instead of direct `genai` calls.
-- [ ] **Subtask:** Update `backend/src/services/chat/types.rs`
+- [x] **Subtask:** Update `backend/src/services/chat/types.rs`
     - Remove `genai` dependency re-exports.
 
-### Task 5.2: Cleanup
-- [ ] **Subtask:** Remove `genai` from `Cargo.toml`.
-- [ ] **Subtask:** Delete old adapter code.
+### Task 5.2: Cleanup [x]
+- [x] **Subtask:** Remove `genai` from `Cargo.toml`.
+- [x] **Subtask:** Delete old adapter code.
 
 ---
 
-## Phase 6: Tokenizer Migration [ ]
+## Phase 6: Tokenizer Migration [x]
 
-### Task 6.1: Replace SentencePiece
-- [ ] **Subtask:** Update `backend/Cargo.toml`
+### Task 6.1: Replace SentencePiece [x]
+- [x] **Subtask:** Update `backend/Cargo.toml`
     - Remove `sentencepiece` dependency.
     - Ensure `tokenizers` is available (transitive or direct).
-- [ ] **Subtask:** Refactor Token Counting
+- [x] **Subtask:** Refactor Token Counting
     - Update `backend/src/services/tokenizer_service.rs` to use `tokenizers` crate.
     - Load `.json` tokenizers instead of `.model` (or convert if needed).
-- [ ] **Subtask:** Verify Pure Rust Stack
+- [x] **Subtask:** Verify Pure Rust Stack
     - Confirm no C++ linking issues (remove `build.rs` hacks if any).
 
 ---

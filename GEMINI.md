@@ -17,21 +17,6 @@ cargo run --bin scribe-backend
 
 ### Backend Development
 
-> [!CAUTION]
-> **REQUIRED: Sentencepiece Library Linking**
->
-> Before running ANY `cargo check`, `cargo build`, or `cargo clippy` command, you MUST export the following environment variables to link against the local sentencepiece build:
-> ```bash
-> export PKG_CONFIG_PATH="/home/socol/Workspace/sentencepiece/build:${PKG_CONFIG_PATH:-}"
-> export LD_LIBRARY_PATH="/home/socol/Workspace/sentencepiece/build/src:${LD_LIBRARY_PATH:-}"
-> ```
->
-> **Alternatively, use the build script** which handles this automatically:
-> ```bash
-> ./scripts/build-desktop-dev.sh --check  # For desktop feature check
-> ```
->
-> Without these exports, `sentencepiece-sys` will fail to compile with C++ errors.
 
 ```bash
 # Build and run backend

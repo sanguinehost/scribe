@@ -272,8 +272,8 @@ impl VectorServiceTrait for RigQdrantService {
     async fn hybrid_search(
         &self,
         vector: Option<Vec<f32>>,
-        text_query: Option<String>,
-        text_fields: Vec<String>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
         limit: u64,
         filter: Option<qdrant_client::qdrant::Filter>,
         score_threshold: Option<f32>,
