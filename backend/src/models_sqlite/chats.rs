@@ -133,52 +133,52 @@ pub type SettingsTuple = (
 #[diesel(table_name = chat_sessions)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Chat {
-    pub id: crate::db::DbId,                                       // 1
-    pub user_id: crate::db::DbId,                                  // 2
-    pub character_id: Option<crate::db::DbId>,                     // 3
-    pub temperature: Option<crate::db::DbDecimal>,                 // 4
-    pub max_output_tokens: Option<i32>,                            // 5
-    pub created_at: DbTimestamp,                                   // 6
-    pub updated_at: DbTimestamp,                                   // 7
-    pub frequency_penalty: Option<crate::db::DbDecimal>,           // 8
-    pub presence_penalty: Option<crate::db::DbDecimal>,            // 9
-    pub top_k: Option<i32>,                                        // 10
-    pub top_p: Option<crate::db::DbDecimal>,                       // 11
-    pub repetition_penalty: Option<crate::db::DbDecimal>,          // 12 - ADDED
-    pub min_p: Option<crate::db::DbDecimal>,                       // 13 - ADDED
-    pub top_a: Option<crate::db::DbDecimal>,                       // 14 - ADDED
-    pub seed: Option<i32>,                                         // 15 - MOVED from position 12
-    pub logit_bias: Option<crate::db::DbJson>,                     // 16 - ADDED
-    pub history_management_strategy: String,                       // 17
-    pub history_management_limit: i32,                             // 18
-    pub model_name: String,                                        // 19
-    pub thinking_budget: Option<i32>,                              // 20
-    pub enable_code_execution: Option<bool>,                       // 21 - MOVED
-    pub visibility: Option<String>,                                // 23
-    pub active_custom_persona_id: Option<crate::db::DbId>,         // 24
-    pub active_impersonated_character_id: Option<crate::db::DbId>, // 25
-    pub system_prompt_ciphertext: Option<Vec<u8>>,                 // 26
-    pub system_prompt_nonce: Option<Vec<u8>>,                      // 27
-    pub title_ciphertext: Option<Vec<u8>>,                         // 28
-    pub title_nonce: Option<Vec<u8>>,                              // 29
-    pub stop_sequences: crate::models::OptionalStringArray,        // 30
-    pub chat_mode: ChatMode,                                       // 31
-    pub player_chronicle_id: Option<crate::db::DbId>,              // 32
-    pub agent_mode: Option<String>,                                // 33
-    pub model_provider: Option<String>,                            // 34
-    pub total_prompt_tokens: DbBigInt,                             // 35
-    pub total_completion_tokens: DbBigInt,                         // 36
-    pub estimated_cost_cents: i32,                                 // 37
-    pub tokens_counted_at: DbTimestamp,                            // 38
-    pub prompt_template_id: String,                                // 39
+    pub id: crate::db::DbId,                                        // 1
+    pub user_id: crate::db::DbId,                                   // 2
+    pub character_id: Option<crate::db::DbId>,                      // 3
+    pub temperature: Option<crate::db::DbDecimal>,                  // 4
+    pub max_output_tokens: Option<i32>,                             // 5
+    pub created_at: DbTimestamp,                                    // 6
+    pub updated_at: DbTimestamp,                                    // 7
+    pub frequency_penalty: Option<crate::db::DbDecimal>,            // 8
+    pub presence_penalty: Option<crate::db::DbDecimal>,             // 9
+    pub top_k: Option<i32>,                                         // 10
+    pub top_p: Option<crate::db::DbDecimal>,                        // 11
+    pub repetition_penalty: Option<crate::db::DbDecimal>,           // 12 - ADDED
+    pub min_p: Option<crate::db::DbDecimal>,                        // 13 - ADDED
+    pub top_a: Option<crate::db::DbDecimal>,                        // 14 - ADDED
+    pub seed: Option<i32>,                                          // 15 - MOVED from position 12
+    pub logit_bias: Option<crate::db::DbJson>,                      // 16 - ADDED
+    pub history_management_strategy: String,                        // 17
+    pub history_management_limit: i32,                              // 18
+    pub model_name: String,                                         // 19
+    pub thinking_budget: Option<i32>,                               // 20
+    pub enable_code_execution: Option<bool>,                        // 21 - MOVED
+    pub visibility: Option<String>,                                 // 23
+    pub active_custom_persona_id: Option<crate::db::DbId>,          // 24
+    pub active_impersonated_character_id: Option<crate::db::DbId>,  // 25
+    pub system_prompt_ciphertext: Option<Vec<u8>>,                  // 26
+    pub system_prompt_nonce: Option<Vec<u8>>,                       // 27
+    pub title_ciphertext: Option<Vec<u8>>,                          // 28
+    pub title_nonce: Option<Vec<u8>>,                               // 29
+    pub stop_sequences: Option<crate::models::OptionalStringArray>, // 30 - Nullable in SQLite
+    pub chat_mode: ChatMode,                                        // 31
+    pub player_chronicle_id: Option<crate::db::DbId>,               // 32
+    pub agent_mode: Option<String>,                                 // 33
+    pub model_provider: Option<String>,                             // 34
+    pub total_prompt_tokens: DbBigInt,                              // 35
+    pub total_completion_tokens: DbBigInt,                          // 36
+    pub estimated_cost_cents: i32,                                  // 37
+    pub tokens_counted_at: DbTimestamp,                             // 38
+    pub prompt_template_id: String,                                 // 39
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub total_credits_used: crate::db::DbDecimal, // 40
-    pub narrative_style_override_ciphertext: Option<Vec<u8>>,      // 41
-    pub narrative_style_override_nonce: Option<Vec<u8>>,           // 42
-    pub total_actual_cost: f64,                                    // 43
-    pub total_modified_cost: f64,                                  // 44
-    pub total_credit_cost: i32,                                    // 45
-    pub total_actual_charge: f64,                                  // 46
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,       // 41
+    pub narrative_style_override_nonce: Option<Vec<u8>>,            // 42
+    pub total_actual_cost: f64,                                     // 43
+    pub total_modified_cost: f64,                                   // 44
+    pub total_credit_cost: i32,                                     // 45
+    pub total_actual_charge: f64,                                   // 46
     // Game Master Agent fields
     pub game_state: Option<crate::DbJson>,        // 47
     pub game_master_mode_enabled: bool,           // 48
@@ -297,7 +297,7 @@ pub struct NewChat {
     pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<crate::db::DbJson>,
-    pub stop_sequences: crate::models::OptionalStringArray,
+    pub stop_sequences: Option<crate::models::OptionalStringArray>,
     pub chat_mode: ChatMode,
     pub thinking_budget: Option<i32>,
     pub thinking_level: Option<String>,
@@ -355,7 +355,7 @@ impl Default for NewChat {
             top_a: None,
             seed: None,
             logit_bias: None,
-            stop_sequences: crate::models::OptionalStringArray::default(),
+            stop_sequences: Some(crate::models::OptionalStringArray::default()),
             chat_mode: ChatMode::default(),
             thinking_budget: None,
             thinking_level: None,
@@ -2511,7 +2511,7 @@ impl Chat {
             top_a: self.top_a,
             seed: self.seed,
             logit_bias: self.logit_bias.clone(),
-            stop_sequences: Some(self.stop_sequences.clone()),
+            stop_sequences: self.stop_sequences.clone(),
             history_management_strategy: self.history_management_strategy.clone(),
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
@@ -2669,7 +2669,7 @@ pub struct ChatSettingsResponse {
     pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<crate::db::DbJson>,
-    pub stop_sequences: crate::models::OptionalStringArray,
+    pub stop_sequences: Option<crate::models::OptionalStringArray>,
     // History Management Fields
     pub history_management_strategy: String,
     pub history_management_limit: i32,
@@ -2741,7 +2741,7 @@ impl From<Chat> for ChatSettingsResponse {
             top_a: chat.top_a,
             seed: chat.seed,
             logit_bias: chat.logit_bias,
-            stop_sequences: chat.stop_sequences,
+            stop_sequences: chat.stop_sequences.clone(),
             history_management_strategy: chat.history_management_strategy,
             history_management_limit: chat.history_management_limit,
             model_name: Some(chat.model_name),
@@ -3319,10 +3319,10 @@ mod tests {
             top_a: None,
             seed: Some(12345),
             logit_bias: None,
-            stop_sequences: crate::db::DbStringArray::from_vec(vec![
+            stop_sequences: Some(crate::db::DbStringArray::from_vec(vec![
                 Some("\n\n".to_string()),
                 Some("##".to_string()),
-            ]),
+            ])),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash".to_string(),
@@ -3593,10 +3593,10 @@ mod tests {
             top_a: Some(bd("0.0")),
             seed: Some(12345),
             logit_bias: None,
-            stop_sequences: crate::db::DbStringArray::from_vec(vec![
+            stop_sequences: Some(crate::db::DbStringArray::from_vec(vec![
                 Some("\n\n".to_string()),
                 Some("##".to_string()),
-            ]),
+            ])),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: Some("gemini-2.5-flash".to_string()),
@@ -4164,10 +4164,25 @@ pub struct ChatListQuery {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
     pub character_id: Option<crate::db::DbId>,
+    pub temperature: Option<crate::db::DbDecimal>,
+    pub max_output_tokens: Option<i32>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub frequency_penalty: Option<crate::db::DbDecimal>,
+    pub presence_penalty: Option<crate::db::DbDecimal>,
+    pub top_k: Option<i32>,
+    pub top_p: Option<crate::db::DbDecimal>,
+    pub repetition_penalty: Option<crate::db::DbDecimal>,
+    pub min_p: Option<crate::db::DbDecimal>,
+    pub top_a: Option<crate::db::DbDecimal>,
+    pub seed: Option<i32>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub logit_bias: Option<crate::db::DbJson>,
+    pub history_management_strategy: String,
+    pub history_management_limit: i32,
     pub model_name: String,
-    pub thinking_level: Option<String>,
+    pub thinking_budget: Option<i32>,
+    pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
     pub active_impersonated_character_id: Option<crate::db::DbId>,
@@ -4179,14 +4194,23 @@ pub struct ChatListQuery {
     pub stop_sequences: Option<crate::models::OptionalStringArray>,
     pub chat_mode: String,
     pub player_chronicle_id: Option<crate::db::DbId>,
-    pub history_management_strategy: String,
-    pub history_management_limit: i32,
+    pub agent_mode: Option<String>,
+    pub model_provider: Option<String>,
     pub total_prompt_tokens: i64,
     pub total_completion_tokens: i64,
+    pub estimated_cost_cents: i32,
+    pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
     pub total_credits_used: crate::db::DbDecimal,
+    pub narrative_style_override_ciphertext: Option<Vec<u8>>,
+    pub narrative_style_override_nonce: Option<Vec<u8>>,
+    pub total_actual_cost: crate::db::DbDecimal,
+    pub total_modified_cost: crate::db::DbDecimal,
+    pub total_credit_cost: i32,
+    pub total_actual_charge: crate::db::DbDecimal,
     pub game_state: Option<String>,
     pub game_master_mode_enabled: bool,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -4291,7 +4315,7 @@ impl ChatListQuery {
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
             total_credits_used: self.total_credits_used,
-            total_actual_cost: 0.0,
+            total_actual_cost: self.total_actual_cost.0.to_f64().unwrap_or(0.0),
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state.map(|s| serde_json::Value::String(s)),
             thinking_level: self.thinking_level,
@@ -4330,7 +4354,6 @@ pub struct ChatSessionQuery {
     pub history_management_limit: i32,
     pub model_name: String,
     pub thinking_budget: Option<i32>,
-    pub thinking_level: Option<String>,
     pub enable_code_execution: Option<bool>,
     pub visibility: Option<String>,
     pub active_custom_persona_id: Option<crate::db::DbId>,
@@ -4359,6 +4382,7 @@ pub struct ChatSessionQuery {
     pub total_actual_charge: crate::db::DbDecimal,
     pub game_state: Option<String>,
     pub game_master_mode_enabled: bool,
+    pub thinking_level: Option<String>,
     pub rag_chronicles_limit: Option<i32>,
     pub rag_lorebooks_limit: Option<i32>,
     pub rag_older_chat_limit: Option<i32>,
@@ -4458,7 +4482,7 @@ impl ChatSessionQuery {
             chronicle_id: self.player_chronicle_id,
             total_prompt_tokens: self.total_prompt_tokens,
             total_completion_tokens: self.total_completion_tokens,
-            total_credits_used: self.total_credits_used,
+            total_credits_used: self.total_credits_used.clone(),
             total_actual_cost: self.total_actual_cost.0.to_f64().unwrap_or(0.0),
             game_master_mode_enabled: self.game_master_mode_enabled,
             game_state: self.game_state.map(|s| serde_json::Value::String(s)),

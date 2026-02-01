@@ -313,7 +313,7 @@ impl ChronicleDeduplicationService {
             reasoning: String,
         }
 
-        // Parse JSON from the response content
+        // Parse JSON from the response content - strip markdown fences if present
         let content = &response.content;
         if content.is_empty() {
             return Err(AppError::GenerationError(
@@ -321,15 +321,8 @@ impl ChronicleDeduplicationService {
             ));
         }
 
-        // Clean up markdown code blocks if present
-        let clean_content = content
-            .trim()
-            .trim_start_matches("```json")
-            .trim_start_matches("```")
-            .trim_end_matches("```")
-            .trim();
-
-        let llm_result: LlmResponse = serde_json::from_str(clean_content).map_err(|e| {
+        let json_content = crate::llm::response_utils::strip_markdown_fences(content);
+        let llm_result: LlmResponse = serde_json::from_str(json_content).map_err(|e| {
             AppError::GenerationError(format!("Failed to parse LLM deduplication response: {}", e))
         })?;
 

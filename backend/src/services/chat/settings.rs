@@ -550,7 +550,7 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences: stop_sequences.unwrap_or_default(),
+            stop_sequences: Some(stop_sequences.clone().unwrap_or_default()),
             history_management_strategy,
             history_management_limit,
             model_name: Some(model_name),

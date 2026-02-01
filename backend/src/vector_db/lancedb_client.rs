@@ -635,11 +635,9 @@ impl LanceDbClient {
 
     /// Sanitize column name to prevent SQL injection
     fn sanitize_column_name(&self, name: &str) -> String {
-        // Handle nested paths like "metadata.user_id" by using only the leaf name
-        let leaf_name = name.rsplit('.').next().unwrap_or(name);
+        // Schema uses top-level columns for all filterable fields, no nesting
         // Only allow alphanumeric and underscore
-        leaf_name
-            .chars()
+        name.chars()
             .filter(|c| c.is_alphanumeric() || *c == '_')
             .collect()
     }

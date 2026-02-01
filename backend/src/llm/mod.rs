@@ -11,6 +11,7 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 pub mod cloud_embedding_client;
 pub mod mistralrs_adapter;
 pub mod model_registry;
+pub mod response_utils; // Utilities for handling LLM responses
 pub mod rig_client;
 pub mod unified_embedding; // Added unified_embedding module
 

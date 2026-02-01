@@ -3667,6 +3667,7 @@ pub async fn expand_text_handler(
         stop_sequences: Some(
             session_data
                 .stop_sequences
+                .unwrap_or_default()
                 .0
                 .iter()
                 .flatten()
@@ -4035,6 +4036,7 @@ pub async fn impersonate_handler(
         stop_sequences: Some(
             session_data
                 .stop_sequences
+                .unwrap_or_default()
                 .0
                 .iter()
                 .flatten()

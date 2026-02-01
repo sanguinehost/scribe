@@ -2051,8 +2051,9 @@ Return your analysis as a JSON object with these four arrays."#,
             ));
         }
 
-        // Parse AI response as JSON
-        let analysis: crate::DbJson = serde_json::from_str(ai_content).map_err(|e| {
+        // Parse AI response as JSON - strip markdown fences if present
+        let json_content = crate::llm::response_utils::strip_markdown_fences(ai_content);
+        let analysis: crate::DbJson = serde_json::from_str(json_content).map_err(|e| {
             ToolError::ExecutionFailed(format!(
                 "Failed to parse AI analysis response as JSON: {}",
                 e
@@ -2264,8 +2265,10 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
             ));
         }
 
-        let batch_output: BatchLorebookEntriesOutput = serde_json::from_str(response_text)
-            .map_err(|e| {
+        // Parse structured output - strip markdown fences if present
+        let json_content = crate::llm::response_utils::strip_markdown_fences(response_text);
+        let batch_output: BatchLorebookEntriesOutput =
+            serde_json::from_str(json_content).map_err(|e| {
                 error!("Failed to parse batch lorebook output: {}", e);
                 ToolError::ExecutionFailed(format!("JSON parse failed: {}", e))
             })?;

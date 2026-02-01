@@ -487,9 +487,10 @@ CONVERSATION:
             }
         };
 
-        // Parse structured response - no cleanup needed with structured outputs!
+        // Parse structured response - strip markdown fences if present
         let content = response.content;
-        let parsed: Result<crate::DbJson, _> = serde_json::from_str(&content);
+        let json_content = crate::llm::response_utils::strip_markdown_fences(&content);
+        let parsed: Result<crate::DbJson, _> = serde_json::from_str(json_content);
 
         let summary = match parsed {
             Ok(json) => json
@@ -623,9 +624,10 @@ IMPORTANT RULES:
             AppError::LlmClientError(format!("Failed to generate action plan: {e}"))
         })?;
 
-        // Parse structured response - no cleanup needed with structured outputs!
+        // Parse structured response - strip markdown fences if present
         let content = response.content;
-        let parsed: crate::DbJson = serde_json::from_str(&content).map_err(|e| {
+        let json_content = crate::llm::response_utils::strip_markdown_fences(&content);
+        let parsed: crate::DbJson = serde_json::from_str(json_content).map_err(|e| {
             error!("Failed to parse action plan response: {}", e);
             AppError::InternalServerErrorGeneric(format!("Invalid action plan response: {e}"))
         })?;
@@ -1027,10 +1029,13 @@ Example: {{ "name": "The Crimson Empress Chronicles" }}"#,
         // Call AI with structured output
         match self.ai_client.completion(req).await {
             Ok(response) => {
-                // Parse structured response - no cleanup needed with structured outputs!
+                // Parse structured response - strip markdown code fences if present
                 let content = response.content;
                 info!("Chronicle name AI response content: '{}'", content);
-                let parsed: Result<crate::DbJson, _> = serde_json::from_str(&content);
+
+                // Use shared utility to strip markdown code fences
+                let json_content = crate::llm::response_utils::strip_markdown_fences(&content);
+                let parsed: Result<crate::DbJson, _> = serde_json::from_str(json_content);
 
                 let generated_name = match parsed {
                     Ok(json) => json
@@ -1218,7 +1223,8 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
             &response.content
         };
 
-        let payload: CognitivePayload = match serde_json::from_str(content) {
+        let json_content = crate::llm::response_utils::strip_markdown_fences(content);
+        let payload: CognitivePayload = match serde_json::from_str(json_content) {
             Ok(p) => p,
             Err(e) => {
                 error!(

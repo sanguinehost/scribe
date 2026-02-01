@@ -57,7 +57,7 @@ impl Default for StateManagerConfig {
             model_name: "gemini-3-flash-preview".to_string(),
             max_output_tokens: Some(4096),
             temperature: Some(1.0), // Google recommends temperature=1 for Gemini
-            thinking_level: Some("low".to_string()), // Low reasoning is sufficient for structured state output
+            thinking_level: None,   // Disabled temporarily - causes API error with reasoning_budget
         }
     }
 }
