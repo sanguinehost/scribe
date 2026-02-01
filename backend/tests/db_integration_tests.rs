@@ -432,13 +432,13 @@ fn test_user_character_insert_and_query() {
             scenario: None,
             system_prompt: None,
             creator_notes: None,
-            tags: scribe_backend::models::OptionalStringArray(None),
+            tags: Default::default(),
             creator: None,
             character_version: None,
-            alternate_greetings: scribe_backend::models::OptionalStringArray(None),
+            alternate_greetings: Default::default(),
             nickname: None,
-            source: scribe_backend::models::OptionalStringArray(None),
-            group_only_greetings: scribe_backend::models::OptionalStringArray(None),
+            source: Default::default(),
+            group_only_greetings: Default::default(),
             creation_date: None,
             modification_date: None,
             post_history_instructions: Some(b"".to_vec()), // Fix E0308: Convert to Vec<u8>
@@ -873,7 +873,7 @@ fn test_chat_session_insert_and_query() {
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: scribe_backend::models::OptionalStringArray(None),
+            stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
             thinking_budget: None,
             enable_code_execution: None,
             system_prompt_ciphertext: None,
@@ -1042,7 +1042,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                 )
                 .with_role("user".to_string())
                 .with_parts(json!({"type": "text", "text": "Hello, character!"}).into())
-                .with_attachments(scribe_backend::db::Json(serde_json::Value::Null))
+                .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
                 .with_token_counts(None, None);
 
                 // Use DbInsertableChatMessage and provide user_id
@@ -1056,7 +1056,7 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                 )
                 .with_role("assistant".to_string())
                 .with_parts(json!({"type": "text", "text": "Hello, user!"}).into())
-                .with_attachments(scribe_backend::db::Json(serde_json::Value::Null))
+                .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
                 .with_token_counts(None, None);
 
                 let messages_to_insert = vec![user_message, ai_message];

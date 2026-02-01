@@ -89,6 +89,7 @@ impl StateManagerAgent {
     /// 2. Calls the LLM to generate the complete new state
     /// 3. Parses the plaintext markdown response into a GameState
     /// 4. Returns the parsed state (caller handles reconciliation)
+    #[allow(clippy::too_many_arguments)]
     pub async fn generate_state_update(
         &self,
         current_state: Option<&GameState>,
@@ -386,6 +387,7 @@ CRITICAL - STATUS EFFECTS:
 
     /// Build the user prompt with context
     /// Provides current state and conversation context for the LLM
+    #[allow(clippy::too_many_arguments)]
     fn build_user_prompt(
         &self,
         current_state: Option<&GameState>,
@@ -1130,6 +1132,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
 
     /// Parse Inventory section - handles "On Person:", "Stored - [Location]:", "Assets:", "Removed:"
     /// Returns: (on_person_items, stored_items_by_location, assets, removed_ids)
+    #[allow(clippy::type_complexity)]
     fn parse_inventory_section(
         text: &str,
     ) -> (

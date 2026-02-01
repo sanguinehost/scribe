@@ -2,7 +2,9 @@ use crate::db::DbId;
 use std::sync::Arc;
 
 use bigdecimal::ToPrimitive;
-use diesel::{result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::{
+    result::Error as DieselError, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper,
+};
 use futures_util::Stream; // Required for stream_ai_response_and_save_message
 use futures_util::StreamExt; // Required for .next() on streams
 use rig::message::Message as RigMessage;
@@ -425,7 +427,7 @@ pub async fn get_session_data_for_generation(
                         AppError::NotFound(format!("Chat session {session_id} not found"))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query chat session {session_id}: {e}"
+                        "Failed to query chat session (Part 1) {session_id}: {e}"
                     )),
                 })?;
 
@@ -476,7 +478,7 @@ pub async fn get_session_data_for_generation(
                         AppError::NotFound(format!("Chat session {session_id} not found"))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query chat session {session_id}: {e}"
+                        "Failed to query chat session (Part 2) {session_id}: {e}"
                     )),
                 })?;
 
@@ -491,7 +493,7 @@ pub async fn get_session_data_for_generation(
                         AppError::NotFound(format!("Chat session {session_id} not found"))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query chat session {session_id}: {e}"
+                        "Failed to query chat session (Part 3a) {session_id}: {e}"
                     )),
                 })?;
 
@@ -506,7 +508,7 @@ pub async fn get_session_data_for_generation(
                         AppError::NotFound(format!("Chat session {session_id} not found"))
                     }
                     _ => AppError::DatabaseQueryError(format!(
-                        "Failed to query chat session {session_id}: {e}"
+                        "Failed to query chat session (Part 3b) {session_id}: {e}"
                     )),
                 })?;
 
@@ -528,20 +530,27 @@ pub async fn get_session_data_for_generation(
 
             #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             let _stop_seqs = {
-                let optional_array = chat_sessions::table
+                let optional_json_string = chat_sessions::table
                     .filter(chat_sessions::id.eq(session_id))
                     .filter(chat_sessions::user_id.eq(user_id))
                     .select(chat_sessions::stop_sequences)
-                    .first::<crate::models::OptionalStringArray>(conn_interaction)
+                    .first::<Option<String>>(conn_interaction)
                     .map_err(|e| match e {
                         DieselError::NotFound => {
                             AppError::NotFound(format!("Chat session {session_id} not found"))
                         }
                         _ => AppError::DatabaseQueryError(format!(
-                            "Failed to query chat session {session_id}: {e}"
+                            "Failed to query chat session (Part 4) {session_id}: {e}"
                         )),
                     })?;
-                crate::db::DbStringArray(optional_array.0)
+
+                let parsed = match optional_json_string {
+                    Some(s) => {
+                        serde_json::from_str::<Option<Vec<Option<String>>>>(&s).unwrap_or(None)
+                    }
+                    None => None,
+                };
+                crate::db::DbStringArray(parsed.unwrap_or_default())
             };
 
             // TODO: Refactor to handle different chat modes as per MODULAR_CHAT_SYSTEM_DESIGN.md
@@ -553,7 +562,8 @@ pub async fn get_session_data_for_generation(
 
             let character_db: Character = characters::table
                 .filter(characters::id.eq(char_id))
-                .first::<Character>(conn_interaction)
+                .select(Character::as_select())
+                .first(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
                         AppError::NotFound(format!("Character {} not found", char_id))
@@ -564,6 +574,7 @@ pub async fn get_session_data_for_generation(
                     )),
                 })?;
 
+            #[allow(clippy::type_complexity)]
             let overrides_db_raw: Vec<(
                 crate::db::DbId,
                 crate::db::DbId,
@@ -1048,7 +1059,7 @@ pub async fn get_session_data_for_generation(
 
                 #[cfg(feature = "postgres-backend")]
                 let msg = DbChatMessage {
-                    id: DbId::new().into(), // Generate temporary ID for frontend messages
+                    id: DbId::new(), // Generate temporary ID for frontend messages
                     session_id,
                     user_id,
                     message_type: message_role,
@@ -1864,7 +1875,7 @@ pub async fn get_session_data_for_generation(
             #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
             let first_mes_db_chat_message = DbChatMessage {
                 game_time: None,
-                id: DbId::new().into(),
+                id: DbId::new(),
                 session_id,
                 user_id,
                 message_type: MessageRole::Assistant,
@@ -1896,7 +1907,7 @@ pub async fn get_session_data_for_generation(
 
             #[cfg(feature = "postgres-backend")]
             let first_mes_db_chat_message = DbChatMessage {
-                id: DbId::new().into(),
+                id: DbId::new(),
                 session_id,
                 user_id,
                 message_type: MessageRole::Assistant,
@@ -1938,7 +1949,6 @@ pub async fn get_session_data_for_generation(
     let mut user_db_message_to_save = {
         let user_message_id = crate::db::DbId::new();
         DbInsertableChatMessage::new(
-            user_message_id, // id field - CRITICAL for SQLite (7 args total)
             session_id,
             user_id,
             MessageRole::User,
@@ -1946,6 +1956,9 @@ pub async fn get_session_data_for_generation(
             None,
             session_model_name_db.to_string(),
         )
+        .with_id(user_message_id)
+        .with_created_at(crate::db::DbTimestamp::now())
+        .with_updated_at(crate::db::DbTimestamp::now())
     };
 
     #[cfg(feature = "postgres-backend")]
@@ -1963,7 +1976,7 @@ pub async fn get_session_data_for_generation(
         .with_parts(crate::db::Json(
             serde_json::json!([{"text": user_message_content}]),
         ))
-        .with_token_counts(user_prompt_tokens_val.map(|t| t as i64), None);
+        .with_token_counts(user_prompt_tokens_val, None);
 
     // --- Construct Final Tuple ---
     Ok((
@@ -2238,7 +2251,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                 let mut messages_with_prefill = params.history.clone();
 
                 // Check if the last message is from User and contains guidance
-                let has_guidance = messages_with_prefill.last().map_or(false, |msg| match msg {
+                let has_guidance = messages_with_prefill.last().is_some_and(|msg| match msg {
                     RigMessage::User { content } => content.iter().any(|c| match c {
                         rig::message::UserContent::Text(t) => {
                             t.text.contains("(SYSTEM INSTRUCTION:")
@@ -2703,7 +2716,7 @@ pub async fn stream_ai_response_and_save_message(
                             let soft_limit_service = SoftLimitService::new(state_for_full_save.config.clone());
                             let user_id_for_tracking = full_user_id_clone;
                             let model_for_tracking = service_model_name_clone_full.clone();
-                            let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0) as i64;
+                            let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0);
 
                             // Track usage with unified database helper
                             let tracking_result = crate::db::with_conn(&state_for_full_save.pool, move |c| {
@@ -2950,10 +2963,10 @@ pub async fn stream_ai_response_and_save_message(
                                             chars_dsl::characters
                                                 .filter(chars_dsl::id.eq(cid))
                                                 .select(chars_dsl::name)
-                                                .first::<String>(conn)
+                                                .first::<Option<String>>(conn)
                                                 .optional()
                                                 .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
-                                        }).await.ok().flatten()
+                                        }).await.ok().flatten().flatten()
                                     } else {
                                         None
                                     };

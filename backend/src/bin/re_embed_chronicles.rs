@@ -173,7 +173,7 @@ async fn main() -> Result<()> {
         info!(
             "Processing chunk {}/{} (events {}-{})",
             chunk_idx + 1,
-            (total_events + chunk_size - 1) / chunk_size,
+            total_events.div_ceil(chunk_size),
             chunk_start + 1,
             std::cmp::min(chunk_start + chunk_size, total_events)
         );
@@ -272,7 +272,7 @@ async fn main() -> Result<()> {
             chunk_progress = format!(
                 "Chunk {}/{}",
                 chunk_idx + 1,
-                (total_events + chunk_size - 1) / chunk_size
+                total_events.div_ceil(chunk_size)
             ),
             overall_progress = format!("{}/{}", events_done, total_events),
             success_count = processed,

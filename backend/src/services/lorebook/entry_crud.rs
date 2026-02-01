@@ -4,8 +4,7 @@ use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
 use qdrant_client::qdrant::{
-    condition::ConditionOneOf, point_id::PointIdOptions, r#match::MatchValue, Condition,
-    FieldCondition, Filter, Match, PointId,
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
 };
 
 impl LorebookService {
@@ -102,7 +101,7 @@ AppError::InternalServerErrorGeneric(format!(
         let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id.into(),
+            id: new_entry_id,
             lorebook_id,
             user_id: user.id,
             original_sillytavern_uid: None,
@@ -121,8 +120,8 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated in favor of encrypted title
-            created_at: Some(current_time.into()),
-            updated_at: Some(current_time.into()),
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
         };
 
         // 3. Save to DB
@@ -1356,7 +1355,7 @@ AppError::InternalServerErrorGeneric(format!(
         let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id.into(),
+            id: new_entry_id,
             lorebook_id: target_lorebook_id,
             user_id,
             original_sillytavern_uid: None,
@@ -1375,8 +1374,8 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated
-            created_at: Some(current_time.into()),
-            updated_at: Some(current_time.into()),
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
         };
 
         // 3. Save to database
@@ -1562,14 +1561,14 @@ AppError::InternalServerErrorGeneric(format!(
         let current_time = DbTimestamp::now();
 
         let new_lorebook = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id,
             name: ai_lorebook_name.to_string(),
             description: Some("Automatically generated lorebook entries from AI narrative intelligence. This contains world-building information extracted from your roleplay conversations.".to_string()),
             source_format: "scribe_ai_v1".to_string(),
             is_public: false,
-            created_at: Some(current_time.into()),
-            updated_at: Some(current_time.into()),
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
         };
 
         let created_lorebook = conn

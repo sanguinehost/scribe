@@ -80,7 +80,7 @@ pub async fn generate_character_field_handler(
     // Convert API request to internal format
     let internal_request = payload
         .to_field_generation_request()
-        .map_err(|e| AppError::BadRequest(e))?;
+        .map_err(AppError::BadRequest)?;
 
     // Generate the field
     let field_generator = FieldGenerator::new(Arc::new(state));
@@ -129,7 +129,7 @@ pub async fn generate_character_field_stream_handler(
     // Convert API request to internal format
     let internal_request = payload
         .to_field_generation_request()
-        .map_err(|e| AppError::BadRequest(e))?;
+        .map_err(AppError::BadRequest)?;
 
     // Clone data needed for the stream
     let state_arc = Arc::new(state);

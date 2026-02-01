@@ -711,7 +711,7 @@ impl GameStateService {
                     ));
                 }
                 if new_npc.location != current_npc.location {
-                    changes.push(format!("location changed"));
+                    changes.push("location changed".to_string());
                 }
 
                 if !changes.is_empty() {

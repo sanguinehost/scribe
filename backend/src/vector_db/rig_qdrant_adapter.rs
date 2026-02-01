@@ -6,7 +6,7 @@ use ::rig_qdrant::QdrantVectorStore;
 use async_trait::async_trait;
 use qdrant_client::qdrant::QueryPoints;
 use rig::embeddings::EmbeddingModel;
-use rig::vector_store::VectorStoreIndex; // Import VectorStoreIndex trait
+
 use std::sync::Arc;
 
 pub struct RigQdrantService {
@@ -256,7 +256,7 @@ impl VectorServiceTrait for RigQdrantService {
             .client
             .search_points(qdrant_client::qdrant::SearchPoints {
                 collection_name: self.query_params.collection_name.clone(),
-                vector: vector.into_iter().map(|v| v as f32).collect::<Vec<f32>>(),
+                vector: vector.into_iter().collect::<Vec<f32>>(),
                 limit,
                 filter,
                 score_threshold,
@@ -323,12 +323,7 @@ impl VectorServiceTrait for RigQdrantService {
         self.client
             .delete_points(qdrant_client::qdrant::DeletePoints {
                 collection_name: self.query_params.collection_name.clone(),
-                points: Some(
-                    ids.into_iter()
-                        .map(|id| id.into())
-                        .collect::<Vec<_>>()
-                        .into(),
-                ),
+                points: Some(ids.into_iter().collect::<Vec<_>>().into()),
                 ..Default::default()
             })
             .await

@@ -19,12 +19,11 @@ use diesel::prelude::*;
 use diesel::RunQueryDsl;
 
 // Crate imports
-#[cfg(feature = "sqlite-backend")]
-use scribe_backend::db::SqliteInteractExt;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
     db::DbBigInt,
+    db::{self},
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -34,6 +33,9 @@ use scribe_backend::{
     schema::{characters, chat_messages, chat_sessions, users},
     test_helpers,
 };
+
+#[cfg(feature = "sqlite-backend")]
+use scribe_backend::db::{SqliteInteractExt, SqlitePoolExt};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
 // --- Helpers (adapted from variant_raw_prompt_test.rs) ---
@@ -43,11 +45,18 @@ async fn create_test_user_with_dek(
     username: String,
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
+    #[cfg(feature = "postgres-backend")]
     let mut conn = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
-        .await?;
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let mut conn = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
 
     let password_hash = bcrypt::hash(&password, bcrypt::DEFAULT_COST)
         .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?;
@@ -110,16 +119,41 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
+        #[cfg(feature = "postgres-backend")]
         created_at: Some(scribe_backend::db::DbTimestamp::now()),
+        #[cfg(feature = "postgres-backend")]
         updated_at: Some(scribe_backend::db::DbTimestamp::now()),
+        #[cfg(feature = "sqlite-backend")]
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        #[cfg(feature = "sqlite-backend")]
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         ..Default::default()
     };
 
+    #[cfg(feature = "postgres-backend")]
     let character: DbCharacter = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
-        .await?
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            let char_id = new_character.id.expect("Character ID must be set");
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn)?;
+            characters::table
+                .find(char_id)
+                .select(DbCharacter::as_select())
+                .first(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let character: DbCharacter = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             let char_id = new_character.id.expect("Character ID must be set");
             diesel::insert_into(characters::table)
@@ -161,11 +195,26 @@ async fn create_test_chat_session(
     let session_response: Value = serde_json::from_slice(&response_body)?;
     let session_id = session_response["id"].as_str().unwrap().parse::<Uuid>()?;
 
+    #[cfg(feature = "postgres-backend")]
     let chat_session: Chat = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
-        .await?
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let chat_session: Chat = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             chat_sessions::table
                 .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
@@ -186,41 +235,42 @@ async fn create_test_message(
     content: &str,
     role: MessageRole,
 ) -> anyhow::Result<DbChatMessage> {
-    use scribe_backend::models::chats::DbInsertableChatMessage;
+    use scribe_backend::models::chats::NewChatMessage;
 
-    let new_message = DbInsertableChatMessage {
-        rag_embedding_id: None,
-        chat_id: session_id.into(),
-        user_id: user_id.into(),
-        msg_type: role.clone(),
-        content: content.as_bytes().to_vec(),
-        content_nonce: None,
-        role: Some(role.to_string()),
-        parts: None,
-        attachments: None,
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
-        model_name: "gemini-1.5-pro".to_string(),
-        status: "completed".to_string(),
-        error_message: None,
-        variant_count: 1,
-        current_variant_index: 0,
-        credits_charged: 0,
-        credits_cost: scribe_backend::db::DbDecimal::from(0),
-        actual_cost: scribe_backend::db::DbDecimal::from(0),
-        modified_cost: scribe_backend::db::DbDecimal::from(0),
-        credit_cost: 0,
-        actual_charge: scribe_backend::db::DbDecimal::from(0),
-        game_time: None,
-    };
+    let new_message = scribe_backend::models::chats::DbInsertableChatMessage::new(
+        session_id.into(),
+        user_id.into(),
+        role.clone(),
+        content.as_bytes().to_vec(),
+        None,
+        "gemini-1.5-pro".to_string(),
+    )
+    .with_role(role.to_string())
+    .with_status(scribe_backend::models::chats::MessageStatus::Completed);
 
+    #[cfg(feature = "postgres-backend")]
     let message: DbChatMessage = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
-        .await?
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            diesel::insert_into(chat_messages::table)
+                .values(&new_message)
+                .execute(conn)?;
+
+            chat_messages::table
+                .order(chat_messages::created_at.desc())
+                .first(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let message: DbChatMessage = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
         .interact(move |conn| {
             diesel::insert_into(chat_messages::table)
                 .values(&new_message)
@@ -272,18 +322,39 @@ async fn test_hidden_streaming_message() -> anyhow::Result<()> {
     .await?;
 
     // 2. Set status to "streaming" (or anything other than "completed")
-    test_app
+    #[cfg(feature = "postgres-backend")]
+    let mut conn = test_app
         .db_pool
         .get()
-        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))
-        .await?
+        .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let mut conn = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
+
+    #[cfg(feature = "postgres-backend")]
+    let interact_result = conn
         .interact(move |conn| {
             diesel::update(chat_messages::table.filter(chat_messages::id.eq(message.id)))
                 .set(chat_messages::status.eq("streaming"))
                 .execute(conn)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))??;
+        .map_err(|e| anyhow::anyhow!("Interact error: {:?}", e))?;
+
+    #[cfg(feature = "sqlite-backend")]
+    let interact_result = conn
+        .interact(move |conn| {
+            diesel::update(chat_messages::table.filter(chat_messages::id.eq(message.id)))
+                .set(chat_messages::status.eq("streaming"))
+                .execute(conn)
+        })
+        .await;
+
+    interact_result.map_err(|e| anyhow::anyhow!("DB error: {:?}", e))?;
 
     // 3. Fetch messages using the API
     let get_messages_request = Request::builder()

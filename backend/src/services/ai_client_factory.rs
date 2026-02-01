@@ -64,7 +64,7 @@ impl AiClientFactory {
                 // the fallback_client is configured to handle "mistralrs" if the feature is enabled.
                 Ok(self.fallback_client.clone())
             }
-            "gemini" | _ => {
+            _ => {
                 info!(%user_id, provider, "Using AI client (no security wrapping needed)");
                 Ok(self.fallback_client.clone())
             }
@@ -87,7 +87,7 @@ impl AiClientFactory {
                 info!(%user_id, provider, "Using MistralRs via RigClient for local inference");
                 Ok(self.fallback_client.clone())
             }
-            "gemini" | _ => {
+            _ => {
                 info!(%user_id, provider, "Using AI client");
                 Ok(self.fallback_client.clone())
             }

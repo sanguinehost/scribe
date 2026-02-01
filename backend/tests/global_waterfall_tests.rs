@@ -7,11 +7,7 @@ use axum::{
 };
 use bigdecimal::BigDecimal;
 use chrono::Utc;
-use genai::{
-    adapter::AdapterKind,
-    chat::{ChatResponse, MessageContent, Usage},
-    ModelIden,
-};
+use scribe_backend::llm::RigChatResponse;
 use serde_json::json;
 use tower::ServiceExt;
 
@@ -170,13 +166,12 @@ async fn test_global_waterfall_fills_context() -> anyhow::Result<()> {
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(ChatResponse {
-            model_iden: ModelIden::new(AdapterKind::Gemini, "test-model"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "test-model"),
-            content: MessageContent::from("Waterfall response"),
+        .set_response(Ok(RigChatResponse {
+            content: "Waterfall response".to_string(),
+            prompt_tokens: Some(15),
+            completion_tokens: Some(10),
+            total_tokens: Some(25),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
 
     // 10. Call generate endpoint
@@ -215,18 +210,18 @@ async fn test_global_waterfall_fills_context() -> anyhow::Result<()> {
         .get_last_request()
         .unwrap();
 
-    // messages include the system prompt (if any) and the history
+    // history include the system prompt (if any) and the history
     println!(
         "Number of messages in AI request: {}",
-        last_request.messages.len()
+        last_request.history.len()
     );
 
     // We expect more than 20 messages (which would be the ~2000 token limit)
     // Plus the current user message and potentially a system prompt.
     assert!(
-        last_request.messages.len() > 30,
+        last_request.history.len() > 30,
         "Global Waterfall should have added more messages than the initial budget allowed. Got {}",
-        last_request.messages.len()
+        last_request.history.len()
     );
 
     Ok(())

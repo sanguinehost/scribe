@@ -214,6 +214,7 @@ impl NarrativeIntelligenceService {
         chronicle_id = ?chronicle_id,
         message_count = recent_messages.len()
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_conversation_context(
         &self,
         user_id: crate::db::DbId,
@@ -441,6 +442,7 @@ impl NarrativeIntelligenceService {
     /// 2. Uses LLM to determine state changes based on conversation
     /// 3. Reconciles changes
     /// 4. Persists new state to DB
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_game_state(
         &self,
         user_id: crate::db::DbId,
@@ -845,7 +847,7 @@ impl NarrativeIntelligenceService {
 
         Ok(CharacterContext::new(
             character.id,
-            character.name,
+            character.name.unwrap_or_default(),
             description,
             personality,
             scenario,

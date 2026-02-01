@@ -11,8 +11,7 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         embeddings::{
-            decrypt_lorebook_content, metadata::ChronicleEventMetadata,
-            retrieval::decrypt_chat_content, ChatMessageChunkMetadata, CognitiveFactMetadata,
+            metadata::ChronicleEventMetadata, ChatMessageChunkMetadata, CognitiveFactMetadata,
             LorebookChunkMetadata,
         },
         ChronicleService, LorebookService,
@@ -272,8 +271,8 @@ impl ScribeTool for CreateChronicleEventTool {
         match self
             .chronicle_service
             .create_event(
-                user_uuid.into(),
-                chronicle_uuid.into(),
+                user_uuid,
+                chronicle_uuid,
                 final_create_request,
                 Some(&session_dek_wrapper), // Pass SessionDek for AI-generated events encryption
             )
@@ -559,14 +558,13 @@ impl ScribeTool for CreateLorebookEntryTool {
         let keywords = params
             .get("keywords")
             .and_then(|v| v.as_str())
-            .map(|s| {
+            .and_then(|s| {
                 if s.is_empty() {
                     None
                 } else {
                     Some(s.to_string())
                 }
-            })
-            .flatten();
+            });
 
         // Parse user UUID
         let user_uuid = DbId::parse_str(user_id_str)
@@ -600,8 +598,8 @@ impl ScribeTool for CreateLorebookEntryTool {
         match self
             .lorebook_service
             .create_entry_for_narrative_intelligence(
-                user_uuid.into(),
-                lorebook_id.map(|id| id.into()),
+                user_uuid,
+                lorebook_id,
                 name.to_string(),
                 content.to_string(),
                 keywords,
@@ -631,20 +629,22 @@ impl ScribeTool for CreateLorebookEntryTool {
 // NOTE: ExtractWorldConceptsTool removed - was only returning mock data and not used in the single-agent system
 
 /// Tool for searching knowledge base using vector embeddings (Step 2 of workflow)
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
 pub struct SearchKnowledgeBaseTool {
-    qdrant_service: Arc<crate::vector_db::VectorService>,
+    vector_service: Arc<crate::vector_db::VectorService>,
     embedding_client: Arc<dyn EmbeddingClient>,
     app_state: Arc<AppState>,
 }
 
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
 impl SearchKnowledgeBaseTool {
     pub fn new(
-        qdrant_service: Arc<crate::vector_db::VectorService>,
+        vector_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient>,
         app_state: Arc<AppState>,
     ) -> Self {
         Self {
-            qdrant_service,
+            vector_service,
             embedding_client,
             app_state,
         }
@@ -822,6 +822,7 @@ impl SearchKnowledgeBaseTool {
 }
 
 #[async_trait]
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
 impl ScribeTool for SearchKnowledgeBaseTool {
     fn name(&self) -> &'static str {
         "search_knowledge_base"
@@ -985,8 +986,8 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
         // SECURITY CRITICAL: Create filter to only return results for this user
         // With optional session/chronicle scoping for context control
-        use crate::vector_db::qdrant_client::{Condition, FieldCondition, Filter, Match};
         use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
+        use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match};
 
         // Base security filter - ALWAYS filter by user_id
         let user_condition = Condition {
@@ -1012,9 +1013,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
             if includes_lorebooks {
                 // Fetch lorebook IDs associated with this session
-                let lorebook_ids = self
-                    .get_session_lorebook_ids(session_id.into(), user_id.into())
-                    .await?;
+                let lorebook_ids = self.get_session_lorebook_ids(session_id, user_id).await?;
                 info!(
                     "Session {} has {} associated lorebooks: {:?}",
                     session_id,
@@ -1191,16 +1190,14 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             );
 
             // Get all lorebook IDs from all sessions in this chronicle
-            let chronicle_lorebook_ids = match self
-                .get_chronicle_lorebook_ids(chronicle_id.into(), user_id.into())
-                .await
-            {
-                Ok(ids) => ids,
-                Err(e) => {
-                    warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
-                    vec![]
-                }
-            };
+            let chronicle_lorebook_ids =
+                match self.get_chronicle_lorebook_ids(chronicle_id, user_id).await {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
+                        vec![]
+                    }
+                };
 
             debug!(
                 "Found {} lorebooks in chronicle {}",
@@ -1349,7 +1346,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 ],
             };
 
-            self.qdrant_service
+            self.vector_service
                 .hybrid_search(
                     Some(query_embedding),   // Use vector search as primary
                     Some(query.to_string()), // Also do text matching
@@ -1361,7 +1358,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 .await
         } else {
             info!("Using pure vector search for complex query");
-            self.qdrant_service
+            self.vector_service
                 .search_points_with_threshold(
                     query_embedding,
                     limit * 2, // Get more candidates initially for better filtering
@@ -1418,7 +1415,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             // Try to parse as different metadata types
             if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if lorebook_meta.user_id != user_id.into() {
+                if lorebook_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Lorebook result for user {} returned to user {}",
                         lorebook_meta.user_id, user_id
@@ -1429,7 +1426,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 let should_include = matches!(search_type, "all" | "lorebooks");
                 if should_include {
                     // Decrypt content if encrypted fields are present
-                    let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+                    let content = if let (Some(encrypted_chunk), Some(nonce)) = (
                         lorebook_meta.encrypted_chunk_text.as_ref(),
                         lorebook_meta.chunk_text_nonce.as_ref(),
                     ) {
@@ -1460,7 +1457,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         "[no encrypted content]".to_string()
                     };
 
-                    let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
+                    let title = if let (Some(encrypted_title), Some(title_nonce)) = (
                         lorebook_meta.encrypted_title.as_ref(),
                         lorebook_meta.title_nonce.as_ref(),
                     ) {
@@ -1524,7 +1521,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 }
             } else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if chat_meta.user_id != user_id.into() {
+                if chat_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Chat result for user {} returned to user {}",
                         chat_meta.user_id, user_id
@@ -1535,7 +1532,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 let should_include = matches!(search_type, "all");
                 if should_include {
                     // Decrypt content if encrypted fields are present
-                    let content = if let (Some(ref encrypted_text), Some(ref nonce)) = (
+                    let content = if let (Some(encrypted_text), Some(nonce)) = (
                         chat_meta.encrypted_text.as_ref(),
                         chat_meta.text_nonce.as_ref(),
                     ) {
@@ -1579,7 +1576,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             } else if let Ok(chronicle_meta) = ChronicleEventMetadata::try_from(payload_map.clone())
             {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if chronicle_meta.user_id != user_id.into() {
+                if chronicle_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Chronicle result for user {} returned to user {}",
                         chronicle_meta.user_id, user_id
@@ -1596,10 +1593,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     if let Some(json_value) = payload_map.get("event_json") {
                         // Convert Qdrant Value to serde_json::Value
                         // We need to handle the conversion carefully
-                        let json_val: serde_json::Value = json_value
-                            .clone()
-                            .try_into()
-                            .unwrap_or(serde_json::Value::Null);
+                        let json_val: serde_json::Value = json_value.clone().into();
 
                         if let Some(summary) = json_val.get("summary").and_then(|s| s.as_str()) {
                             content = Some(summary.to_string());
@@ -1628,7 +1622,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 bytes
                             });
 
-                            if let (Some(ref encrypted), Some(ref nonce), Some(ref session_dek)) =
+                            if let (Some(ref encrypted), Some(ref nonce), Some(session_dek)) =
                                 (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref())
                             {
                                 // Decrypt the content
@@ -1675,7 +1669,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
                     // Prioritize results from the specified chronicle_id
                     if let Some(target_chronicle_id) = chronicle_id_opt {
-                        if chronicle_meta.chronicle_id == target_chronicle_id.into() {
+                        if chronicle_meta.chronicle_id == target_chronicle_id {
                             chronicle_priority_results.push(result);
                         } else {
                             results.push(result);
@@ -1686,7 +1680,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 }
             } else if let Ok(fact_meta) = CognitiveFactMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if fact_meta.user_id != user_id.into() {
+                if fact_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Fact result for user {} returned to user {}",
                         fact_meta.user_id, user_id
@@ -1700,11 +1694,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     match self
                         .app_state
                         .recall_pipeline
-                        .get_fact_by_id(
-                            user_id.into(),
-                            fact_meta.chronicle_id.into(),
-                            fact_meta.fact_id.into(),
-                        )
+                        .get_fact_by_id(user_id, fact_meta.chronicle_id, fact_meta.fact_id)
                         .await
                     {
                         Ok(Some(fact)) => {
@@ -2160,7 +2150,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
 
         let count = params.get("count").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
-        if count < 1 || count > 20 {
+        if !(1..=20).contains(&count) {
             return Err(ToolError::InvalidParams(
                 "count must be between 1 and 20".to_string(),
             ));
@@ -2311,8 +2301,8 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
             match self
                 .lorebook_service
                 .create_entry_for_narrative_intelligence(
-                    user_uuid.into(),
-                    lorebook_id.map(|id| id.into()),
+                    user_uuid,
+                    lorebook_id,
                     entry_output.name.clone(),
                     entry_output.content.clone(),
                     keywords,
@@ -2477,12 +2467,14 @@ impl ScribeTool for UpdateLorebookEntryTool {
 
 /// Tool for querying rulebook/game rules from lorebook entries tagged with "rules"
 /// This is used by the Game Master mode to enforce game mechanics and world consistency
+#[cfg(feature = "remote-vector")]
 pub struct QueryRulesTool {
     qdrant_service: Arc<crate::vector_db::VectorService>,
     embedding_client: Arc<dyn EmbeddingClient>,
     _app_state: Arc<AppState>,
 }
 
+#[cfg(feature = "remote-vector")]
 impl QueryRulesTool {
     pub fn new(
         qdrant_service: Arc<crate::vector_db::VectorService>,
@@ -2498,6 +2490,7 @@ impl QueryRulesTool {
 }
 
 #[async_trait]
+#[cfg(feature = "remote-vector")]
 impl ScribeTool for QueryRulesTool {
     fn name(&self) -> &'static str {
         "query_rules"
@@ -2731,6 +2724,7 @@ impl ScribeTool for QueryRulesTool {
 // ============================================================================
 
 #[cfg(test)]
+#[cfg(all(test, feature = "remote-vector"))]
 mod query_rules_tests {
     use super::*;
     use serde_json::json;

@@ -402,7 +402,7 @@ where
                 _ => {
                     // Try to parse as integer
                     s.parse::<i32>().map(Some).map_err(|_| {
-                        Error::invalid_value(Unexpected::Str(&s), &"integer, 'before_char', 'after_char', 'before_prompt', or 'after_prompt'")
+                        Error::invalid_value(Unexpected::Str(s), &"integer, 'before_char', 'after_char', 'before_prompt', or 'after_prompt'")
                     })
                 }
             }

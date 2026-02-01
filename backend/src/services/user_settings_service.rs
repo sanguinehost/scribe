@@ -259,6 +259,15 @@ impl UserSettingsService {
                         .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(Some(
                             context_rag_budget,
                         ))
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(
+                            Option::<i32>::None,
+                        )
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(
+                            Option::<i32>::None,
+                        )
+                        .bind::<diesel::sql_types::Nullable<diesel::sql_types::Int4>, _>(
+                            Option::<i32>::None,
+                        )
                         .execute(conn)
                         .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

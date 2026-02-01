@@ -1,12 +1,12 @@
-#![cfg(feature = "postgres-backend")]
+#![cfg(any(feature = "postgres-backend", feature = "sqlite-backend"))]
 use scribe_backend::services::tokenizer_service::TokenizerService;
 use std::path::PathBuf;
 
 #[test]
 fn test_gemma_tokenizer_integration() {
-    // Path to the Gemma model file
+    // Path to the tokenizer file
     let model_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
 
     // Create a tokenizer instance
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
@@ -18,7 +18,7 @@ fn test_gemma_tokenizer_integration() {
     );
     assert_eq!(
         tokenizer.model_name(),
-        "gemma.model",
+        "tokenizer.json",
         "Model name should match"
     );
 

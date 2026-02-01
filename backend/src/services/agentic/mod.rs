@@ -33,10 +33,11 @@ pub use context_enrichment_agent::{
     PlannedSearch,
 };
 pub use factory::AgenticNarrativeFactory;
+#[cfg(feature = "remote-vector")]
+pub use narrative_tools::SearchKnowledgeBaseTool;
 pub use narrative_tools::{
     AnalyzeLorebookTool, AnalyzeTextSignificanceTool, CreateBatchLorebookEntriesTool,
-    CreateChronicleEventTool, CreateLorebookEntryTool, SearchKnowledgeBaseTool,
-    UpdateLorebookEntryTool,
+    CreateChronicleEventTool, CreateLorebookEntryTool, UpdateLorebookEntryTool,
 };
 pub use persona_context::{CharacterContext, UserPersonaContext};
 pub use registry::ToolRegistry;

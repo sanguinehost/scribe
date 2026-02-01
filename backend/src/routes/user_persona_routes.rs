@@ -49,7 +49,7 @@ async fn create_user_persona_handler(
     let user_persona_service = UserPersonaService::new(state.pool.clone(), enc_service);
 
     let created_persona = user_persona_service
-        .create_user_persona(&user, &dek.0, payload)
+        .create_user_persona(user, &dek.0, payload)
         .await?;
 
     Ok((StatusCode::CREATED, Json(created_persona)))
@@ -69,7 +69,7 @@ async fn list_user_personas_handler(
     let user_persona_service = UserPersonaService::new(state.pool.clone(), enc_service);
 
     let personas = user_persona_service
-        .list_user_personas(&user, &dek.0)
+        .list_user_personas(user, &dek.0)
         .await?;
 
     Ok(Json(personas))
@@ -90,7 +90,7 @@ async fn get_user_persona_handler(
     let user_persona_service = UserPersonaService::new(state.pool.clone(), enc_service);
 
     let persona = user_persona_service
-        .get_user_persona(&user, Some(&dek.0), persona_id)
+        .get_user_persona(user, Some(&dek.0), persona_id)
         .await?;
 
     Ok(Json(persona))
@@ -112,7 +112,7 @@ async fn update_user_persona_handler(
     let user_persona_service = UserPersonaService::new(state.pool.clone(), enc_service);
 
     let updated_persona = user_persona_service
-        .update_user_persona(&user, &dek.0, persona_id, payload)
+        .update_user_persona(user, &dek.0, persona_id, payload)
         .await?;
 
     Ok(Json(updated_persona))
@@ -134,7 +134,7 @@ async fn delete_user_persona_handler(
     let user_persona_service = UserPersonaService::new(state.pool.clone(), enc_service);
 
     user_persona_service
-        .delete_user_persona(&user, persona_id)
+        .delete_user_persona(user, persona_id)
         .await?;
 
     Ok(StatusCode::NO_CONTENT)

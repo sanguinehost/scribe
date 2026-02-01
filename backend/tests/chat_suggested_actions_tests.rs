@@ -161,19 +161,12 @@ async fn test_suggested_actions_success() -> anyhow::Result<()> {
         .mock_ai_client
         .as_ref()
         .expect("Mock client should be present")
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash",
-            ),
-            content: genai::chat::MessageContent::from_text(mock_suggestions.to_string()),
+        .set_response(Ok(scribe_backend::llm::rig_client::RigChatResponse {
+            content: mock_suggestions.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: genai::chat::Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = SuggestedActionsRequest {};
@@ -303,14 +296,14 @@ async fn create_test_character_for_suggested_actions(
         system_prompt_nonce: None,
         post_history_instructions: None,
         post_history_instructions_nonce: None,
-        tags: scribe_backend::models::OptionalStringArray(None),
+        tags: Default::default(),
         creator: None,
         character_version: None,
-        alternate_greetings: scribe_backend::models::OptionalStringArray(None),
+        alternate_greetings: Default::default(),
         nickname: None,
         creator_notes_multilingual: None,
-        source: scribe_backend::models::OptionalStringArray(None),
-        group_only_greetings: scribe_backend::models::OptionalStringArray(None),
+        source: Default::default(),
+        group_only_greetings: Default::default(),
         creation_date: None,
         modification_date: None,
         extensions: None,
@@ -338,7 +331,7 @@ async fn create_test_character_for_suggested_actions(
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: scribe_backend::models::OptionalStringArray(None),
+        system_tags: Default::default(),
         usage_hints: None,
         user_persona: None,
         user_persona_nonce: None,
@@ -515,19 +508,12 @@ async fn run_suggested_actions_logic(
         .mock_ai_client
         .as_ref()
         .expect("Mock client should be present")
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash", // Consistent model
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash",
-            ),
-            content: genai::chat::MessageContent::from_text(mock_suggestions.to_string()),
+        .set_response(Ok(scribe_backend::llm::rig_client::RigChatResponse {
+            content: mock_suggestions.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: genai::chat::Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = SuggestedActionsRequest {};
@@ -757,19 +743,12 @@ async fn test_suggested_actions_invalid_json_response() -> anyhow::Result<()> {
         .mock_ai_client
         .as_ref()
         .expect("Mock client should be present")
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.5-flash",
-            ),
-            content: genai::chat::MessageContent::from_text(malformed_json_string.to_string()),
+        .set_response(Ok(scribe_backend::llm::rig_client::RigChatResponse {
+            content: malformed_json_string.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: genai::chat::Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = SuggestedActionsRequest {};

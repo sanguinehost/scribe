@@ -50,7 +50,7 @@ impl ChatOverrideService {
         let override_id_for_insert = DbId::new(); // Generate new ID for insert
 
         let new_override_for_db = NewChatCharacterOverride {
-            id: override_id_for_insert.into(),
+            id: override_id_for_insert,
             chat_session_id,
             original_character_id,
             field_name: field_name.clone(),

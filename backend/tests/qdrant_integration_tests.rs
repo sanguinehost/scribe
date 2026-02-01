@@ -3,11 +3,6 @@
 
 use anyhow::Error as AnyhowError;
 use dotenvy::dotenv;
-use scribe_backend::config::Config;
-use scribe_backend::errors::AppError;
-use scribe_backend::test_helpers::ensure_rustls_provider_installed;
-use scribe_backend::vector_db::qdrant_client::{create_qdrant_point, QdrantClientService}; // Added
-                                                                                          // Import necessary types for direct client use in setup
 use qdrant_client::qdrant::condition::ConditionOneOf;
 use qdrant_client::qdrant::r#match::MatchValue;
 use qdrant_client::qdrant::Match;
@@ -16,7 +11,12 @@ use qdrant_client::qdrant::{
     FieldCondition, Filter, VectorParams, VectorsConfig,
 };
 use qdrant_client::Qdrant;
+use scribe_backend::config::Config;
+use scribe_backend::errors::AppError;
+use scribe_backend::test_helpers::ensure_rustls_provider_installed;
 use scribe_backend::vector_db::qdrant_client::Kind as ValueKind;
+use scribe_backend::vector_db::qdrant_client::{create_qdrant_point, QdrantClientService};
+use scribe_backend::vector_db::QdrantClientServiceTrait;
 use serde_json::json;
 use serial_test::serial;
 use std::sync::Arc;
@@ -484,7 +484,7 @@ async fn test_qdrant_upsert_empty_points() -> Result<(), AnyhowError> {
     Ok(())
 }
 
-use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait; // Import the trait
+// Trait already imported at the top
 
 #[tokio::test]
 #[serial]

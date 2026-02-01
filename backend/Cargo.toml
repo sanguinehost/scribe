@@ -9,7 +9,7 @@ desktop = ["sqlite-backend", "embedded-vector"]
 cloud = ["postgres-backend", "remote-vector"]
 sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "diesel_migrations/sqlite", "diesel-derive-enum/sqlite"]
 postgres-backend = ["diesel/postgres", "dep:deadpool-diesel", "deadpool-diesel?/postgres", "diesel_migrations/postgres", "diesel-derive-enum/postgres", "dep:diesel_json"]
-embedded-vector = ["dep:lancedb", "dep:arrow", "dep:tokio-stream", "dep:rig-lancedb"]
+embedded-vector = ["dep:lancedb", "dep:arrow", "dep:tokio-stream", "dep:rig-lancedb", "dep:datafusion", "dep:datafusion-expr"]
 remote-vector = ["dep:rig-qdrant"]  # qdrant-client is already a direct dependency
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile", "dep:mistralrs-core", "dep:mistralrs"]
 payment = ["dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
@@ -98,6 +98,10 @@ qdrant-client = { version = "1.15.0", features = ["serde"] }
 diesel_json = { version = "0.3.0", optional = true }
 image = { version = "0.24.9", default-features = false, features = ["png", "jpeg"] }
 
+# DataFusion (Temporary fix for build error)
+datafusion = { version = "50.3.0", optional = true }
+datafusion-expr = { version = "50.3.0", optional = true }
+
 envy = "0.4"
 
 # Url (for parsing base URLs, etc.)
@@ -165,12 +169,13 @@ hmac = { version = "0.12" }  # For blind indexing and webhook signature verifica
 subtle = { version = "2.5", optional = true }  # For constant-time comparisons
 
 # Security monitoring and metrics
-prometheus = "0.14"  # For security metrics collection (0.14.0 fixes RUSTSEC-2024-0437)
+prometheus = "0.13.4"  # For security metrics collection
+
 lazy_static = "1.4"  # For global metrics registry
 
 # Vector database (optional - only with embedded-vector feature)
 lancedb = { version = "0.23.1", optional = true }
-arrow = { version = "56.0", optional = true }  # Pinned: lancedb 0.22.2 incompatible with arrow 57.x
+arrow = { version = "56.2.0", optional = true }  # Pinned: lancedb 0.23.1 compatible with arrow 56.x
 jsonwebtoken = { version = "10.2.0", features = ["rust_crypto"] }
 
 # Platform-specific dependencies

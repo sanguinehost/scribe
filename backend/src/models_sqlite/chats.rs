@@ -153,8 +153,7 @@ pub struct Chat {
     pub history_management_limit: i32,                             // 18
     pub model_name: String,                                        // 19
     pub thinking_budget: Option<i32>,                              // 20
-    pub thinking_level: Option<String>,                            // 21 - ADDED
-    pub enable_code_execution: Option<bool>,                       // 22 - MOVED
+    pub enable_code_execution: Option<bool>,                       // 21 - MOVED
     pub visibility: Option<String>,                                // 23
     pub active_custom_persona_id: Option<crate::db::DbId>,         // 24
     pub active_impersonated_character_id: Option<crate::db::DbId>, // 25
@@ -183,6 +182,7 @@ pub struct Chat {
     // Game Master Agent fields
     pub game_state: Option<crate::DbJson>,        // 47
     pub game_master_mode_enabled: bool,           // 48
+    pub thinking_level: Option<String>,           // 49 - ADDED
     pub rag_chronicles_limit: Option<i32>,        // 49
     pub rag_lorebooks_limit: Option<i32>,         // 50
     pub rag_older_chat_limit: Option<i32>,        // 51
@@ -194,74 +194,74 @@ impl std::fmt::Debug for Chat {
         f.debug_struct("Chat")
             .field("id", &self.id)
             .field("user_id", &self.user_id)
-            .field("character_id", &self.character_id)
-            .field(
-                "title_ciphertext",
-                &self.title_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "title_nonce",
-                &self.title_nonce.as_ref().map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "system_prompt_ciphertext",
-                &self
-                    .system_prompt_ciphertext
-                    .as_ref()
-                    .map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "system_prompt_nonce",
-                &self
-                    .system_prompt_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_BYTES]"),
-            )
-            .field("temperature", &self.temperature)
-            .field("max_output_tokens", &self.max_output_tokens)
-            .field("created_at", &self.created_at)
-            .field("updated_at", &self.updated_at)
-            .field("frequency_penalty", &self.frequency_penalty)
-            .field("presence_penalty", &self.presence_penalty)
-            .field("top_k", &self.top_k)
-            .field("top_p", &self.top_p)
-            .field("seed", &self.seed)
-            .field("stop_sequences", &self.stop_sequences)
-            .field(
-                "history_management_strategy",
-                &self.history_management_strategy,
-            )
-            .field("history_management_limit", &self.history_management_limit)
-            .field("model_name", &self.model_name)
-            .field("thinking_budget", &self.thinking_budget)
-            .field("thinking_level", &self.thinking_level)
-            .field("enable_code_execution", &self.enable_code_execution)
-            .field("visibility", &self.visibility)
-            // Add new fields to Debug output
-            .field("active_custom_persona_id", &self.active_custom_persona_id)
-            .field(
-                "active_impersonated_character_id",
-                &self.active_impersonated_character_id,
-            )
-            // Token tracking fields
-            .field("total_prompt_tokens", &self.total_prompt_tokens)
-            .field("total_completion_tokens", &self.total_completion_tokens)
-            .field("estimated_cost_cents", &self.estimated_cost_cents)
-            .field("tokens_counted_at", &self.tokens_counted_at)
-            .field(
-                "narrative_style_override_ciphertext",
-                &self
-                    .narrative_style_override_ciphertext
-                    .as_ref()
-                    .map(|_| "[REDACTED_BYTES]"),
-            )
-            .field(
-                "narrative_style_override_nonce",
-                &self
-                    .narrative_style_override_nonce
-                    .as_ref()
-                    .map(|_| "[REDACTED_BYTES]"),
-            )
+            // .field("character_id", &self.character_id)
+            // .field(
+            //     "title_ciphertext",
+            //     &self.title_ciphertext.as_ref().map(|_| "[REDACTED_BYTES]"),
+            // )
+            // .field(
+            //     "title_nonce",
+            //     &self.title_nonce.as_ref().map(|_| "[REDACTED_BYTES]"),
+            // )
+            // .field(
+            //     "system_prompt_ciphertext",
+            //     &self
+            //         .system_prompt_ciphertext
+            //         .as_ref()
+            //         .map(|_| "[REDACTED_BYTES]"),
+            // )
+            // .field(
+            //     "system_prompt_nonce",
+            //     &self
+            //         .system_prompt_nonce
+            //         .as_ref()
+            //         .map(|_| "[REDACTED_BYTES]"),
+            // )
+            // .field("temperature", &self.temperature)
+            // .field("max_output_tokens", &self.max_output_tokens)
+            // .field("created_at", &self.created_at)
+            // .field("updated_at", &self.updated_at)
+            // .field("frequency_penalty", &self.frequency_penalty)
+            // .field("presence_penalty", &self.presence_penalty)
+            // .field("top_k", &self.top_k)
+            // .field("top_p", &self.top_p)
+            // .field("seed", &self.seed)
+            // .field("stop_sequences", &self.stop_sequences)
+            // .field(
+            //     "history_management_strategy",
+            //     &self.history_management_strategy,
+            // )
+            // .field("history_management_limit", &self.history_management_limit)
+            // .field("model_name", &self.model_name)
+            // .field("thinking_budget", &self.thinking_budget)
+            // .field("thinking_level", &self.thinking_level)
+            // .field("enable_code_execution", &self.enable_code_execution)
+            // .field("visibility", &self.visibility)
+            // // Add new fields to Debug output
+            // .field("active_custom_persona_id", &self.active_custom_persona_id)
+            // .field(
+            //     "active_impersonated_character_id",
+            //     &self.active_impersonated_character_id,
+            // )
+            // // Token tracking fields
+            // .field("total_prompt_tokens", &self.total_prompt_tokens)
+            // .field("total_completion_tokens", &self.total_completion_tokens)
+            // .field("estimated_cost_cents", &self.estimated_cost_cents)
+            // .field("tokens_counted_at", &self.tokens_counted_at)
+            // .field(
+            //     "narrative_style_override_ciphertext",
+            //     &self
+            //         .narrative_style_override_ciphertext
+            //         .as_ref()
+            //         .map(|_| "[REDACTED_BYTES]"),
+            // )
+            // .field(
+            //     "narrative_style_override_nonce",
+            //     &self
+            //         .narrative_style_override_nonce
+            //         .as_ref()
+            //         .map(|_| "[REDACTED_BYTES]"),
+            // )
             .finish()
     }
 }
@@ -296,8 +296,9 @@ pub struct NewChat {
     pub min_p: Option<crate::db::DbDecimal>,
     pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
-    pub logit_bias: Option<String>,
+    pub logit_bias: Option<crate::db::DbJson>,
     pub stop_sequences: crate::models::OptionalStringArray,
+    pub chat_mode: ChatMode,
     pub thinking_budget: Option<i32>,
     pub thinking_level: Option<String>,
     pub enable_code_execution: Option<bool>,
@@ -315,10 +316,10 @@ pub struct NewChat {
     pub prompt_template_id: String,
     pub narrative_style_override_ciphertext: Option<Vec<u8>>,
     pub narrative_style_override_nonce: Option<Vec<u8>>,
-    pub total_actual_cost: f64,
-    pub total_modified_cost: f64,
+    pub total_actual_cost: crate::db::DbDecimal,
+    pub total_modified_cost: crate::db::DbDecimal,
     pub total_credit_cost: i32,
-    pub total_actual_charge: f64,
+    pub total_actual_charge: crate::db::DbDecimal,
     pub game_state: Option<String>,
     pub game_master_mode_enabled: bool,
     pub rag_chronicles_limit: Option<i32>,
@@ -354,7 +355,8 @@ impl Default for NewChat {
             top_a: None,
             seed: None,
             logit_bias: None,
-            stop_sequences: crate::models::OptionalStringArray(None),
+            stop_sequences: crate::models::OptionalStringArray::default(),
+            chat_mode: ChatMode::default(),
             thinking_budget: None,
             thinking_level: None,
             enable_code_execution: None,
@@ -371,10 +373,10 @@ impl Default for NewChat {
             prompt_template_id: "default".to_string(),
             narrative_style_override_ciphertext: None,
             narrative_style_override_nonce: None,
-            total_actual_cost: 0.0,
-            total_modified_cost: 0.0,
+            total_actual_cost: crate::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
+            total_modified_cost: crate::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
             total_credit_cost: 0,
-            total_actual_charge: 0.0,
+            total_actual_charge: crate::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
             game_state: None,
             game_master_mode_enabled: false,
             rag_chronicles_limit: None,
@@ -735,6 +737,14 @@ impl ChatMessageBuilder {
     }
     pub fn status(mut self, status: String) -> Self {
         self.inner.status = status;
+        self
+    }
+    pub fn created_at(mut self, dt: DbTimestamp) -> Self {
+        self.inner.created_at = dt;
+        self
+    }
+    pub fn updated_at(mut self, dt: DbTimestamp) -> Self {
+        self.inner.updated_at = dt;
         self
     }
     pub fn build(self) -> ChatMessage {
@@ -2002,6 +2012,8 @@ pub struct DbInsertableChatMessage {
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
@@ -2044,7 +2056,6 @@ impl DbInsertableChatMessage {
     /// Create a new chat message with required fields only
     #[must_use]
     pub fn new(
-        id: crate::db::DbId, // CRITICAL: Must be provided for SQLite (no DEFAULT)
         chat_id: crate::db::DbId,
         user_id: crate::db::DbId,
         msg_type: MessageRole,
@@ -2052,8 +2063,9 @@ impl DbInsertableChatMessage {
         content_nonce: Option<Vec<u8>>,
         model_name: String,
     ) -> Self {
+        let now = DbTimestamp::now();
         Self {
-            id, // FIXED: Include id in struct initialization
+            id: crate::db::DbId::new(), // Default ID
             chat_id,
             user_id,
             msg_type,
@@ -2080,7 +2092,27 @@ impl DbInsertableChatMessage {
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
+            created_at: now,
+            updated_at: now,
         }
+    }
+
+    #[must_use]
+    pub fn with_id(mut self, id: crate::db::DbId) -> Self {
+        self.id = id;
+        self
+    }
+
+    #[must_use]
+    pub fn with_created_at(mut self, created_at: DbTimestamp) -> Self {
+        self.created_at = created_at;
+        self
+    }
+
+    #[must_use]
+    pub fn with_updated_at(mut self, updated_at: DbTimestamp) -> Self {
+        self.updated_at = updated_at;
+        self
     }
 
     /// Builder methods for optional fields
@@ -2340,7 +2372,7 @@ pub struct ChatForClient {
     pub top_a: Option<crate::db::DbDecimal>,
     pub seed: Option<i32>,
     pub logit_bias: Option<crate::db::DbJson>,
-    pub stop_sequences: crate::models::OptionalStringArray,
+    pub stop_sequences: Option<crate::models::OptionalStringArray>,
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub model_name: Option<String>,
@@ -2478,9 +2510,9 @@ impl Chat {
             min_p: self.min_p,
             top_a: self.top_a,
             seed: self.seed,
-            logit_bias: self.logit_bias,
-            stop_sequences: self.stop_sequences,
-            history_management_strategy: self.history_management_strategy,
+            logit_bias: self.logit_bias.clone(),
+            stop_sequences: Some(self.stop_sequences.clone()),
+            history_management_strategy: self.history_management_strategy.clone(),
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
             thinking_budget: self.thinking_budget,
@@ -3529,14 +3561,16 @@ mod tests {
         let content_vec = content_str.as_bytes().to_vec();
 
         let message = DbInsertableChatMessage::new(
-            message_id,
             chat_id,
             user_id,
             role,
             content_vec.clone(),
             None,
             "test-model".to_string(),
-        );
+        )
+        .with_id(message_id)
+        .with_created_at(DbTimestamp::now())
+        .with_updated_at(DbTimestamp::now());
         assert_eq!(message.id, message_id);
         assert_eq!(message.chat_id, chat_id);
         assert_eq!(message.user_id, user_id);
@@ -3572,7 +3606,7 @@ mod tests {
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: Some("neutral_roleplay".to_string()),
-            game_master_mode_enabled: false,
+            game_master_mode_enabled: Some(false),
             thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
@@ -3636,14 +3670,14 @@ mod tests {
             history_management_limit: Some(2000),
             model_name: Some("gemini-2.5-pro".to_string()),
             model_provider: Some("gemini".to_string()),
-            gemini_thinking_budget: None,
-            gemini_enable_code_execution: None,
+            thinking_budget: None,
+            enable_code_execution: None,
             chronicle_id: None,
             agent_mode: Some("disabled".to_string()),
             active_custom_persona_id: None,
             prompt_template_id: Some("neutral_roleplay".to_string()),
             game_master_mode_enabled: Some(true),
-            gemini_thinking_level: None,
+            thinking_level: None,
             rag_chronicles_limit: None,
             rag_lorebooks_limit: None,
             rag_older_chat_limit: None,
@@ -4019,9 +4053,6 @@ impl NewMessageVariant {
         content: &str,
         user_id: crate::db::DbId,
         dek: &SecretBox<Vec<u8>>,
-        prompt_tokens: Option<DbBigInt>,
-        completion_tokens: Option<DbBigInt>,
-        model_name: Option<String>,
         raw_prompt_debug: Option<&str>,
         game_state: Option<serde_json::Value>,
     ) -> Result<Self, AppError> {
@@ -4044,13 +4075,30 @@ impl NewMessageVariant {
             content: encrypted_content,
             content_nonce: Some(nonce),
             user_id,
-            prompt_tokens,
-            completion_tokens,
-            model_name,
+            prompt_tokens: None,
+            completion_tokens: None,
+            model_name: None,
             raw_prompt_ciphertext,
             raw_prompt_nonce,
             game_state: game_state.map(Into::into),
         })
+    }
+
+    #[must_use]
+    pub fn with_token_counts(
+        mut self,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
+    ) -> Self {
+        self.prompt_tokens = prompt_tokens.map(DbBigInt::from);
+        self.completion_tokens = completion_tokens.map(DbBigInt::from);
+        self
+    }
+
+    #[must_use]
+    pub fn with_model_name(mut self, model_name: String) -> Self {
+        self.model_name = Some(model_name);
+        self
     }
 }
 
@@ -4127,7 +4175,8 @@ pub struct ChatListQuery {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub title_ciphertext: Option<Vec<u8>>,
     pub title_nonce: Option<Vec<u8>>,
-    pub stop_sequences: crate::models::OptionalStringArray,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub stop_sequences: Option<crate::models::OptionalStringArray>,
     pub chat_mode: String,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub history_management_strategy: String,
@@ -4228,7 +4277,7 @@ impl ChatListQuery {
             top_a: None,
             seed: None,
             logit_bias: None,
-            stop_sequences: self.stop_sequences,
+            stop_sequences: self.stop_sequences.clone(),
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
@@ -4291,7 +4340,7 @@ pub struct ChatSessionQuery {
     pub title_ciphertext: Option<Vec<u8>>,
     pub title_nonce: Option<Vec<u8>>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    pub stop_sequences: crate::models::OptionalStringArray,
+    pub stop_sequences: Option<crate::models::OptionalStringArray>,
     pub chat_mode: String,
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
@@ -4396,7 +4445,7 @@ impl ChatSessionQuery {
             top_a: self.top_a,
             seed: self.seed,
             logit_bias: self.logit_bias,
-            stop_sequences: self.stop_sequences,
+            stop_sequences: self.stop_sequences.clone(),
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),

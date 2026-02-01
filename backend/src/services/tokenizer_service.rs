@@ -423,11 +423,16 @@ mod tests {
     use std::path::PathBuf;
 
     fn get_test_model_path() -> PathBuf {
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json")
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("resources/tokenizers/tokenizer.json");
+        path
     }
 
     fn get_test_image_path() -> PathBuf {
-        PathBuf::from("/home/socol/Workspace/sanguine-scribe/test_data/The_Awakened.png")
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.pop(); // Go up to workspace root
+        path.push("test_data/The_Awakened.png");
+        path
     }
 
     #[test]

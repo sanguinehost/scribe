@@ -91,9 +91,9 @@ diesel::table! {
     characters (id) {
         id -> Text,
         user_id -> Text,
-        spec -> Text,
-        spec_version -> Text,
-        name -> Text,
+        spec -> Nullable<Text>,
+        spec_version -> Nullable<Text>,
+        name -> Nullable<Text>,
         description -> Nullable<Binary>,
         personality -> Nullable<Binary>,
         scenario -> Nullable<Binary>,
@@ -112,8 +112,8 @@ diesel::table! {
         group_only_greetings -> Nullable<Text>,
         creation_date -> Nullable<Timestamp>,
         modification_date -> Nullable<Timestamp>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Nullable<Timestamp>,
+        updated_at -> Nullable<Timestamp>,
         persona -> Nullable<Binary>,
         world_scenario -> Nullable<Binary>,
         avatar -> Nullable<Text>,
@@ -861,8 +861,8 @@ diesel::table! {
         mes_example_nonce -> Nullable<Binary>,
         system_prompt_nonce -> Nullable<Binary>,
         post_history_instructions_nonce -> Nullable<Binary>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
+        created_at -> Nullable<Timestamp>,
+        updated_at -> Nullable<Timestamp>,
     }
 }
 

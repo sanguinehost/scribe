@@ -72,7 +72,7 @@ pub async fn create_message_variant(
 
     // Get the next variant index first
     let next_index = crate::db::with_conn(&state.pool, move |conn| {
-        get_next_variant_index(conn, message_id).map_err(AppError::from)
+        get_next_variant_index(conn, message_id)
     })
     .await?;
 
@@ -83,27 +83,12 @@ pub async fn create_message_variant(
     );
 
     // Create new variant with encryption AND raw_prompt (tokens/model not stored in variants table)
-    #[cfg(feature = "postgres-backend")]
     let new_variant = NewMessageVariant::new(
         message_id,
         next_index,
         content,
         user_id,
         dek,
-        raw_prompt_debug,
-        game_state.clone(),
-    )?;
-
-    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-    let new_variant = NewMessageVariant::new(
-        message_id,
-        next_index,
-        content,
-        user_id,
-        dek,
-        None, // prompt_tokens
-        None, // completion_tokens
-        None, // model_name
         raw_prompt_debug,
         game_state.clone(),
     )?;
@@ -127,8 +112,18 @@ pub async fn create_message_variant(
                     AppError::DatabaseQueryError(format!("Failed to get parent message: {e}"))
                 })?;
 
-            // If this is the first variant (index 1), store the original content as variant 0
-            let final_variant_count = if next_index == 1 {
+            // Check actual variant count in transaction to avoid race conditions and handle existence of variant 0
+            let current_variant_count = message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .count()
+                .get_result::<i64>(trans_conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to count existing variants: {e}"))
+                })?;
+
+            // If next_index is 1 AND no variants exist, we need to migrate the original message to variant 0.
+            // If next_index is 1 but variants exist (meaning variant 0 exists), we skip this.
+            let final_variant_count = if next_index == 1 && current_variant_count == 0 {
                 tracing::info!(
                     "🆕 Creating first variant for message {}, storing original as variant 0",
                     message_id
@@ -183,7 +178,6 @@ pub async fn create_message_variant(
                 };
 
                 // Create variant 0 with original content AND raw_prompt (tokens/model not stored in variants table)
-                #[cfg(feature = "postgres-backend")]
                 let original_variant = NewMessageVariant::new(
                     message_id,
                     0, // Original message is variant 0
@@ -195,24 +189,12 @@ pub async fn create_message_variant(
                 )
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
-                })?;
-
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                let original_variant = NewMessageVariant::new(
-                    message_id,
-                    0, // Original message is variant 0
-                    &original_content,
-                    user_id,
-                    &dek_for_closure,
+                })?
+                .with_token_counts(
                     parent_message.prompt_tokens,
                     parent_message.completion_tokens,
-                    Some(parent_message.model_name.clone()),
-                    parent_raw_prompt.as_deref(), // Preserve original raw_prompt
-                    None,                         // No game state for original variant
                 )
-                .map_err(|e| {
-                    AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
-                })?;
+                .with_model_name(parent_message.model_name.clone());
 
                 // Insert original variant
                 diesel::insert_into(message_variants::table)
@@ -492,27 +474,12 @@ pub async fn ensure_original_variant_exists(
 
     if variant_count == 0 {
         // Create original variant with encryption outside the closure
-        #[cfg(feature = "postgres-backend")]
         let original_variant = NewMessageVariant::new(
             message_id,
             0, // Original message is always index 0
             original_content,
             user_id,
             dek,
-            None, // No raw_prompt for old variants
-            None, // No game state for old variants
-        )?;
-
-        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-        let original_variant = NewMessageVariant::new(
-            message_id,
-            0, // Original message is always index 0
-            original_content,
-            user_id,
-            dek,
-            None, // prompt_tokens
-            None, // completion_tokens
-            None, // model_name
             None, // No raw_prompt for old variants
             None, // No game state for old variants
         )?;
@@ -628,8 +595,8 @@ pub async fn select_message_variant(
 
         (
             content,
-            parent_message.prompt_tokens.map(|t| t as i64),
-            parent_message.completion_tokens.map(|t| t as i64),
+            parent_message.prompt_tokens,
+            parent_message.completion_tokens,
             Some(parent_message.model_name.clone()),
             raw_prompt,
             None, // No game state for original variant

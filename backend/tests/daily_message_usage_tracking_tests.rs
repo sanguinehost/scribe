@@ -366,7 +366,7 @@ async fn create_test_chat_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::db::DbStringArray(None),
+                stop_sequences: scribe_backend::db::DbStringArray::none(),
                 thinking_budget: None,
                 enable_code_execution: None,
                 system_prompt_ciphertext: None,

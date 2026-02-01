@@ -13,18 +13,17 @@ use crate::{
     state::DbPool, // Corrected DbPool import
 };
 
+use serde::{Deserialize, Serialize};
+
+// Existing imports...
+
 /// Helper enum for database updates to improve type safety
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 enum DatabaseUpdate<T> {
+    #[default]
     NoChange,
     SetValue(T),
     SetNull,
-}
-
-impl<T> Default for DatabaseUpdate<T> {
-    fn default() -> Self {
-        Self::NoChange
-    }
 }
 
 // Convert to Option<Option<T>> for Diesel compatibility
@@ -370,15 +369,18 @@ pub async fn get_session_settings(
             })?;
 
         // Query 2: stop_sequences (complex array type)
-        // DbStringArray already wraps Option internally, so don't use Option<DbStringArray>
-        let stop_sequences = chat_sessions::table
+        // DbStringArray already wraps Option internally usually, but the column is nullable in DB
+        // so we must read as Option<DbStringArray> to avoid UnexpectedNullError.
+        let stop_sequences_opt = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select(chat_sessions::stop_sequences)
-            .first::<crate::db::DbStringArray>(conn)
+            .first::<Option<crate::db::DbStringArray>>(conn)
             .map_err(|e| {
                 error!(%session_id, %user_id, error = ?e, "Failed to fetch stop_sequences after ownership check");
                 AppError::DatabaseQueryError(e.to_string())
             })?;
+
+        let stop_sequences = stop_sequences_opt;
 
         // Query 3: 3 simple fields
         let settings_part3 = chat_sessions::table
@@ -548,7 +550,7 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences: stop_sequences.into(),
+            stop_sequences: stop_sequences.unwrap_or_default(),
             history_management_strategy,
             history_management_limit,
             model_name: Some(model_name),
@@ -640,22 +642,18 @@ fn apply_payload_to_builder(
     #[cfg(feature = "postgres-backend")]
     {
         if let Some(stop_seqs) = payload.stop_sequences {
-            // DbStringArray is a wrapper around Option<Vec<Option<String>>>
-            // We need to extract the inner vector if it exists
-            if let Some(inner_vec) = stop_seqs.0 {
-                update_builder.stop_sequences =
-                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
-            }
+            // DbStringArray is Vec<Option<String>>
+            // We need to extract the inner vector
+            update_builder.stop_sequences =
+                DatabaseUpdate::SetValue(stop_seqs.0.into_iter().flatten().collect());
         }
     }
 
     #[cfg(feature = "sqlite-backend")]
     {
         if let Some(stop_seqs) = payload.stop_sequences {
-            if let Some(inner_vec) = stop_seqs.0 {
-                update_builder.stop_sequences =
-                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
-            }
+            update_builder.stop_sequences =
+                DatabaseUpdate::SetValue(stop_seqs.0.into_iter().flatten().collect());
         }
     }
     if let Some(hist_strat) = payload.history_management_strategy {

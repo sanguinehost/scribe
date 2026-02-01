@@ -724,24 +724,21 @@ impl LorebookService {
 
         // Then, add character-linked associations, but only if not already present (i.e., not overridden by a chat association)
         for (lorebook_id, lorebook_name, created_at) in character_associations {
-            if !unique_associations.contains_key(&lorebook_id) {
+            unique_associations.entry(lorebook_id).or_insert_with(|| {
                 let override_action = override_map.get(&lorebook_id);
                 let is_overridden = override_action.is_some();
 
-                unique_associations.insert(
+                crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse {
+                    chat_session_id: chat_session_id_param,
                     lorebook_id,
-                    crate::models::lorebook_dtos::EnhancedChatSessionLorebookAssociationResponse {
-                        chat_session_id: chat_session_id_param,
-                        lorebook_id,
-                        user_id: current_user_id,
-                        lorebook_name,
-                        source: crate::models::lorebook_dtos::LorebookAssociationSource::Character,
-                        is_overridden,
-                        override_action: override_action.cloned(),
-                        created_at,
-                    },
-                );
-            }
+                    user_id: current_user_id,
+                    lorebook_name,
+                    source: crate::models::lorebook_dtos::LorebookAssociationSource::Character,
+                    is_overridden,
+                    override_action: override_action.cloned(),
+                    created_at,
+                }
+            });
         }
 
         // Convert the map values to a vector

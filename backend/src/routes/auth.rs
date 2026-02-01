@@ -837,8 +837,7 @@ pub async fn extend_session_handler(
         .ok_or_else(|| AppError::BadRequest("Invalid session data: missing userId".to_string()))?;
 
     let user_id = DbId::parse_str(user_id)
-        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?
-        .into();
+        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?;
 
     let session_response = SessionResponse {
         id: session.0,
@@ -900,7 +899,7 @@ pub async fn delete_user_sessions_handler(
                     if let Some(session_user_id) = json["userId"].as_str() {
                         // Check if it matches our target userId
                         if let Ok(parsed_id) = DbId::parse_str(session_user_id) {
-                            let parsed_id: crate::db::DbId = parsed_id.into();
+                            let parsed_id: crate::db::DbId = parsed_id;
                             if parsed_id == user_id {
                                 return Some(session_db_id); // Return renamed variable
                             }
@@ -1305,65 +1304,83 @@ pub async fn desktop_auto_login_handler(
 
     // Get or create default user
     let pool = state.pool.clone();
-    let user_id = match crate::desktop::get_default_user_id()? {
-        Some(id) => {
-            debug!(?id, "Using existing default user");
-            id
-        }
-        None => {
-            info!("No default user ID in config, checking if user exists in database");
-
-            // First try to find existing user by username
-            let pool_clone = pool.clone();
-            let existing_user_result = crate::db::with_conn(&pool_clone, move |conn| {
-                crate::auth::get_user_by_username(conn, "quickstart_user").map_err(AppError::from)
+    // Attempt to load user from config ID first
+    let user_from_config = if let Some(id) = crate::desktop::get_default_user_id()? {
+        debug!(?id, "Found default user ID in config, verifying existence");
+        let pool_clone = pool.clone();
+        crate::db::with_conn(&pool_clone, move |conn| {
+            crate::auth::get_user(conn, id).map(Some).or_else(|e| {
+                if matches!(e, AuthError::UserNotFound) {
+                    Ok(None)
+                } else {
+                    Err(AppError::from(e))
+                }
             })
-            .await;
+        })
+        .await?
+    } else {
+        None
+    };
 
-            let user_id = if let Ok(user) = existing_user_result {
-                info!(?user.id, "Found existing quickstart_user, saving to config");
-                crate::desktop::set_default_user_id(user.id)?;
-                user.id
-            } else {
-                info!("No quickstart_user found in database, creating new user");
-                // Create default user
-                let user_db = crate::auth::user_store::create_user_in_db(
-                    &pool,
-                    "quickstart_user",
-                    "default_password_12345",
-                    "quickstart@localhost",
-                    None,
-                )
-                .await
-                .map_err(|e| {
-                    error!("Failed to create default user: {}", e);
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Failed to create default user: {}",
-                        e
-                    ))
-                })?;
+    let user = if let Some(u) = user_from_config {
+        u
+    } else {
+        info!("No valid default user ID in config, checking if 'quickstart_user' exists by name");
+        let pool_clone = pool.clone();
+        let existing_user_opt = crate::db::with_conn(&pool_clone, move |conn| {
+            crate::auth::get_user_by_username(conn, "quickstart_user")
+                .map(Some)
+                .or_else(|e| {
+                    if matches!(e, AuthError::UserNotFound) {
+                        Ok(None)
+                    } else {
+                        Err(AppError::from(e))
+                    }
+                })
+        })
+        .await?;
 
-                // Save user ID to config
-                let user_id = user_db.id;
-                crate::desktop::set_default_user_id(user_id)?;
-                info!(
-                    ?user_id,
-                    "Created and saved default user for Quick Start mode"
-                );
-                user_id
-            };
+        if let Some(u) = existing_user_opt {
+            info!(?u.id, "Found existing quickstart_user, updating config");
+            crate::desktop::set_default_user_id(u.id)?;
+            u
+        } else {
+            info!("No quickstart_user found in database, creating new user");
+            // Create default user
+            let user_db = crate::auth::user_store::create_user_in_db(
+                &pool,
+                "quickstart_user",
+                "default_password_12345",
+                "quickstart@localhost",
+                None,
+            )
+            .await
+            .map_err(|e| {
+                error!("Failed to create default user: {}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to create default user: {}",
+                    e
+                ))
+            })?;
 
-            user_id
+            // Save user ID to config
+            let user_id = user_db.id;
+            crate::desktop::set_default_user_id(user_id)?;
+            info!(
+                ?user_id,
+                "Created and saved default user for Quick Start mode"
+            );
+
+            // Load the newly created user
+            let pool_clone = pool.clone();
+            crate::db::with_conn(&pool_clone, move |conn| {
+                crate::auth::get_user(conn, user_id).map_err(AppError::from)
+            })
+            .await?
         }
     };
 
-    debug!(?user_id, "Loading default user for auto-login");
-
-    // Load the user from database
-    let user = crate::db::with_conn(&pool, move |conn| {
-        crate::auth::get_user(conn, user_id).map_err(AppError::from)
-    })
-    .await?;
+    debug!(user_id = %user.id, "Using default user for auto-login");
 
     // For desktop mode, generate JWT tokens directly (no session-based auth needed)
     // Get the token service

@@ -549,6 +549,7 @@ pub struct PromptBuildParams<'a> {
 ///
 /// # Errors
 /// Returns `AppError` if token counting fails
+#[allow(clippy::too_many_arguments)]
 async fn build_meta_system_prompt(
     character_metadata: Option<&CharacterMetadata>,
     has_rag_items: bool,
@@ -670,6 +671,7 @@ You will receive structured information in the following format:\\n\
 ///
 /// # Errors
 /// Returns `AppError` if token counting fails
+#[allow(clippy::too_many_arguments)]
 async fn calculate_component_tokens(
     system_prompt_base: Option<&str>,
     raw_character_system_prompt: Option<&str>,
@@ -1168,6 +1170,7 @@ fn enforce_hard_token_limit(
 }
 
 #[cfg_attr(test, allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_token_limits(
     mut calculation: TokenCalculation,
     config: &Arc<Config>,
@@ -1551,6 +1554,7 @@ fn build_rag_context_strings(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_final_prompt_strings(
     calculation: &TokenCalculation,
     current_user_message: &RigMessage,
@@ -1613,11 +1617,11 @@ async fn build_final_prompt_strings(
         });
 
         if let Some(personality) = character_personality {
-            char_obj["personality"] = serde_json::Value::String(personality).into();
+            char_obj["personality"] = serde_json::Value::String(personality);
         }
 
         if let Some(description) = character_description {
-            char_obj["description"] = serde_json::Value::String(description).into();
+            char_obj["description"] = serde_json::Value::String(description);
         }
 
         template_context["char"] = char_obj;
@@ -1626,58 +1630,57 @@ async fn build_final_prompt_strings(
     // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
         template_context["persona_override"] =
-            serde_json::Value::String(calculation.persona_override_prompt_str.clone()).into();
+            serde_json::Value::String(calculation.persona_override_prompt_str.clone());
     }
 
     // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
         template_context["character_definition"] =
-            serde_json::Value::String(calculation.character_definition_str.clone()).into();
+            serde_json::Value::String(calculation.character_definition_str.clone());
     }
 
     // Add character details if available
     if !calculation.character_details_str.is_empty() {
         template_context["character_details"] =
-            serde_json::Value::String(calculation.character_details_str.clone()).into();
+            serde_json::Value::String(calculation.character_details_str.clone());
     }
 
     // Add Chronicle context if available
     if !chronicle_context.is_empty() {
-        template_context["chronicle_context"] = serde_json::Value::String(chronicle_context).into();
+        template_context["chronicle_context"] = serde_json::Value::String(chronicle_context);
     }
 
     // Add Lorebook RAG context if available
     if !lorebook_context.is_empty() {
-        template_context["lorebook_context"] = serde_json::Value::String(lorebook_context).into();
+        template_context["lorebook_context"] = serde_json::Value::String(lorebook_context);
     }
 
     // Add Older Chat RAG context if available
     if !older_chat_context.is_empty() {
-        template_context["older_chat_context"] =
-            serde_json::Value::String(older_chat_context).into();
+        template_context["older_chat_context"] = serde_json::Value::String(older_chat_context);
     }
 
     // Add agent context as separate template variable for sections list generation
     if let Some(agent_ctx) = agent_context {
-        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string()).into();
+        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
     }
 
     // Add scene context for Game Master mode (if game_state is provided)
     if let Some(state) = game_state {
         let scene_context = build_scene_context_xml(state);
-        template_context["scene_context"] = serde_json::Value::String(scene_context).into();
+        template_context["scene_context"] = serde_json::Value::String(scene_context);
     }
 
     // Add cognitive context if available
     if let Some(ctx) = &calculation.cognitive_context {
         if !ctx.is_empty() {
-            template_context["cognitive_context"] = serde_json::Value::String(ctx.clone()).into();
+            template_context["cognitive_context"] = serde_json::Value::String(ctx.clone());
         }
     }
 
     if let Some(mem) = core_memory {
         if !mem.is_empty() {
-            template_context["core_memory"] = serde_json::Value::String(mem.to_string()).into();
+            template_context["core_memory"] = serde_json::Value::String(mem.to_string());
         }
     }
 

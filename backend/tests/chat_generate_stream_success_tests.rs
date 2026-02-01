@@ -9,8 +9,9 @@ use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::RunQueryDsl as _;
-use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
+use scribe_backend::llm::rig_client::RigStreamEvent;
 use secrecy::SecretBox;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -152,16 +153,9 @@ async fn create_test_character_and_session(
 
 fn setup_mock_ai_responses(test_app: &test_helpers::TestApp) {
     let mock_stream_response = vec![
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Hello! ".to_string(),
-        })),
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "World!".to_string(),
-        })),
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: String::new(),
-        })), // Test empty chunk
-        Ok(ChatStreamEvent::End(StreamEnd::default())),
+        Ok(RigStreamEvent::Content("Hello! ".to_string())),
+        Ok(RigStreamEvent::Content("World!".to_string())),
+        Ok(RigStreamEvent::Content(String::new())), // Test empty chunk
     ];
 
     if let Some(mock_ai) = test_app.mock_ai_client.as_ref() {
@@ -412,12 +406,9 @@ async fn test_first_mes_included_in_history() {
         .expect("Error saving new chat session");
 
     // Set up a mock AI client response
-    let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "This is the AI response".to_string(),
-        })),
-        Ok(ChatStreamEvent::End(StreamEnd::default())),
-    ];
+    let mock_stream_items = vec![Ok(RigStreamEvent::Content(
+        "This is the AI response".to_string(),
+    ))];
 
     test_app
         .mock_ai_client
@@ -442,8 +433,10 @@ async fn test_first_mes_included_in_history() {
         ),
     );
     let token_counter_service = Arc::new(HybridTokenCounter::new_local_only(
-        TokenizerService::new(&test_app.config.tokenizer_model_path)
-            .expect("Failed to create tokenizer for test"),
+        TokenizerService::new(PathBuf::from(
+            "/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json",
+        ))
+        .expect("Failed to create tokenizer for test"),
     ));
     let lorebook_service = Arc::new(LorebookService::new(
         test_app.db_pool.clone(),

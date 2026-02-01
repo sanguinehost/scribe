@@ -653,23 +653,13 @@ impl NewCharacter {
         let spec_version = data_v3_card.spec_version.clone();
         let data = data_v3_card.data.clone(); // Clone the inner data
 
-        // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
-        let tags = if data.tags.is_empty() {
-            None
-        } else {
-            Some(data.tags.into_iter().map(Some).collect())
-        };
-        let alternate_greetings = if data.alternate_greetings.is_empty() {
-            None
-        } else {
-            Some(data.alternate_greetings.into_iter().map(Some).collect())
-        };
-        let source = data.source.map(|v| v.into_iter().map(Some).collect());
-        let group_only_greetings = if data.group_only_greetings.is_empty() {
-            None
-        } else {
-            Some(data.group_only_greetings.into_iter().map(Some).collect())
-        };
+        // Convert V3 Vec<String> to DB DbStringArray
+        let tags = crate::models::OptionalStringArray::from_strings(data.tags);
+        let alternate_greetings =
+            crate::models::OptionalStringArray::from_strings(data.alternate_greetings);
+        let source = crate::models::OptionalStringArray::from_strings(data.source.unwrap_or_default());
+        let group_only_greetings =
+            crate::models::OptionalStringArray::from_strings(data.group_only_greetings);
 
         // Convert timestamps
         let creation_date_ts = data

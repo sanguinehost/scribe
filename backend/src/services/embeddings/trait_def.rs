@@ -11,6 +11,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 #[async_trait]
+#[allow(clippy::too_many_arguments)]
 pub trait EmbeddingPipelineServiceTrait: Send + Sync {
     /// Processes a single chat message: chunks, embeds, and stores it.
     async fn process_and_embed_message(

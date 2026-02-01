@@ -255,7 +255,6 @@ impl FullCharacterGenerator {
             .lines()
             .next()
             .unwrap_or(&name_result.content)
-            .trim()
             .split_whitespace()
             .next()
             .unwrap_or("Character")
@@ -283,13 +282,4 @@ impl FullCharacterGenerator {
     }
 }
 
-impl Default for GenerationOptions {
-    fn default() -> Self {
-        Self {
-            creativity_level: None,
-            include_metadata: None,
-            max_length: None,
-            temperature: None,
-        }
-    }
-}
+// Redundant struct removed

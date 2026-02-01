@@ -138,12 +138,15 @@ impl AgenticNarrativeFactory {
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            app_state.qdrant_service.clone(),
-            app_state.embedding_client.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(search_tool);
+        #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+        {
+            let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
+                app_state.qdrant_service.clone(),
+                app_state.embedding_client.clone(),
+                app_state.clone(),
+            ));
+            registry.add_tool(search_tool);
+        }
 
         // Lorebook management tools
         let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(
@@ -196,12 +199,15 @@ impl AgenticNarrativeFactory {
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            qdrant_service,
-            embedding_client,
-            app_state.clone(),
-        ));
-        registry.add_tool(search_tool);
+        #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+        {
+            let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
+                qdrant_service,
+                embedding_client,
+                app_state.clone(),
+            ));
+            registry.add_tool(search_tool);
+        }
 
         // Lorebook management tools
         let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(

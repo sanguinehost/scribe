@@ -8,7 +8,6 @@ use super::retrieval::{
 };
 use super::trait_def::EmbeddingPipelineServiceTrait;
 use crate::auth::session_dek::SessionDek;
-use crate::db::DbId;
 use crate::errors::AppError;
 use crate::models::chats::{ChatMessage, MessageRole};
 use crate::schema::chat_messages;
@@ -19,7 +18,7 @@ use async_trait::async_trait;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
     condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter,
-    IsNullCondition, Match, PointId, Range,
+    IsNullCondition, Match, Range,
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;
@@ -60,7 +59,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         session_dek: Option<&SessionDek>, // Added SessionDek
     ) -> Result<(), AppError> {
         info!("Starting embedding process for chat message");
-        let embedding_client = state.embedding_client.clone();
+        let _embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
         // Fetch the session to get the chronicle_id
@@ -178,7 +177,8 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             }
         }
 
-        if content_to_embed.trim().is_empty() {
+        content_to_embed = content_to_embed.trim().to_string();
+        if content_to_embed.is_empty() {
             warn!(message_id = %message.id, "Content for embedding is empty after potential decryption and trimming. Skipping embedding.");
             return Ok(());
         }
@@ -194,7 +194,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }];
         info!("Storing chat message atomically as 1 embedding (user+AI pair)");
 
-        let mut points_to_upsert: Vec<crate::vector_db::qdrant_client::ScoredPoint> = Vec::new();
+        let _points_to_upsert: Vec<qdrant_client::qdrant::ScoredPoint> = Vec::new();
 
         // 2. Process each chunk
         let mut documents = Vec::new();
@@ -202,8 +202,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             // speaker_str is already set above (either the original role or "Pair")
 
             // Encrypt chunk content if SessionDek is available
-            let (text_for_storage, encrypted_text, text_nonce) = if let Some(ref dek) = session_dek
-            {
+            let (text_for_storage, encrypted_text, text_nonce) = if let Some(dek) = session_dek {
                 // We have SessionDek, encrypt the chunk content
                 match crate::crypto::encrypt_gcm(chunk.content.as_bytes(), &dek.0) {
                     Ok((encrypted_content, content_nonce)) => (
@@ -223,10 +222,10 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             let metadata = ChatMessageChunkMetadata {
                 message_id: message.id,
                 session_id: message.session_id,
-                chronicle_id: chronicle_id.clone(),
+                chronicle_id,
                 user_id: message.user_id,
                 speaker: speaker_str.clone(),
-                timestamp: message.created_at.clone(),
+                timestamp: message.created_at,
                 text: text_for_storage,
                 source_type: "chat_message".to_string(),
                 encrypted_text,
@@ -276,7 +275,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             session_dek,
         } = params;
         info!("Starting embedding process for lorebook entry");
-        let embedding_client = state.embedding_client.clone();
+        let _embedding_client = state.embedding_client.clone();
         let qdrant_service = state.qdrant_service.clone();
 
         // First, delete existing chunks for this lorebook entry to prevent duplicates or stale data
@@ -358,10 +357,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         };
 
         // Encrypt title if available and SessionDek is available
-        let (title_for_storage, encrypted_title, title_nonce) = if let (
-            Some(ref dek),
-            Some(title),
-        ) =
+        let (title_for_storage, encrypted_title, title_nonce) = if let (Some(dek), Some(title)) =
             (session_dek.as_ref(), decrypted_title.as_ref())
         {
             match crate::crypto::encrypt_gcm(title.as_bytes(), dek) {
@@ -383,6 +379,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             original_lorebook_entry_id,
             lorebook_id,
             user_id,
+            #[allow(deprecated)]
             chunk_text: chunk_text_for_storage,
             entry_title: title_for_storage,
             keywords: decrypted_keywords.clone(), // Keywords not encrypted for search purposes
@@ -819,10 +816,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
                             scored_point.payload.get("event_json")
                         {
                             // Convert the Qdrant Value to serde_json::Value and then to string
-                            let json_val: serde_json::Value = json_value
-                                .clone()
-                                .try_into()
-                                .unwrap_or(serde_json::Value::Null);
+                            let json_val = serde_json::Value::from(json_value.clone());
                             if !json_val.is_null() {
                                 json_val.to_string()
                             } else if let Some(text_value) = scored_point.payload.get("chunk_text")
@@ -1134,10 +1128,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         // Add temporal context
         structured_parts.push(format!(
             "\n[WHEN] {}",
-            event
-                .timestamp_iso8601
-                .format("%B %d, %Y at %H:%M")
-                .to_string()
+            event.timestamp_iso8601.format("%B %d, %Y at %H:%M")
         ));
 
         // Add the main summary content
@@ -1187,7 +1178,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         // Encrypt content if SessionDek is available
-        let (chunk_text_for_storage, encrypted_chunk_text, chunk_text_nonce) = if let Some(dek) =
+        let (_chunk_text_for_storage, _encrypted_chunk_text, _chunk_text_nonce) = if let Some(dek) =
             session_dek
         {
             // We have SessionDek, encrypt the content
@@ -1216,7 +1207,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         info!(event_id = %event.id, content_length = content_to_embed.len(), "Processing chronicle event as atomic unit (no chunking)");
 
         // 2. Generate embedding for the entire chronicle event
-        let embedding_vector = match embedding_client
+        let _embedding_vector = match embedding_client
             .embed_content(&content_to_embed, "RETRIEVAL_DOCUMENT", None)
             .await
         {
@@ -1425,7 +1416,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .await?;
 
         // Get embedding
-        let embedding_vector = embedding_client
+        let _embedding_vector = embedding_client
             .embed_content(entity_name, "RETRIEVAL_DOCUMENT", None)
             .await?;
 
@@ -1468,7 +1459,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .ensure_collection_exists_named(collection_name)
             .await?;
 
-        let query_embedding = embedding_client
+        let _query_embedding = embedding_client
             .embed_content(entity_name, "RETRIEVAL_QUERY", None)
             .await?;
 
@@ -1543,7 +1534,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .await?;
 
         // Get embedding
-        let embedding_vector = embedding_client
+        let _embedding_vector = embedding_client
             .embed_content(opinion_text, "RETRIEVAL_DOCUMENT", None)
             .await?;
 
@@ -1586,7 +1577,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .ensure_collection_exists_named(collection_name)
             .await?;
 
-        let query_embedding = embedding_client
+        let _query_embedding = embedding_client
             .embed_content(query, "RETRIEVAL_QUERY", None)
             .await?;
 
@@ -1650,7 +1641,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         _user_id: crate::db::DbId,
     ) -> Result<(), AppError> {
         let qdrant_service = state.qdrant_service.clone();
-        let collection_name = "opinion_vectors";
+        let _collection_name = "opinion_vectors";
 
         // We can delete by point ID since we use opinion_id as the point ID
         qdrant_service.delete_by_id(&opinion_id.to_string()).await?;
@@ -1679,7 +1670,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .await?;
 
         // Get embedding
-        let embedding_vector = embedding_client
+        let _embedding_vector = embedding_client
             .embed_content(fact_text, "RETRIEVAL_DOCUMENT", None)
             .await?;
 
@@ -1726,7 +1717,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .ensure_collection_exists_named(collection_name)
             .await?;
 
-        let query_embedding = embedding_client
+        let _query_embedding = embedding_client
             .embed_content(query, "RETRIEVAL_QUERY", None)
             .await?;
 

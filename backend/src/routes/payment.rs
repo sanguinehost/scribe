@@ -386,7 +386,7 @@ pub async fn get_subscription(
                 } else {
                     0
                 };
-                (usage.message_count as i32, is_over, delay)
+                (usage.message_count, is_over, delay)
             } else {
                 (0, false, 0)
             }
@@ -555,7 +555,7 @@ pub async fn get_usage(
                 } else {
                     0
                 };
-                (usage.message_count as i32, is_over, delay)
+                (usage.message_count, is_over, delay)
             } else {
                 (0, false, 0)
             }
@@ -811,7 +811,7 @@ pub async fn verify_transaction(
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let transaction_id_for_db = transaction_id.clone();
-    let user_id_for_check = user.id.clone();
+    let user_id_for_check = user.id;
     let stored_transaction = conn
         .interact(move |conn| {
             use crate::models::payment::PaymentTransaction;
@@ -846,7 +846,7 @@ pub async fn verify_transaction(
                 .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-            let user_id_for_sub = user.id.clone();
+            let user_id_for_sub = user.id;
             let existing_subscription = conn
                 .interact(move |conn| {
                     use crate::models::payment::Subscription;
@@ -3763,7 +3763,7 @@ fn map_price_id_to_plan(
 /// Check if new_plan is higher tier than old_plan
 #[cfg(feature = "payment")]
 fn is_higher_tier(new_plan: &str, old_plan: &str) -> Result<bool, AppError> {
-    let tier_order = vec!["free", "basic", "premium"];
+    let tier_order = ["free", "basic", "premium"];
 
     let new_idx = tier_order
         .iter()

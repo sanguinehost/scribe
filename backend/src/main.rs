@@ -270,17 +270,17 @@ fn setup_database_pool(config: &Config) -> DbPool {
             // Enable WAL mode for better concurrency (allows concurrent reads during writes)
             diesel::sql_query("PRAGMA journal_mode = WAL;")
                 .execute(conn)
-                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+                .map_err(diesel::r2d2::Error::QueryError)?;
 
             // Set busy_timeout to 10 seconds (connections will wait instead of failing immediately)
             diesel::sql_query("PRAGMA busy_timeout = 10000;")
                 .execute(conn)
-                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+                .map_err(diesel::r2d2::Error::QueryError)?;
 
             // Enable foreign key constraints
             diesel::sql_query("PRAGMA foreign_keys = ON;")
                 .execute(conn)
-                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+                .map_err(diesel::r2d2::Error::QueryError)?;
 
             Ok(())
         }
@@ -883,8 +883,42 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                 .await
                 .context("Failed to create RustlsConfig from desktop certificate")?
         }
-        "local" | _ => {
+        "local" => {
             // For local development, support environment variable override for certificate paths
+            let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) =
+                (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH"))
+            {
+                tracing::info!("Using TLS certificate paths from environment variables");
+                (PathBuf::from(cert_env), PathBuf::from(key_env))
+            } else {
+                // Default to .certs directory
+                tracing::info!(
+                    "Local environment detected, loading certificates from .certs directory"
+                );
+
+                let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                let project_root = manifest_dir
+                    .parent()
+                    .context("Failed to get project root from manifest dir")?;
+
+                (
+                    project_root.join(".certs-backend/cert.pem"),
+                    project_root.join(".certs-backend/key.pem"),
+                )
+            };
+
+            tracing::info!(
+                cert_path = %cert_path.display(),
+                key_path = %key_path.display(),
+                "Loading TLS certificates for local development"
+            );
+
+            RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .context("Failed to load TLS certificate/key for local development. Run 'scripts/dev-certs-local.sh' or 'scripts/init-certs.sh local init' to generate certificates.")?
+        }
+        _ => {
+            // For other environments, support environment variable override for certificate paths
             let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) =
                 (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH"))
             {

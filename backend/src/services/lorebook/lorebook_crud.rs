@@ -3,9 +3,9 @@ use super::*;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
-use crate::vector_db::qdrant_client::{
-    Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue,
-};
+use qdrant_client::qdrant::condition::ConditionOneOf;
+use qdrant_client::qdrant::r#match::MatchValue;
+use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match};
 
 impl LorebookService {
     /// Creates a new lorebook for the authenticated user.
@@ -28,7 +28,7 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id: user.id,
             name: payload.name,
             description: payload.description,

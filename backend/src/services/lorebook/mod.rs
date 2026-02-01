@@ -205,7 +205,7 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id,
             name: payload.name.clone(),
             description: payload.description.clone(),
@@ -361,7 +361,7 @@ impl LorebookService {
         let new_entry_id = DbId::new();
 
         let new_entry_db = crate::models::NewLorebookEntry {
-            id: new_entry_id.into(),
+            id: new_entry_id,
             lorebook_id,
             user_id,
             original_sillytavern_uid: None,

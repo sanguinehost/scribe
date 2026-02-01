@@ -73,7 +73,7 @@ pub struct ChronicleEvent {
     #[serde(skip_serializing)]
     pub summary_nonce: Option<Vec<u8>>,
     pub timestamp_iso8601: DbTimestamp,
-    pub keywords: crate::db::DbStringArray, // For search optimization
+    pub keywords: Option<crate::db::DbStringArray>, // For search optimization
     #[serde(skip_serializing)]
     pub keywords_encrypted: Option<Vec<u8>>,
     #[serde(skip_serializing)]
@@ -143,6 +143,8 @@ impl ChronicleEvent {
                 Ok(self
                     .keywords
                     .as_ref()
+                    .as_ref()
+                    .map(|k| &k.0)
                     .map(|k| k.iter().filter_map(|opt| opt.clone()).collect())
                     .unwrap_or_default())
             }
@@ -163,6 +165,8 @@ impl ChronicleEvent {
     pub fn get_keywords(&self) -> Vec<String> {
         self.keywords
             .as_ref()
+            .as_ref()
+            .map(|k| &k.0)
             .map(|k| k.iter().filter_map(|opt| opt.clone()).collect())
             .unwrap_or_default()
     }
@@ -181,7 +185,7 @@ impl ChronicleEvent {
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewChronicleEvent {
-    pub id: Option<crate::db::DbId>,
+    pub id: crate::db::DbId,
     pub chronicle_id: crate::db::DbId,
     pub user_id: crate::db::DbId,
     #[validate(length(
@@ -205,12 +209,14 @@ pub struct NewChronicleEvent {
     pub keywords_nonce: Option<Vec<u8>>,
     pub chat_session_id: Option<crate::db::DbId>,
     pub message_variant_id: Option<crate::db::DbId>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl Default for NewChronicleEvent {
     fn default() -> Self {
         Self {
-            id: None,
+            id: crate::db::DbId::new(),
             chronicle_id: crate::db::DbId::nil(),
             user_id: crate::db::DbId::nil(),
             event_type: "NARRATIVE.EVENT".to_string(),
@@ -219,17 +225,20 @@ impl Default for NewChronicleEvent {
             summary_encrypted: None,
             summary_nonce: None,
             timestamp_iso8601: Utc::now().into(),
-            keywords: OptionalStringArray(None),
+            keywords: OptionalStringArray::empty(),
             keywords_encrypted: None,
             keywords_nonce: None,
             chat_session_id: None,
             message_variant_id: None,
+            created_at: Utc::now().into(),
+            updated_at: Utc::now().into(),
         }
     }
 }
 
 impl NewChronicleEvent {
     /// Create a new event with EventSource enum
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         chronicle_id: crate::db::DbId,
         user_id: crate::db::DbId,
@@ -246,9 +255,10 @@ impl NewChronicleEvent {
             event_type,
             summary,
             source: source.to_string(),
-            keywords: OptionalStringArray(keywords.map(|k| k.into_iter().map(Some).collect())),
+            keywords: OptionalStringArray::from_strings(keywords.unwrap_or_default()),
             chat_session_id,
             message_variant_id,
+            id: crate::db::DbId::new(),
             ..Default::default()
         }
     }
@@ -311,7 +321,7 @@ impl NewChronicleEventBuilder {
     }
 
     pub fn keywords(mut self, keywords: Vec<String>) -> Self {
-        self.inner.keywords = OptionalStringArray(Some(keywords.into_iter().map(Some).collect()));
+        self.inner.keywords = OptionalStringArray::from_strings(keywords);
         self
     }
 
@@ -330,13 +340,27 @@ impl NewChronicleEventBuilder {
         self
     }
 
+    pub fn created_at(mut self, timestamp: crate::db::DbTimestamp) -> Self {
+        self.inner.created_at = timestamp;
+        self
+    }
+
+    pub fn updated_at(mut self, timestamp: crate::db::DbTimestamp) -> Self {
+        self.inner.updated_at = timestamp;
+        self
+    }
+
     pub fn keywords_array(mut self, keywords: OptionalStringArray) -> Self {
         self.inner.keywords = keywords;
         self
     }
 
     pub fn build(self) -> NewChronicleEvent {
-        self.inner
+        let mut inner = self.inner;
+        if inner.id == crate::db::DbId::nil() {
+            inner.id = crate::db::DbId::new();
+        }
+        inner
     }
 }
 
@@ -460,7 +484,7 @@ impl Default for EventFilter {
     fn default() -> Self {
         Self {
             event_type: None,
-            source: None.into(),
+            source: None,
             keywords: None,
             after_timestamp: None,
             before_timestamp: None,
@@ -485,8 +509,10 @@ impl From<CreateEventRequest> for NewChronicleEvent {
             .summary(request.summary)
             .source(request.source)
             .timestamp_iso8601(timestamp)
-            .keywords_array(OptionalStringArray(
-                request.keywords.map(|k| k.into_iter().map(Some).collect()),
+            .created_at(timestamp)
+            .updated_at(timestamp)
+            .keywords_array(OptionalStringArray::from_strings(
+                request.keywords.unwrap_or_default(),
             ))
             .chat_session_id(request.chat_session_id)
             .message_variant_id(request.message_variant_id)

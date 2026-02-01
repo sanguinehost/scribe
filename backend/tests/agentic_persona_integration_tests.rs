@@ -115,6 +115,12 @@ async fn create_test_user_with_persona(
         .await
         .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
 
+    tracing::info!(
+        "DEBUG: setup_test_user: created user with ID: {:?}, email: {:?}",
+        user_db.id,
+        user_db.email
+    );
+
     let session_dek = SessionDek(SecretBox::new(Box::new(dek.expose_secret().to_vec())));
 
     // Create Lucas persona

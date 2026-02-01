@@ -111,7 +111,7 @@ where
 
                             // Load the user from the database
                             let pool = app_state.pool.clone();
-                            let user_id = claims.sub.clone();
+                            let user_id = claims.sub;
 
                             let user = match crate::db::with_conn(&pool, move |conn| {
                                 crate::auth::get_user(conn, user_id).map_err(AppError::from)

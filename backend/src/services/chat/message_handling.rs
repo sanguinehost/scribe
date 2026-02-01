@@ -587,14 +587,16 @@ pub async fn save_message(
 
     #[cfg(feature = "sqlite-backend")]
     let mut new_message_to_insert = DbInsertableChatMessage::new(
-        message_id, // id field - CRITICAL for SQLite (7 args total)
-        session_id, // chat_id field in DbInsertableChatMessage
+        session_id,
         user_id,
-        message_type_enum, // msg_type field in DbInsertableChatMessage
-        content_to_save,   // content field
-        nonce_to_save,     // content_nonce field
-        model_name,        // model_name field
+        message_type_enum,
+        content_to_save,
+        nonce_to_save,
+        model_name,
     )
+    .with_id(message_id)
+    .with_created_at(crate::db::DbTimestamp::now())
+    .with_updated_at(crate::db::DbTimestamp::now())
     .with_status(status);
 
     #[cfg(feature = "postgres-backend")]
@@ -908,6 +910,7 @@ fn calculate_token_cost_cents(prompt_tokens: i64, completion_tokens: i64, model_
     total_cost_cents
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn update_cumulative_token_counts(
     pool: &crate::db::DbPool,
     session_id: crate::db::DbId,
@@ -961,7 +964,7 @@ async fn update_cumulative_token_counts(
         let (prompt_delta, completion_delta) = (prompt_tokens, completion_tokens);
 
         // Define SQL type alias based on backend
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         type CostSqlType = diesel::sql_types::Double;
         #[cfg(feature = "postgres-backend")]
         type CostSqlType = diesel::sql_types::Numeric;
@@ -998,8 +1001,8 @@ async fn update_cumulative_token_counts(
 
         // Update user cumulative counts
         let (prompt_db, completion_db, cost_db) = (
-            prompt_tokens as i64,
-            completion_tokens as i64,
+            prompt_tokens,
+            completion_tokens,
             estimated_cost_cents as i64,
         );
 

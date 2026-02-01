@@ -3,6 +3,7 @@
 #![allow(clippy::ignored_unit_patterns)]
 use chrono::Utc;
 use mockall::predicate::*;
+use qdrant_client::qdrant::ScoredPoint;
 use qdrant_client::qdrant::{point_id::PointIdOptions, PointId, Value};
 use scribe_backend::auth::token_service::TokenService;
 use scribe_backend::services::cognitive::RecallPipeline;
@@ -26,7 +27,9 @@ use scribe_backend::{
     state_builder::AppStateServicesBuilder, // Use the new builder
     test_helpers::{self, MockQdrantClientService}, // Removed AppStateBuilder, config. Added self for spawn_app
     text_processing::chunking::ChunkConfig,
-    vector_db::qdrant_client::{create_message_id_filter, QdrantClientServiceTrait, ScoredPoint},
+    vector_db::{
+        qdrant_client::create_message_id_filter, QdrantClientServiceTrait, VectorServiceTrait,
+    },
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serial_test::serial;
@@ -141,7 +144,7 @@ fn check_qdrant_url_and_skip(config: &scribe_backend::config::Config, test_name:
 // Helper to verify Qdrant points after embedding
 #[allow(deprecated)]
 async fn verify_qdrant_points(
-    qdrant_service_trait: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    qdrant_service_trait: Arc<dyn VectorServiceTrait + Send + Sync>,
     test_message_id: Uuid,
     test_session_id: Uuid,
     test_message_user_id: Uuid,
@@ -153,7 +156,7 @@ async fn verify_qdrant_points(
 
     let filter = create_message_id_filter(test_message_id.into());
     let retrieved_points: Vec<ScoredPoint> = qdrant_service_trait
-        .retrieve_points(Some(filter), 10, None)
+        .retrieve_points(Some(filter), 10, None, None)
         .await
         .expect("Failed to retrieve points from Qdrant");
 

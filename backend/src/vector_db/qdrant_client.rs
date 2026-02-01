@@ -29,74 +29,7 @@ pub struct QdrantClientService {
     on_disk: Option<bool>,     // Added from config
 }
 
-#[async_trait]
-pub trait QdrantClientServiceTrait: Send + Sync {
-    async fn ensure_collection_exists(&self) -> Result<(), AppError>;
-    async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError>;
-    async fn store_points_to_collection(
-        &self,
-        collection_name: &str,
-        points: Vec<PointStruct>,
-    ) -> Result<(), AppError>;
-    async fn search_points(
-        &self,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn search_points_in_collection(
-        &self,
-        collection_name: &str,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn search_points_with_threshold(
-        &self,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-        score_threshold: Option<f32>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn hybrid_search(
-        &self,
-        vector: Option<Vec<f32>>,
-        text_query: Option<String>,
-        text_fields: Vec<String>,
-        limit: u64,
-        filter: Option<Filter>,
-        score_threshold: Option<f32>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn retrieve_points(
-        &self,
-        filter: Option<Filter>,
-        limit: u64,
-        offset: Option<u64>,
-    ) -> Result<Vec<ScoredPoint>, AppError>; // Added Retrieve Method
-    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError>;
-    async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError>;
-    async fn delete_points_from_collection(
-        &self,
-        collection_name: &str,
-        points: Vec<PointId>,
-    ) -> Result<(), AppError>;
-    async fn delete_points_by_filter_from_collection(
-        &self,
-        collection_name: &str,
-        filter: Filter,
-    ) -> Result<(), AppError>;
-    async fn update_collection_settings(&self) -> Result<(), AppError>; // Added Update Settings Method
-    async fn get_point_by_id(
-        &self,
-        point_id: PointId,
-    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
-    /// Check if Qdrant service is healthy
-    async fn health_check(&self) -> Result<(), AppError>;
-    /// Optimize the collection (e.g., compaction, vacuuming)
-    async fn optimize_collection(&self) -> Result<(), AppError>;
-    async fn delete_by_id(&self, id: &str) -> Result<(), AppError>;
-    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError>;
-}
+use super::QdrantClientServiceTrait;
 
 impl QdrantClientService {
     #[instrument(skip(config), name = "qdrant_service_new")]
@@ -268,7 +201,7 @@ impl QdrantClientService {
                             config: Some(QdrantVectorsConfig::Params(VectorParams {
                                 size: self.embedding_dimension,
                                 distance: self.distance_metric.into(), // Use configured distance
-                                hnsw_config: Some(target_hnsw_config.clone()),
+                                hnsw_config: Some(target_hnsw_config),
                                 quantization_config: None,
                                 on_disk: self.on_disk, // Use configured on_disk setting
                                 datatype: None,
@@ -881,9 +814,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
         offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Call the implementation method which returns RetrievedPoint
-        let retrieved_points = self
-            .retrieve_points_internal(filter, limit as u64, offset)
-            .await?;
+        let retrieved_points = self.retrieve_points_internal(filter, limit, offset).await?;
 
         // Convert RetrievedPoint to ScoredPoint
         let scored_points = retrieved_points
@@ -1902,12 +1833,7 @@ impl super::VectorServiceTrait for QdrantClientService {
         self.client
             .delete_points(qdrant_client::qdrant::DeletePoints {
                 collection_name: self.collection_name.clone(),
-                points: Some(
-                    ids.into_iter()
-                        .map(|id| id.into())
-                        .collect::<Vec<_>>()
-                        .into(),
-                ),
+                points: Some(ids.into()),
                 ..Default::default()
             })
             .await

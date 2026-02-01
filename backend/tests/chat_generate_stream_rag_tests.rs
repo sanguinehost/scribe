@@ -117,7 +117,7 @@ async fn setup_rag_test_context() -> TestContext {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray(None),
+                stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
                 thinking_budget: None,
                 enable_code_execution: None,
                 system_prompt_ciphertext: None,

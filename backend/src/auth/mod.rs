@@ -183,7 +183,7 @@ pub async fn create_user_with_verification(
     let user = crate::db::with_conn(pool, move |conn| {
         // This is a sync function that creates the user
         create_user_sync(conn, credentials_clone, password_hash)
-            .map_err(|e| crate::errors::AppError::from(e))
+            .map_err(crate::errors::AppError::from)
     })
     .await
     .map_err(AuthError::from)?;

@@ -20,7 +20,7 @@ pub mod ai_client_factory_example {
 
         // AFTER: Logs obfuscated user ID
         privacy_warn!(
-            user_id = %loggable_user_id(user_id.into()),
+            user_id = %loggable_user_id(user_id),
             error = "connection_timeout", // Sanitized error message
             "Failed to get user settings, using fallback client"
         );
@@ -30,7 +30,7 @@ pub mod ai_client_factory_example {
 
         // AFTER: Privacy-safe logging
         privacy_info!(
-            user_id = %loggable_user_id(user_id.into()),
+            user_id = %loggable_user_id(user_id),
             "Created local LLM client for user"
         );
     }
@@ -50,7 +50,7 @@ pub mod chat_generation_example {
 
         // AFTER: Privacy-safe session logging
         privacy_debug!(
-            session_id = %loggable_session_id(session_id.into()),
+            session_id = %loggable_session_id(session_id),
             content = %sanitize_content(user_content),
             "Processing chat request"
         );
@@ -80,7 +80,7 @@ pub mod admin_routes_example {
 
         // AFTER: Privacy-safe admin logging
         privacy_debug!(
-            user_id = %loggable_user_id(user_id.into()),
+            user_id = %loggable_user_id(user_id),
             username = "<username-redacted>", // Always redact usernames
             "User has Administrator role, access granted"
         );
@@ -90,8 +90,8 @@ pub mod admin_routes_example {
 
         // AFTER: Both IDs obfuscated
         privacy_info!(
-            admin_user_id = %loggable_user_id(admin_user_id.into()),
-            target_user_id = %loggable_user_id(user_id.into()),
+            admin_user_id = %loggable_user_id(admin_user_id),
+            target_user_id = %loggable_user_id(user_id),
             "Admin locking user account"
         );
     }
@@ -116,13 +116,13 @@ pub mod request_correlation_example {
         // AFTER: Request correlation with privacy
         privacy_info!(
             request_id = %privacy_ctx.request_id(),
-            user_id = %privacy_ctx.obfuscate_user_id(user_id.into()),
+            user_id = %privacy_ctx.obfuscate_user_id(user_id),
             "Processing request for user"
         );
 
         privacy_debug!(
             request_id = %privacy_ctx.request_id(),
-            session_id = %privacy_ctx.obfuscate_session_id(session_id.into()),
+            session_id = %privacy_ctx.obfuscate_session_id(session_id),
             "Session processing message"
         );
     }
@@ -147,8 +147,8 @@ pub mod error_handling_example {
 
         // AFTER: Privacy-safe error logging
         privacy_error!(
-            user_id = %loggable_user_id(user_id.into()),
-            session_id = %loggable_session_id(session_id.into()),
+            user_id = %loggable_user_id(user_id),
+            session_id = %loggable_session_id(session_id),
             error_type = "database_query_failed",
             error_code = "PG_CONNECTION_TIMEOUT", // Sanitized error details
             "Database query failed"
@@ -170,7 +170,7 @@ pub mod auth_example {
 
         // AFTER: Privacy-safe authentication logging
         privacy_info!(
-            user_id = %loggable_user_id(user_id.into()),
+            user_id = %loggable_user_id(user_id),
             email = "<email-redacted>",
             ip = "<ip-redacted>", // IP addresses are PII
             login_success = true,

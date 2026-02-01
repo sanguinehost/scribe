@@ -1,17 +1,25 @@
-#![cfg(feature = "postgres-backend")]
+#![cfg(any(feature = "postgres-backend", feature = "sqlite-backend"))]
 #[cfg(test)]
 mod get_session_data_for_generation_tests {
     use bigdecimal::BigDecimal;
-    use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper}; // Added for specific Diesel traits
+    use diesel::{
+        ExpressionMethods, QueryDsl, Queryable, RunQueryDsl, Selectable, SelectableHelper,
+    }; // Added for specific Diesel traits
     use mockall::predicate::*;
     use scribe_backend::config::Config as AppConfig;
     use scribe_backend::crypto;
+    use scribe_backend::db::pool_helpers::get_conn;
+    use scribe_backend::db::pool_helpers::DbConn;
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    use scribe_backend::db::pool_helpers::SqliteInteractExt;
+    use scribe_backend::db::DbPool;
     use scribe_backend::models::characters::Character;
     use scribe_backend::models::chat_override::ChatCharacterOverride;
     use scribe_backend::models::chats::{
         ChatMessage as DbChatMessage, DbInsertableChatMessage, NewChat,
     };
     use scribe_backend::models::users::{AccountStatus, NewUser, UserRole};
+    use scribe_backend::models::OptionalStringArray;
     use scribe_backend::schema::{
         characters as character_schema, chat_messages as chat_messages_schema,
         chat_sessions as chat_sessions_schema, users,
@@ -30,12 +38,11 @@ mod get_session_data_for_generation_tests {
     use scribe_backend::services::tokenizer_service::TokenizerService; // TokenEstimate removed
     use scribe_backend::services::user_persona_service::UserPersonaService;
     use scribe_backend::state::AppState;
-    use scribe_backend::test_helpers::db::setup_test_database;
+    use scribe_backend::test_helpers::db::{create_test_message, create_test_pool};
     use scribe_backend::test_helpers::{
         MockAiClient, MockEmbeddingClient, MockEmbeddingPipelineService, MockQdrantClientService,
         TestAppStateBuilder,
     };
-    use scribe_backend::PgPool;
     use secrecy::SecretBox;
     use serde_json::json;
     use std::cmp::min; // Used in budget calculation assertions
@@ -77,7 +84,7 @@ mod get_session_data_for_generation_tests {
             context_recent_history_token_budget: 100,
             context_rag_token_budget: 50,
             context_total_token_limit: 200,
-            tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
+            tokenizer_model_path: "./resources/tokenizers/tokenizer.json".to_string(),
             gemini_api_key: Some("dummy_api_key".to_string()),
             token_counter_default_model: "gemini-test-model".to_string(),
             ..Default::default()
@@ -226,7 +233,7 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to build the `AppState` with all mock services
     async fn build_test_app_state(
-        pool: PgPool,
+        pool: DbPool,
         config: Arc<scribe_backend::config::Config>,
         mock_ai_client: Arc<MockAiClient>,
         mock_embedding_client: Arc<MockEmbeddingClient>,
@@ -280,7 +287,7 @@ mod get_session_data_for_generation_tests {
         let user_dek_secret_vec = vec![0u8; 32];
         let user_dek = Some(Arc::new(SecretBox::new(Box::new(user_dek_secret_vec))));
 
-        let (pool, _test_db_name) = setup_test_database(None).await;
+        let (pool, _test_db_name) = create_test_pool(None).await;
 
         // Create default character for DB if needed
         let _default_character_for_db = params
@@ -324,7 +331,7 @@ mod get_session_data_for_generation_tests {
             context_recent_history_token_budget: 20,
             context_rag_token_budget: 50,
             context_total_token_limit: 100,
-            tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
+            tokenizer_model_path: "./resources/tokenizers/tokenizer.json".to_string(),
             gemini_api_key: Some("dummy_api_key".to_string()),
             token_counter_default_model: "gemini-test-model".to_string(),
             ..Default::default()
@@ -333,7 +340,7 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to insert a test user into the database
     async fn insert_test_user(
-        conn: &deadpool_diesel::postgres::Object,
+        conn: &mut DbConn,
         username: &str,
         email: &str,
     ) -> scribe_backend::db::DbId {
@@ -361,17 +368,18 @@ mod get_session_data_for_generation_tests {
         conn.interact(move |conn_insert| {
             diesel::insert_into(users::table)
                 .values(&new_user)
-                .returning(users::id)
-                .get_result(conn_insert)
+                .execute(conn_insert)
         })
         .await
         .unwrap()
-        .unwrap()
+        .unwrap();
+
+        user_id
     }
 
     /// Helper to insert a test character into the database
     async fn insert_test_character(
-        conn: &deadpool_diesel::postgres::Object,
+        conn: &mut DbConn,
         character_id: scribe_backend::db::DbId,
         user_id: scribe_backend::db::DbId,
         name: &str,
@@ -398,7 +406,7 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to insert a test chat session into the database
     async fn insert_test_chat_session(
-        conn: &deadpool_diesel::postgres::Object,
+        conn: &mut DbConn,
         session_id: scribe_backend::db::DbId,
         user_id: scribe_backend::db::DbId,
         character_id: scribe_backend::db::DbId,
@@ -417,7 +425,7 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to insert a test chat session with custom history management limit
     async fn insert_test_chat_session_with_limit(
-        conn: &deadpool_diesel::postgres::Object,
+        conn: &mut DbConn,
         session_id: scribe_backend::db::DbId,
         user_id: scribe_backend::db::DbId,
         character_id: scribe_backend::db::DbId,
@@ -435,8 +443,9 @@ mod get_session_data_for_generation_tests {
             model_name: Some(model_name.to_string()),
             visibility: Some("private".to_string()),
             tokens_counted_at: chrono::Utc::now().into(),
-            total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+            total_credits_used: scribe_backend::db::DbDecimal::from(0),
             prompt_template_id: "default".to_string(),
+            chat_mode: scribe_backend::models::chats::ChatMode::Character,
             ..Default::default()
         };
 
@@ -456,7 +465,7 @@ mod get_session_data_for_generation_tests {
             context_recent_history_token_budget: 30,
             context_rag_token_budget: 40,
             context_total_token_limit: 100,
-            tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
+            tokenizer_model_path: "./resources/tokenizers/tokenizer.json".to_string(),
             gemini_api_key: Some("dummy_api_key_rag_lore".to_string()),
             token_counter_default_model: model_name.to_string(),
             ..Default::default()
@@ -465,7 +474,7 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to insert a test lorebook and link it to a chat session
     async fn insert_test_lorebook_and_link(
-        conn: &deadpool_diesel::postgres::Object,
+        conn: &mut DbConn,
         session_id: scribe_backend::db::DbId,
         user_id: scribe_backend::db::DbId,
         name: &str,
@@ -574,7 +583,7 @@ mod get_session_data_for_generation_tests {
 
     /// Helper to insert test messages into the database
     async fn insert_test_messages(
-        conn: &deadpool_diesel::postgres::Object,
+        conn: &mut DbConn,
         session_id: scribe_backend::db::DbId,
         user_id: scribe_backend::db::DbId,
         messages: &[(&str, MessageRole, Option<i32>, i64)],
@@ -655,27 +664,24 @@ mod get_session_data_for_generation_tests {
         })
         .await;
 
-        let conn = setup
-            .app_state
-            .pool
-            .get()
+        let mut conn = get_conn(&setup.app_state.pool)
             .await
             .expect("Failed to get DB connection for basic_fits_budget");
 
         // Set up test data in database
         let inserted_user_id =
-            insert_test_user(&conn, "testuser_basic_fits", "basicfits@example.com").await;
+            insert_test_user(&mut conn, "testuser_basic_fits", "basicfits@example.com").await;
         setup.user_id = inserted_user_id;
 
         insert_test_character(
-            &conn,
+            &mut conn,
             setup.character_id,
             setup.user_id,
             "Test Character Basic Fits",
         )
         .await;
         insert_test_chat_session(
-            &conn,
+            &mut conn,
             setup.session_id,
             setup.user_id,
             setup.character_id,
@@ -688,7 +694,7 @@ mod get_session_data_for_generation_tests {
             (msg2_content, MessageRole::Assistant, Some(5i32), -10i64),
         ];
         insert_test_messages(
-            &conn,
+            &mut conn,
             setup.session_id,
             setup.user_id,
             &message_definitions,
@@ -830,20 +836,17 @@ mod get_session_data_for_generation_tests {
         })
         .await;
 
-        let conn = setup
-            .app_state
-            .pool
-            .get()
+        let mut conn = get_conn(&setup.app_state.pool)
             .await
             .expect("Failed to get DB connection for RAG lorebook test");
 
         // Set up test data in database
         let inserted_user_id =
-            insert_test_user(&conn, "testuser_rag_lore", "raglore@example.com").await;
+            insert_test_user(&mut conn, "testuser_rag_lore", "raglore@example.com").await;
         setup.user_id = inserted_user_id;
 
         insert_test_character(
-            &conn,
+            &mut conn,
             setup.character_id,
             setup.user_id,
             "Test Character RAG Lore",
@@ -852,7 +855,7 @@ mod get_session_data_for_generation_tests {
 
         // Insert chat session with custom history management limit for RAG test
         insert_test_chat_session_with_limit(
-            &conn,
+            &mut conn,
             setup.session_id,
             setup.user_id,
             setup.character_id,
@@ -864,7 +867,7 @@ mod get_session_data_for_generation_tests {
         // Insert history message
         let history_messages = [(history_msg_content, MessageRole::User, Some(4i32), -10i64)];
         insert_test_messages(
-            &conn,
+            &mut conn,
             setup.session_id,
             setup.user_id,
             &history_messages,
@@ -874,7 +877,7 @@ mod get_session_data_for_generation_tests {
 
         // Set up lorebook and RAG chunks
         let lorebook_id = insert_test_lorebook_and_link(
-            &conn,
+            &mut conn,
             setup.session_id,
             setup.user_id,
             "Ancient Artifacts",
@@ -1019,7 +1022,7 @@ mod get_session_data_for_generation_tests {
             context_recent_history_token_budget: 8, // Budget for 2 smaller messages
             context_rag_token_budget: 0,            // No RAG for this test
             context_total_token_limit: 50,
-            tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
+            tokenizer_model_path: "./resources/tokenizers/tokenizer.json".to_string(),
             gemini_api_key: Some("dummy_api_key_for_trunc_test".to_string()),
             token_counter_default_model: model_name_for_test.clone(),
             ..Default::default()
@@ -1041,10 +1044,7 @@ mod get_session_data_for_generation_tests {
         .await;
 
         let mut setup = setup; // Make setup mutable
-        let conn = setup
-            .app_state
-            .pool
-            .get()
+        let mut conn = get_conn(&setup.app_state.pool)
             .await
             .expect("Failed to get DB connection");
 
@@ -1069,17 +1069,16 @@ mod get_session_data_for_generation_tests {
             tokens_last_reset_at: None,
             token_usage_updated_at: chrono::Utc::now().into(),
         };
-        let inserted_user_id_trunc: scribe_backend::db::DbId = conn
+        let _: usize = conn
             .interact(move |conn_insert_user| {
                 diesel::insert_into(users::table)
                     .values(&new_user_for_trunc_test)
-                    .returning(users::id)
-                    .get_result(conn_insert_user)
+                    .execute(conn_insert_user)
             })
             .await
             .unwrap()
             .unwrap();
-        setup.user_id = inserted_user_id_trunc; // Update setup with the actual inserted user_id
+        setup.user_id = user_id; // Use pre-generated user_id
 
         // Insert Character
         // Use create_dummy_character and override necessary fields
@@ -1164,13 +1163,16 @@ mod get_session_data_for_generation_tests {
                 MessageRole::System => "system".to_string(),
             };
 
-            let insertable_msg = DbInsertableChatMessage::new(
+            let insertable_msg = create_test_message(
+                Uuid::new_v4().into(),
                 setup.session_id,
                 setup.user_id,
                 *role_enum,
                 content_bytes_for_db,
                 nonce_for_db,
                 "gemini-1.5-pro".to_string(),
+                chrono::Utc::now().into(),
+                chrono::Utc::now().into(),
             )
             .with_role(role_str_val)
             .with_parts(scribe_backend::db::DbJson::from(
@@ -1306,7 +1308,7 @@ mod get_session_data_for_generation_tests {
             context_recent_history_token_budget: 150, // Allows significant history
             context_rag_token_budget: 50,             // RAG budget itself is positive
             context_total_token_limit: 160,           // Total limit is tight
-            tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
+            tokenizer_model_path: "./resources/tokenizers/tokenizer.json".to_string(),
             gemini_api_key: Some("dummy_api_key_rag_total_limit".to_string()),
             token_counter_default_model: model_name_for_test.clone(),
             ..Default::default()
@@ -1326,12 +1328,9 @@ mod get_session_data_for_generation_tests {
             active_lorebook_ids_for_search_db: None,
         })
         .await;
-        let conn = setup
-            .app_state
-            .pool
-            .get()
+        let mut conn = get_conn(&setup.app_state.pool)
             .await
-            .expect("Failed to get DB connection for RAG total limit test");
+            .expect("Failed to get DB connection for RAG combined test");
 
         // Insert User
         let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
@@ -1354,17 +1353,16 @@ mod get_session_data_for_generation_tests {
             tokens_last_reset_at: None,
             token_usage_updated_at: chrono::Utc::now().into(),
         };
-        let inserted_user_id_rag_total_limit: scribe_backend::db::DbId = conn
+        let _: usize = conn
             .interact(move |conn_insert_user| {
                 diesel::insert_into(users::table)
                     .values(&new_user_for_rag_total_limit_test)
-                    .returning(users::id)
-                    .get_result(conn_insert_user)
+                    .execute(conn_insert_user)
             })
             .await
             .unwrap()
             .unwrap();
-        setup.user_id = inserted_user_id_rag_total_limit;
+        setup.user_id = user_id;
 
         // Insert Character
         let mut test_character_rag_total_limit =
@@ -1508,13 +1506,16 @@ mod get_session_data_for_generation_tests {
                 MessageRole::System => "system".to_string(),
             };
 
-            let insertable_msg = DbInsertableChatMessage::new(
+            let insertable_msg = create_test_message(
+                Uuid::new_v4().into(),
                 setup.session_id,
                 setup.user_id,
                 *role_enum,
                 content_bytes_for_db,
                 nonce_for_db,
                 "gemini-1.5-pro".to_string(),
+                chrono::Utc::now().into(),
+                chrono::Utc::now().into(),
             )
             .with_role(role_str_val)
             .with_parts(scribe_backend::db::DbJson::from(
@@ -1706,7 +1707,7 @@ mod get_session_data_for_generation_tests {
             context_recent_history_token_budget: 10, // Adjusted from 50
             context_rag_token_budget: 100,
             context_total_token_limit: 200,
-            tokenizer_model_path: "./resources/tokenizers/gemma.model".to_string(),
+            tokenizer_model_path: "./resources/tokenizers/tokenizer.json".to_string(),
             gemini_api_key: Some("dummy_api_key_rag_older_hist".to_string()),
             token_counter_default_model: model_name_for_test.clone(),
             ..Default::default()
@@ -1726,12 +1727,9 @@ mod get_session_data_for_generation_tests {
             active_lorebook_ids_for_search_db: None,
         })
         .await;
-        let conn = setup
-            .app_state
-            .pool
-            .get()
+        let mut conn = get_conn(&setup.app_state.pool)
             .await
-            .expect("Failed to get DB connection for RAG older history test");
+            .expect("Failed to get DB connection for RAG older chat history test");
 
         // Insert User
         let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
@@ -1754,17 +1752,16 @@ mod get_session_data_for_generation_tests {
             tokens_last_reset_at: None,
             token_usage_updated_at: chrono::Utc::now().into(),
         };
-        let inserted_user_id_rag_older_hist: scribe_backend::db::DbId = conn
+        let _: usize = conn
             .interact(move |conn_insert_user| {
                 diesel::insert_into(users::table)
                     .values(&new_user_for_rag_older_hist_test)
-                    .returning(users::id)
-                    .get_result(conn_insert_user)
+                    .execute(conn_insert_user)
             })
             .await
             .unwrap()
             .unwrap();
-        setup.user_id = inserted_user_id_rag_older_hist;
+        setup.user_id = user_id;
 
         // Insert Character
         let mut test_character_rag_older_hist =
@@ -1843,13 +1840,16 @@ mod get_session_data_for_generation_tests {
             };
             let created_at_val = chrono::Utc::now() + chrono::Duration::seconds(*time_offset);
 
-            let insertable_msg = DbInsertableChatMessage::new(
+            let insertable_msg = create_test_message(
+                Uuid::new_v4().into(),
                 setup.session_id,
                 setup.user_id,
                 *role,
                 content_bytes,
                 nonce_bytes,
                 "gemini-1.5-pro".to_string(),
+                chrono::Utc::now().into(),
+                chrono::Utc::now().into(),
             )
             .with_role(role.to_string())
             .with_parts(scribe_backend::db::DbJson::from(
@@ -2212,6 +2212,136 @@ mod get_session_data_for_generation_tests {
                     chat_meta.message_id
                 );
             }
+        }
+    }
+
+    // Debug test for Character retrieval fields
+    #[derive(Queryable, Selectable, Debug)]
+    #[diesel(table_name = character_schema)]
+    pub struct DebugCharacter {
+        pub id: scribe_backend::db::DbId,
+        pub user_id: scribe_backend::db::DbId,
+        pub spec: String,
+        pub spec_version: String,
+        pub name: String,
+        pub description: Option<Vec<u8>>,
+        pub personality: Option<Vec<u8>>,
+        pub scenario: Option<Vec<u8>>,
+        pub first_mes: Option<Vec<u8>>,
+        pub mes_example: Option<Vec<u8>>,
+        pub creator_notes: Option<Vec<u8>>,
+        pub system_prompt: Option<Vec<u8>>,
+        pub post_history_instructions: Option<Vec<u8>>,
+        pub tags: OptionalStringArray,
+        pub creator: Option<String>,
+        pub character_version: Option<String>,
+        pub alternate_greetings: OptionalStringArray,
+        pub nickname: Option<String>,
+        pub creator_notes_multilingual: Option<scribe_backend::db::DbJson>,
+        pub source: OptionalStringArray,
+        pub group_only_greetings: OptionalStringArray,
+        pub creation_date: Option<scribe_backend::db::DbTimestamp>,
+        pub modification_date: Option<scribe_backend::db::DbTimestamp>,
+        pub created_at: scribe_backend::db::DbTimestamp,
+        pub updated_at: scribe_backend::db::DbTimestamp,
+        pub persona: Option<Vec<u8>>,
+        pub world_scenario: Option<Vec<u8>>,
+        pub avatar: Option<String>,
+        pub chat: Option<String>,
+        pub greeting: Option<Vec<u8>>,
+        pub definition: Option<Vec<u8>>,
+        pub default_voice: Option<String>,
+        pub extensions: Option<scribe_backend::db::DbJson>,
+        pub data_id: Option<scribe_backend::db::DbInt>,
+        pub category: Option<String>,
+        pub definition_visibility: Option<String>,
+        pub depth: Option<scribe_backend::db::DbInt>,
+        pub example_dialogue: Option<Vec<u8>>,
+        pub favorite: Option<bool>,
+        pub first_message_visibility: Option<String>,
+        pub height: Option<scribe_backend::db::DbDecimal>,
+        pub last_activity: Option<scribe_backend::db::DbTimestamp>,
+        pub migrated_from: Option<String>,
+        pub model_prompt: Option<Vec<u8>>,
+        pub model_prompt_visibility: Option<String>,
+        pub model_temperature: Option<scribe_backend::db::DbDecimal>,
+        pub num_interactions: Option<scribe_backend::db::DbBigInt>,
+        pub permanence: Option<scribe_backend::db::DbDecimal>,
+        pub persona_visibility: Option<String>,
+        pub revision: Option<scribe_backend::db::DbInt>,
+        pub sharing_visibility: Option<String>,
+        pub status: Option<String>,
+        pub system_prompt_visibility: Option<String>,
+        pub system_tags: OptionalStringArray,
+        pub token_budget: Option<scribe_backend::db::DbInt>,
+        pub usage_hints: Option<scribe_backend::db::DbJson>,
+        pub user_persona: Option<Vec<u8>>,
+        pub user_persona_visibility: Option<String>,
+        pub visibility: Option<String>,
+        pub weight: Option<scribe_backend::db::DbDecimal>,
+        pub world_scenario_visibility: Option<String>,
+        pub description_nonce: Option<Vec<u8>>,
+        pub personality_nonce: Option<Vec<u8>>,
+        pub scenario_nonce: Option<Vec<u8>>,
+        pub first_mes_nonce: Option<Vec<u8>>,
+        pub mes_example_nonce: Option<Vec<u8>>,
+        pub creator_notes_nonce: Option<Vec<u8>>,
+        pub system_prompt_nonce: Option<Vec<u8>>,
+        pub persona_nonce: Option<Vec<u8>>,
+        pub world_scenario_nonce: Option<Vec<u8>>,
+        pub greeting_nonce: Option<Vec<u8>>,
+        pub definition_nonce: Option<Vec<u8>>,
+        pub example_dialogue_nonce: Option<Vec<u8>>,
+        pub model_prompt_nonce: Option<Vec<u8>>,
+        pub user_persona_nonce: Option<Vec<u8>>,
+        pub post_history_instructions_nonce: Option<Vec<u8>>,
+        pub fav: Option<bool>,
+        pub world: Option<String>,
+        pub creator_comment: Option<Vec<u8>>,
+        pub creator_comment_nonce: Option<Vec<u8>>,
+        pub depth_prompt: Option<Vec<u8>>,
+        pub depth_prompt_depth: Option<scribe_backend::db::DbInt>,
+        pub depth_prompt_role: Option<String>,
+        pub talkativeness: Option<scribe_backend::db::DbDecimal>,
+        pub depth_prompt_ciphertext: Option<Vec<u8>>,
+        pub depth_prompt_nonce: Option<Vec<u8>>,
+        pub world_ciphertext: Option<Vec<u8>>,
+        pub world_nonce: Option<Vec<u8>>,
+    }
+
+    #[tokio::test]
+    async fn debug_character_retrieval_fields_internal() {
+        let (pool, _) = create_test_pool(None).await;
+        // Need conn for interact
+        let mut conn = get_conn(&pool).await.expect("Failed to get connection");
+
+        let character_id = Uuid::new_v4().into();
+
+        // Need to insert user first due to FK constraint
+        let user_id = insert_test_user(&mut conn, "debuguser", "debug@example.com").await;
+
+        insert_test_character(&mut conn, character_id, user_id, "Debug Character").await;
+
+        // Retrieve
+        let retrieved_character = conn
+            .interact(move |conn_i| {
+                character_schema::table
+                    .filter(character_schema::id.eq(character_id))
+                    .select(DebugCharacter::as_select())
+                    .first::<DebugCharacter>(conn_i)
+            })
+            .await
+            .unwrap();
+
+        match retrieved_character {
+            Ok(c) => {
+                println!("Successfully retrieved DebugCharacter: {:?}", c.id);
+                // No need for c.id.is_none() checks as they are now mandatory fields
+
+                // OptionalStringArray fields mapped to Option<String>
+                println!("Tags: {:?}", c.tags);
+            }
+            Err(e) => panic!("Failed to retrieve DebugCharacter: {:?}", e),
         }
     }
 }

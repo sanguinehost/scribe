@@ -7,7 +7,6 @@ pub mod payment_test_helpers;
 
 use crate::db::DbId;
 #[cfg(feature = "sqlite-backend")]
-#[cfg(feature = "sqlite-backend")]
 use crate::db::SqliteInteractExt;
 use std::fmt;
 use std::net::SocketAddr;
@@ -16,7 +15,7 @@ use std::net::SocketAddr;
 use crate::errors::AppError;
 use crate::llm::{
     AiClient, BatchEmbeddingContentRequest, EmbeddingClient, RigChatResponse, RigCompletionRequest,
-    RigStreamEvent,
+    RigStreamEvent, UnifiedEmbeddingModel,
 };
 use crate::services::embeddings::{
     metadata::{CognitiveFactMetadata, EntityMetadata, OpinionMetadata},
@@ -26,7 +25,7 @@ use crate::text_processing::chunking::ChunkConfig;
 // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
-use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
+use crate::vector_db::QdrantClientServiceTrait;
 use crate::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
@@ -58,8 +57,14 @@ use crate::{
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
-    vector_db::{self, qdrant_client::QdrantClientService, VectorServiceTrait}, // Import constants module alias
+    vector_db::VectorServiceTrait, // Import constants module alias
 };
+use qdrant_client::qdrant::PointStruct;
+
+#[cfg(feature = "embedded-vector")]
+pub use crate::vector_db::LanceDbClient;
+#[cfg(feature = "remote-vector")]
+pub use crate::vector_db::QdrantClientService;
 
 // Conditionally import documents module (PostgreSQL only)
 #[cfg(feature = "postgres-backend")]
@@ -125,7 +130,8 @@ type EmbeddingResponseSequence = Arc<Mutex<VecDeque<Result<Vec<f32>, AppError>>>
 type BatchEmbeddingResponse = Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>>;
 type EmbeddingCalls = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
 type BatchEmbeddingCalls = Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>;
-type SearchParams = Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>;
+type SearchParamsType = Option<(Vec<f32>, u64, Option<Filter>)>;
+type SearchParams = Arc<Mutex<SearchParamsType>>;
 type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>;
 type ChatEventStream =
     std::sync::Arc<std::sync::Mutex<Option<Vec<Result<RigStreamEvent, AppError>>>>>;
@@ -239,7 +245,16 @@ impl AiClient for MockAiClient {
         req: RigCompletionRequest,
     ) -> Result<RigChatResponse, anyhow::Error> {
         *self.last_request.lock().unwrap() = Some(req.clone());
-        *self.last_received_messages.lock().unwrap() = Some(req.history);
+
+        // Capture history including the current prompt
+        let mut full_history = req.history.clone();
+        full_history.push(rig::message::Message::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                req.prompt.clone(),
+            )),
+        });
+        *self.last_received_messages.lock().unwrap() = Some(full_history);
+
         self.response_to_return
             .lock()
             .unwrap()
@@ -257,7 +272,15 @@ impl AiClient for MockAiClient {
         anyhow::Error,
     > {
         *self.last_request.lock().unwrap() = Some(req.clone());
-        *self.last_received_messages.lock().unwrap() = Some(req.history);
+
+        // Capture history including the current prompt
+        let mut full_history = req.history.clone();
+        full_history.push(rig::message::Message::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                req.prompt.clone(),
+            )),
+        });
+        *self.last_received_messages.lock().unwrap() = Some(full_history);
 
         let items = {
             let guard = self.stream_to_return.lock().unwrap();
@@ -954,7 +977,9 @@ pub struct MockQdrantClientService {
     search_call_count: Arc<Mutex<usize>>,
     last_upsert_points: Arc<Mutex<Option<Vec<qdrant_client::qdrant::PointStruct>>>>,
     last_search_params: SearchParams,
+    pub search_params_history: Arc<Mutex<Vec<SearchParamsType>>>, // New field
     calls_delete_points_by_filter: Arc<Mutex<Vec<Filter>>>, // New field to track delete_points_by_filter calls
+    pub last_added_documents: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 impl Default for MockQdrantClientService {
@@ -973,7 +998,9 @@ impl MockQdrantClientService {
             search_call_count: Arc::new(Mutex::new(0)),
             last_upsert_points: Arc::new(Mutex::new(None)),
             last_search_params: Arc::new(Mutex::new(None)),
+            search_params_history: Arc::new(Mutex::new(Vec::new())),
             calls_delete_points_by_filter: Arc::new(Mutex::new(Vec::new())), // Initialize
+            last_added_documents: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1191,7 +1218,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         _text_query: Option<String>,
         _text_fields: Vec<String>,
         limit: u64,
-        filter: Option<Filter>,
+        filter: Option<qdrant_client::qdrant::Filter>,
         _score_threshold: Option<f32>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // For mock, just use vector search if vector is provided, otherwise return empty
@@ -1308,71 +1335,166 @@ impl VectorServiceTrait for MockQdrantClientService {
         Ok(())
     }
 
-    async fn add_document(&self, _document: serde_json::Value) -> Result<(), AppError> {
-        Ok(())
+    async fn add_document(&self, document: serde_json::Value) -> Result<(), AppError> {
+        *self.upsert_call_count.lock().unwrap() += 1;
+        self.last_added_documents.lock().unwrap().push(document);
+        let mut response = self.upsert_response.lock().unwrap();
+        if let Some(res) = response.take() {
+            res
+        } else {
+            Ok(())
+        }
     }
 
-    async fn add_documents(&self, _documents: Vec<serde_json::Value>) -> Result<(), AppError> {
-        Ok(())
+    async fn add_documents(&self, documents: Vec<serde_json::Value>) -> Result<(), AppError> {
+        *self.upsert_call_count.lock().unwrap() += 1;
+        self.last_added_documents.lock().unwrap().extend(documents);
+        let mut response = self.upsert_response.lock().unwrap();
+        if let Some(res) = response.take() {
+            res
+        } else {
+            Ok(())
+        }
     }
 
     async fn add_document_to_collection(
         &self,
         _collection_name: &str,
-        _document: serde_json::Value,
+        document: serde_json::Value,
     ) -> Result<(), AppError> {
-        // Track call
         *self.upsert_call_count.lock().unwrap() += 1;
-        Ok(())
+        self.last_added_documents.lock().unwrap().push(document);
+        let mut response = self.upsert_response.lock().unwrap();
+        if let Some(res) = response.take() {
+            res
+        } else {
+            Ok(())
+        }
     }
 
     async fn search_values(
         &self,
         _query: &str,
-        _limit: usize,
-        _filter: Option<qdrant_client::qdrant::Filter>,
+        limit: usize,
+        filter: Option<qdrant_client::qdrant::Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
-        // Return empty results for mock
-        Ok(vec![])
+        // Track call (using dummy vector for tracking)
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vec![0.0; 1536], limit as u64, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        if let Some(points_result) = queue.pop_front() {
+            match points_result {
+                Ok(points) => {
+                    let results = points
+                        .into_iter()
+                        .take(limit)
+                        .map(|p| {
+                            let score = p.score;
+                            let payload =
+                                serde_json::to_value(p.payload).unwrap_or(serde_json::Value::Null);
+                            (score, payload)
+                        })
+                        .collect();
+                    Ok(results)
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(vec![])
+        }
     }
 
     async fn delete_by_filter(
         &self,
-        _filter: qdrant_client::qdrant::Filter,
+        filter: qdrant_client::qdrant::Filter,
     ) -> Result<(), AppError> {
+        // Record the call
+        self.calls_delete_points_by_filter
+            .lock()
+            .unwrap()
+            .push(filter);
         Ok(())
-    }
-
-    async fn search_points_with_threshold(
-        &self,
-        _vector: Vec<f32>,
-        _limit: u64,
-        _filter: Option<qdrant_client::qdrant::Filter>,
-        _score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
-        Ok(vec![])
-    }
-
-    async fn hybrid_search(
-        &self,
-        _vector: Option<Vec<f32>>,
-        _text_query: Option<String>,
-        _text_fields: Vec<String>,
-        _limit: u64,
-        _filter: Option<qdrant_client::qdrant::Filter>,
-        _score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
-        Ok(vec![])
     }
 
     async fn retrieve_points(
         &self,
-        _filter: Option<qdrant_client::qdrant::Filter>,
-        _limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        limit: u64,
         _offset: Option<u64>,
         _score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
-        Ok(vec![])
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vec![0.0; 1536], limit, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        queue
+            .pop_front()
+            .map(|res| res.map(|points| points.into_iter().take(limit as usize).collect()))
+            .unwrap_or(Ok(vec![]))
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vector, limit, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        queue
+            .pop_front()
+            .map(|res| res.map(|points| points.into_iter().take(limit as usize).collect()))
+            .unwrap_or(Ok(vec![]))
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vector.unwrap_or_else(|| vec![0.0; 1536]), limit, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        queue
+            .pop_front()
+            .map(|res| res.map(|points| points.into_iter().take(limit as usize).collect()))
+            .unwrap_or(Ok(vec![]))
     }
 
     async fn delete_points(
@@ -1490,6 +1612,7 @@ impl TestAppStateBuilder {
     ///
     /// Panics if the tokenizer model cannot be loaded from the expected path
     #[must_use]
+    #[allow(clippy::double_must_use)]
     pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let encryption_service = Arc::new(EncryptionService::new());
 
@@ -1925,7 +2048,7 @@ pub async fn spawn_app_with_options(
     )
 )]
 pub async fn spawn_app_with_rate_limiting_options(
-    multi_thread: bool,
+    _multi_thread: bool,
     use_real_ai: bool,
     use_real_qdrant: bool,
     use_real_embedding_pipeline: bool,
@@ -1954,7 +2077,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     // PostgreSQL: Create unique test database per test (if multi-threaded)
     #[cfg(feature = "postgres-backend")]
     let (pool, test_db_name) = {
-        let test_db_name_suffix = if multi_thread {
+        let test_db_name_suffix = if _multi_thread {
             Some(DbId::new().to_string()) // Ensure it's String for suffix
         } else {
             None
@@ -1968,15 +2091,10 @@ pub async fn spawn_app_with_rate_limiting_options(
         use diesel::r2d2::{ConnectionManager, Pool};
         use diesel_migrations::MigrationHarness;
 
-        let database_url = if multi_thread {
-            // Each test gets a unique in-memory database with shared cache to allow multiple connections
-            format!(
-                "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
-                DbId::new()
-            )
-        } else {
-            "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
-        };
+        let database_url = format!(
+            "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+            DbId::new()
+        );
 
         // Customizer to set busy_timeout
         #[derive(Debug)]
@@ -2064,13 +2182,16 @@ pub async fn spawn_app_with_rate_limiting_options(
         Option<Arc<MockQdrantClientService>>,
     ) = if use_real_qdrant {
         // This flag now also controls embedding components
-        let real_qdrant_service = QdrantClientService::new(config_arc.clone())
-            .await
-            .expect("Failed to create real Qdrant client for test");
-        (
-            Arc::new(real_qdrant_service) as Arc<dyn crate::vector_db::VectorServiceTrait>,
-            None,
-        )
+        let real_embedding_client =
+            crate::llm::cloud_embedding_client::build_cloud_embedding_client(config_arc.clone())
+                .expect("Failed to build real Cloud embedding client for test");
+        let embedding_model = UnifiedEmbeddingModel::Cloud(real_embedding_client);
+
+        let real_vector_service =
+            crate::vector_db::create_vector_service(config_arc.clone(), embedding_model)
+                .await
+                .expect("Failed to create real vector service for test");
+        (real_vector_service, None)
     } else {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         (
@@ -2303,6 +2424,7 @@ pub mod db {
     #[cfg(feature = "postgres-backend")]
     use crate::db::MIGRATIONS;
     use crate::db::{DbId, DbTimestamp}; // Import unified types
+    use crate::models::chats::{DbInsertableChatMessage, MessageRole};
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
@@ -2334,24 +2456,20 @@ pub mod db {
     /// For SQLite: Creates an in-memory database with migrations.
     ///
     /// Returns (pool, test_db_name) for PostgreSQL, (pool, "") for SQLite.
-    pub async fn create_test_pool(db_name_suffix: Option<&str>) -> (DbPool, String) {
+    pub async fn create_test_pool(_db_name_suffix: Option<&str>) -> (DbPool, String) {
         #[cfg(feature = "postgres-backend")]
         {
-            setup_test_database(db_name_suffix).await
+            setup_test_database(_db_name_suffix).await
         }
 
         #[cfg(feature = "sqlite-backend")]
         {
             use diesel::r2d2::{ConnectionManager, Pool};
 
-            let database_url = if db_name_suffix.is_some() {
-                format!(
-                    "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
-                    DbId::new()
-                )
-            } else {
-                "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
-            };
+            let database_url = format!(
+                "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+                DbId::new()
+            );
 
             // Customizer to set busy_timeout
             #[derive(Debug)]
@@ -2448,13 +2566,24 @@ pub mod db {
 
         // Run migrations on the test database
         #[cfg(feature = "postgres-backend")]
-        let conn = crate::db::get_conn(&pool)
-            .await
-            .expect("Failed to get test DB connection for migration");
-        conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
-            .await
-            .expect("Migration task failed")
-            .expect("Failed to run migrations");
+        {
+            let conn = crate::db::get_conn(&pool)
+                .await
+                .expect("Failed to get test DB connection for migration");
+            conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
+                .await
+                .expect("Migration task failed")
+                .expect("Failed to run migrations");
+        }
+
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        {
+            let mut conn = pool.get().expect("Failed to get connection for migrations");
+            const MIGRATIONS: diesel_migrations::EmbeddedMigrations =
+                diesel_migrations::embed_migrations!("migrations_sqlite");
+            conn.run_pending_migrations(MIGRATIONS)
+                .expect("Failed to run SQLite migrations");
+        }
 
         (pool, db_name)
     }
@@ -2501,7 +2630,7 @@ pub mod db {
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
-            email: email,
+            email,
             kek_salt,
             encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
             dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
@@ -2524,7 +2653,7 @@ pub mod db {
                 .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
 
             conn.interact(move |conn_actual| {
-                use diesel::{RunQueryDsl, SelectableHelper};
+                use diesel::{RunQueryDsl, SelectableHelper}; // Added SelectableHelper
                 diesel::insert_into(crate::schema::users::table)
                     .values(new_user_payload)
                     .returning(UserDbQuery::as_returning())
@@ -2620,7 +2749,7 @@ pub mod db {
             id: user_id,
             username: username_clone_for_payload,
             password_hash,
-            email: email,
+            email,
             kek_salt,
             encrypted_dek: crate::db::DbBlob::from(encrypted_dek_bytes),
             dek_nonce: crate::db::DbBlob::from(dek_nonce_bytes),
@@ -2718,7 +2847,10 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let _conn = crate::db::get_conn(&pool).await?;
+        #[cfg(feature = "postgres-backend")]
+        let _conn = crate::db::get_conn(pool).await?;
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        let _conn = pool.get()?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
 
@@ -2828,7 +2960,8 @@ pub mod db {
                     use diesel::prelude::*;
                     diesel::insert_into(crate::schema::characters::table)
                         .values(new_character_payload)
-                        .get_result::<Character>(conn_actual)
+                        .returning(Character::as_returning())
+                        .get_result(conn_actual)
                 })
                 .await
                 .map_err(move |interact_err| {
@@ -2853,7 +2986,8 @@ pub mod db {
                     crate::schema::characters::table
                         .filter(crate::schema::characters::name.eq(name_for_query))
                         .order_by(crate::schema::characters::created_at.desc())
-                        .first::<Character>(conn_actual)
+                        .select(Character::as_select())
+                        .first(conn_actual)
                         .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
                 })
                 .await
@@ -2868,6 +3002,50 @@ pub mod db {
         };
 
         Ok(character)
+    }
+
+    /// Unified helper to create a DbInsertableChatMessage that works for both backends.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_test_message(
+        id: DbId,
+        chat_id: DbId,
+        user_id: DbId,
+        msg_type: MessageRole,
+        content: Vec<u8>,
+        content_nonce: Option<Vec<u8>>,
+        model_name: String,
+        created_at: DbTimestamp,
+        updated_at: DbTimestamp,
+    ) -> DbInsertableChatMessage {
+        #[cfg(feature = "postgres-backend")]
+        {
+            DbInsertableChatMessage::new(
+                chat_id,
+                user_id,
+                msg_type,
+                content,
+                content_nonce,
+                model_name,
+            )
+            .with_id(id)
+            .with_created_at(created_at)
+            .with_updated_at(updated_at)
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            DbInsertableChatMessage::new(
+                chat_id,
+                user_id,
+                msg_type,
+                content,
+                content_nonce,
+                model_name,
+            )
+            .with_id(id)
+            .with_created_at(created_at)
+            .with_updated_at(updated_at)
+        }
     }
 }
 

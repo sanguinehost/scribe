@@ -15,8 +15,6 @@ use serde::Serialize;
 use std::sync::LazyLock;
 use tracing::{info, warn};
 
-/// Shorthand for auth session
-
 /// Regex for validating template IDs - alphanumeric and underscore only
 static TEMPLATE_ID_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_]+$").expect("Failed to compile template ID regex"));

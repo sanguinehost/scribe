@@ -8,7 +8,7 @@ use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
 use tracing::{debug, info, instrument};
 
 use crate::{
-    errors::AppError, models::chronicle_event::ChronicleEvent,
+    auth::session_dek::SessionDek, errors::AppError, models::chronicle_event::ChronicleEvent,
     schema::chronicle_events::dsl as chronicle_events_dsl, state::DbPool,
 };
 
@@ -106,6 +106,7 @@ impl ChronicleDeduplicationService {
     pub async fn check_for_duplicates(
         &self,
         new_event: &ChronicleEvent,
+        session_dek: Option<&SessionDek>,
     ) -> Result<DuplicateDetectionResult, AppError> {
         debug!(
             "Checking for duplicates of event: {} at timestamp: {:?}",
@@ -143,7 +144,10 @@ impl ChronicleDeduplicationService {
 
         // Check each candidate for duplication
         for candidate in &candidate_events {
-            if let Some(result) = self.check_event_similarity(new_event, candidate).await? {
+            if let Some(result) = self
+                .check_event_similarity(new_event, candidate, session_dek)
+                .await?
+            {
                 if result.is_duplicate {
                     info!(
                         "Duplicate detected: {} is duplicate of {} (confidence: {:.2})",
@@ -214,6 +218,7 @@ impl ChronicleDeduplicationService {
         &self,
         new_event: &ChronicleEvent,
         candidate: &ChronicleEvent,
+        session_dek: Option<&SessionDek>,
     ) -> Result<Option<DuplicateDetectionResult>, AppError> {
         debug!(
             "Comparing events {} at {:?} and {} at {:?}",
@@ -238,7 +243,8 @@ impl ChronicleDeduplicationService {
         }
 
         // Stage 2: LLM Semantic Analysis
-        self.check_duplicate_with_llm(new_event, candidate).await
+        self.check_duplicate_with_llm(new_event, candidate, session_dek)
+            .await
     }
 
     /// Use LLM to check for semantic duplication
@@ -246,7 +252,16 @@ impl ChronicleDeduplicationService {
         &self,
         new_event: &ChronicleEvent,
         candidate: &ChronicleEvent,
+        session_dek: Option<&SessionDek>,
     ) -> Result<Option<DuplicateDetectionResult>, AppError> {
+        let (candidate_summary, new_summary) = match session_dek {
+            Some(dek) => (
+                candidate.get_decrypted_summary(&dek.0)?,
+                new_event.get_decrypted_summary(&dek.0)?,
+            ),
+            None => (candidate.summary.clone(), new_event.summary.clone()),
+        };
+
         let prompt = format!(
             r#"Analyze these two narrative events and determine if they describe the SAME underlying story moment, even if the phrasing or level of detail differs.
 
@@ -273,7 +288,7 @@ impl ChronicleDeduplicationService {
                 "confidence": number (0.0 to 1.0),
                 "reasoning": string
             }}"#,
-            candidate.summary, new_event.summary
+            candidate_summary, new_summary
         );
 
         let request = crate::llm::RigCompletionRequest {
@@ -366,6 +381,7 @@ impl ChronicleDeduplicationService {
         &self,
         chronicle_id: crate::db::DbId,
         user_id: crate::db::DbId,
+        session_dek: Option<&SessionDek>,
     ) -> Result<Vec<(crate::db::DbId, crate::db::DbId)>, AppError> {
         debug!("Finding duplicate events for chronicle {}", chronicle_id);
 
@@ -397,7 +413,10 @@ impl ChronicleDeduplicationService {
                     break; // No need to check further events for this base event
                 }
 
-                if let Some(result) = self.check_event_similarity(event1, event2).await? {
+                if let Some(result) = self
+                    .check_event_similarity(event1, event2, session_dek)
+                    .await?
+                {
                     if result.is_duplicate {
                         // Keep the earlier event, mark the later one as duplicate
                         duplicates.push((event1.id, event2.id));
@@ -445,7 +464,7 @@ mod tests {
             summary_encrypted: None,
             summary_nonce: None,
             timestamp_iso8601: Utc::now().into(),
-            keywords: crate::db::unified_types::DbStringArray(None),
+            keywords: Some(crate::db::unified_types::DbStringArray::empty()),
             keywords_encrypted: None,
             keywords_nonce: None,
             chat_session_id: None,

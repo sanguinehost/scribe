@@ -6,6 +6,7 @@
 //! - Helper functions for payment flow testing
 
 #[cfg(feature = "payment")]
+#[allow(clippy::module_inception)]
 pub mod payment_test_helpers {
     use crate::{
         crypto,
@@ -15,6 +16,7 @@ pub mod payment_test_helpers {
             characters::Character,
             credit::{CreditBalance, CreditTransaction},
             users::{AccountStatus, NewUser, User as DbUser, UserDbQuery, UserRole},
+            OptionalStringArray,
         },
         services::payment::CreditService,
         test_helpers::TestApp,
@@ -76,7 +78,7 @@ pub mod payment_test_helpers {
             id: DbId::new(),
             username,
             password_hash,
-            email: email,
+            email,
             kek_salt,
             encrypted_dek: crate::DbBlob::from_bytes(encrypted_dek_bytes),
             dek_nonce: crate::DbBlob::from_bytes(dek_nonce_bytes),
@@ -111,14 +113,18 @@ pub mod payment_test_helpers {
             user_id: user.id,
             name: character_name.clone(),
             description: Some(format!("Test description for {}", character_name).into_bytes()),
-            greeting: Some(format!("Hello! I'm a test character.").into_bytes()),
-            example_dialogue: Some(format!("User: Hi\nCharacter: Hello there!").into_bytes()),
+            greeting: Some("Hello! I'm a test character.".to_string().into_bytes()),
+            example_dialogue: Some("User: Hi\nCharacter: Hello there!".to_string().into_bytes()),
             visibility: Some("private".to_string()),
             character_version: Some("2.0".to_string()),
             spec: "test_spec_v2.0".to_string(),
             spec_version: "2.0".to_string(),
-            persona: Some(format!("Friendly and helpful test character").into_bytes()),
-            world_scenario: Some(format!("Testing environment").into_bytes()),
+            persona: Some(
+                "Friendly and helpful test character"
+                    .to_string()
+                    .into_bytes(),
+            ),
+            world_scenario: Some("Testing environment".to_string().into_bytes()),
             avatar: None,
             chat: None,
             created_at: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
@@ -128,7 +134,7 @@ pub mod payment_test_helpers {
             creator_notes_multilingual: None,
             nickname: None,
             personality: None,
-            tags: crate::db::unified_types::DbStringArray::empty(),
+            tags: OptionalStringArray::default(),
             greeting_nonce: None,
             definition: None,
             default_voice: None,
@@ -145,7 +151,7 @@ pub mod payment_test_helpers {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: crate::db::unified_types::DbStringArray::empty(),
+            system_tags: OptionalStringArray::default(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -170,10 +176,10 @@ pub mod payment_test_helpers {
             first_mes: None,
             creator_notes: None,
             system_prompt: None,
-            alternate_greetings: crate::db::unified_types::DbStringArray::empty(),
+            alternate_greetings: OptionalStringArray::default(),
             creator: None,
-            source: crate::db::unified_types::DbStringArray::empty(),
-            group_only_greetings: crate::db::unified_types::DbStringArray::empty(),
+            source: OptionalStringArray::default(),
+            group_only_greetings: OptionalStringArray::default(),
             fav: None,
             world: None,
             creator_comment: None,
@@ -190,6 +196,7 @@ pub mod payment_test_helpers {
 
         let character: Character = diesel::insert_into(characters::table)
             .values(&new_character)
+            .returning(Character::as_returning())
             .get_result(conn)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 

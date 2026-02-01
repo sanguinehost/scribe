@@ -1,4 +1,4 @@
-#![cfg(feature = "postgres-backend")]
+#![cfg(any(feature = "postgres-backend", feature = "sqlite-backend"))]
 use dotenvy::dotenv;
 use scribe_backend::services::hybrid_token_counter::{CountingMode, HybridTokenCounter};
 use scribe_backend::services::token_client::TokenClient;
@@ -22,7 +22,7 @@ async fn test_hybrid_token_counter_local() {
 
     // Initialize the tokenizer service
     let model_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
 
     // Create a hybrid counter with local-only mode
@@ -120,7 +120,7 @@ async fn test_hybrid_token_counter_api() {
 
     // Initialize the tokenizer service
     let model_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
     let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
 
     // Create API client

@@ -218,7 +218,7 @@ pub struct UserDbQuery {
     pub default_persona_id: Option<DbId>,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
     pub cached_credit_balance: Option<i32>,
@@ -301,7 +301,7 @@ pub struct User {
     pub default_persona_id: Option<DbId>,
     pub total_prompt_tokens: DbBigInt,
     pub total_completion_tokens: DbBigInt,
-    pub total_token_cost_cents: DbInt,
+    pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
 }

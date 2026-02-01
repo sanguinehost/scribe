@@ -59,9 +59,7 @@ pub struct BatchEmbeddingContentRequest<'a> {
 /// Internal struct for a single request within the batchEmbedContents API payload.
 #[derive(Serialize)]
 struct SingleBatchRequestInternal<'a> {
-    // Model is specified at the top level of the batch request for the API,
-    // but we might include it here if we were to support per-item model overrides (not typical for this API).
-    // For now, it's simpler to assume one model per batch call.
+    model: &'a str,
     content: ContentWithTitle<'a>,
     #[serde(rename = "taskType")]
     task_type: &'a str,
@@ -316,6 +314,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
         let internal_requests: Vec<SingleBatchRequestInternal> = requests
             .iter()
             .map(|req| SingleBatchRequestInternal {
+                model: &self.model_name,
                 content: ContentWithTitle {
                     parts: vec![Part { text: req.text }],
                 },
@@ -469,7 +468,7 @@ impl rig::embeddings::EmbeddingModel for CloudEmbeddingClient {
 
             Ok(embeddings
                 .into_iter()
-                .zip(documents.into_iter())
+                .zip(documents)
                 .map(|(vec, document)| Embedding {
                     document,
                     vec: vec.into_iter().map(|v| v as f64).collect(), // Convert f32 to f64

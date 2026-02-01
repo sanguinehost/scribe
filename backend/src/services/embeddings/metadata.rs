@@ -97,7 +97,7 @@ impl TryFrom<HashMap<String, QdrantValue>> for ChatMessageChunkMetadata {
         Ok(Self {
             message_id,
             session_id,
-            chronicle_id: chronicle_id.map(|id| id.into()),
+            chronicle_id,
             user_id, // Added user_id
             speaker,
             timestamp: timestamp.into(),

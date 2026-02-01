@@ -181,7 +181,7 @@ fn default_tokenizer_model_path() -> String {
     let model_path = std::path::Path::new(manifest_dir)
         .join("resources")
         .join("tokenizers")
-        .join("gemma.model");
+        .join("tokenizer.json");
     model_path.to_string_lossy().into_owned()
 } // Path relative to crate root (backend/)
 fn default_token_counter_default_model() -> String {

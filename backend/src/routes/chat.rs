@@ -210,8 +210,7 @@ pub async fn generate_chat_response(
     debug!(%user_id_value, "Using SessionDek from extractor (now in Arc) for chat generation.");
 
     let session_id = DbId::parse_str(&session_id_str)
-        .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?
-        .into();
+        .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
     debug!(%session_id, "Parsed session ID");
 
     // Fetch chat session owner ID for authorization check
@@ -222,7 +221,6 @@ pub async fn generate_chat_response(
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<crate::db::DbId>(conn)
-                .map_err(Into::into)
             // .map_err(AppError::from) // Let the outer error handling manage this
         })
         .await
@@ -339,7 +337,8 @@ pub async fn generate_chat_response(
         app_schema::characters::table
             .filter(app_schema::characters::id.eq(char_id))
             .filter(app_schema::characters::user_id.eq(user_id_value))
-            .first::<Character>(conn)
+            .select(Character::as_select())
+            .first(conn)
             .map_err(|e_db| {
                 if e_db == diesel::result::Error::NotFound {
                     error!(character_id = %char_id, %user_id_value, "Character not found for user");
@@ -361,7 +360,7 @@ pub async fn generate_chat_response(
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
         user_id: character_db_model.user_id,
-        name: character_db_model.name.clone(),
+        name: character_db_model.name.clone().unwrap_or_default(),
         description: character_db_model.description.clone(),
         description_nonce: character_db_model.description_nonce.clone(),
         personality: character_db_model.personality.clone(),
@@ -373,8 +372,12 @@ pub async fn generate_chat_response(
         creator_comment: character_db_model.creator_comment.clone(),
         creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
         first_mes: character_db_model.first_mes.clone(),
-        created_at: character_db_model.created_at,
-        updated_at: character_db_model.updated_at,
+        created_at: character_db_model
+            .created_at
+            .unwrap_or_else(crate::db::DbTimestamp::now),
+        updated_at: character_db_model
+            .updated_at
+            .unwrap_or_else(crate::db::DbTimestamp::now),
     };
     trace!(%session_id, character_id = %character_metadata_for_prompt_builder.id, "Constructed CharacterMetadata for prompt builder.");
 
@@ -770,7 +773,7 @@ pub async fn generate_chat_response(
                         crate::services::payment::SoftLimitService::new(state_arc.config.clone());
                     let user_id_for_tracking = user_id_value;
                     let model_for_tracking = model_to_use.clone();
-                    let tokens_for_tracking = saved_msg.prompt_tokens.unwrap_or(0) as i64;
+                    let tokens_for_tracking = saved_msg.prompt_tokens.unwrap_or(0);
 
                     // Track usage with unified database helper
                     let tracking_result = crate::db::with_conn(&state_arc.pool, move |c| {
@@ -1054,7 +1057,7 @@ pub async fn generate_chat_response(
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
         .and_then(|chat| {
-            chat.get_narrative_style_override(&*session_dek_arc)
+            chat.get_narrative_style_override(&session_dek_arc)
                 .ok()
                 .flatten()
         })
@@ -1349,7 +1352,7 @@ pub async fn generate_chat_response(
                 enable_code_execution: gen_enable_code_execution,
                 request_thinking,
                 user_dek: session_dek_arc.clone(),
-                character_name: Some(character_db_model.name.clone()),
+                character_name: character_db_model.name.clone(),
                 player_chronicle_id,
                 variant_of: payload.variant_of,
                 #[cfg(feature = "payment")]
@@ -1367,9 +1370,9 @@ pub async fn generate_chat_response(
                     debug!(%session_id, "Successfully obtained stream from chat_service::stream_ai_response_and_save_message");
 
                     // Clone data needed for the stream
-                    let pre_processing_analysis_id_clone = pre_processing_analysis_id.clone();
+                    let pre_processing_analysis_id_clone = pre_processing_analysis_id;
                     let state_for_update = state_arc.clone();
-                    let session_id_for_update = session_id.clone();
+                    let session_id_for_update = session_id;
 
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
@@ -1403,7 +1406,7 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
-                                                _assistant_message_id = Some(msg_uuid.into());
+                                                _assistant_message_id = Some(msg_uuid);
 
                                                 // Update pre-processing analysis with assistant message ID if we have one
                                                 if let Some(analysis_id) = pre_processing_analysis_id_clone {
@@ -1413,7 +1416,7 @@ pub async fn generate_chat_response(
 
                                                     // Clone for the async task
                                                     let state_clone = state_for_update.clone();
-                                                    let session_id_clone = session_id_for_update.clone();
+                                                    let session_id_clone = session_id_for_update;
 
                                                     // Spawn a task to update the analysis
                                                     tokio::spawn(async move {
@@ -1421,7 +1424,7 @@ pub async fn generate_chat_response(
                                                             AgentContextAnalysis::update_assistant_message_id(
                                                                 conn,
                                                                 analysis_id,
-                                                                msg_uuid.into(),
+                                                                msg_uuid,
                                                             )
                                                         })
                                                         .await;
@@ -1624,7 +1627,7 @@ pub async fn generate_chat_response(
                 max_tokens: gen_max_output_tokens,
                 session_id,
                 user_id: user_id_value,
-                character_name: Some(character_db_model.name.clone()),
+                character_name: character_db_model.name.clone(),
                 user_dek: session_dek_arc.clone(),
             };
 
@@ -2198,7 +2201,7 @@ pub async fn generate_chat_response(
                     enable_code_execution: gen_enable_code_execution,
                     request_thinking,
                     user_dek: dek_for_fallback_stream_service,
-                    character_name: Some(character_db_model.name.clone()),
+                    character_name: character_db_model.name.clone(),
                     player_chronicle_id,
                     variant_of: payload.variant_of,
                     #[cfg(feature = "payment")]
@@ -2246,7 +2249,7 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
-                                                _assistant_message_id = Some(msg_uuid.into());
+                                                _assistant_message_id = Some(msg_uuid);
                                             }
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,
@@ -2800,8 +2803,8 @@ async fn create_message_variant_handler(
             .unwrap_or_else(|| crate::db::Json(serde_json::json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: None,
-        prompt_tokens: updated_message.prompt_tokens.map(|t| t as i64),
-        completion_tokens: updated_message.completion_tokens.map(|t| t as i64),
+        prompt_tokens: updated_message.prompt_tokens,
+        completion_tokens: updated_message.completion_tokens,
         model_name: Some(updated_message.model_name.clone()),
         game_state: None,
         status: updated_message.status,
@@ -2914,7 +2917,6 @@ pub async fn generate_suggested_actions(
                 .filter(chat_sessions::id.eq(session_id))
                 .select(chat_sessions::user_id)
                 .first::<crate::db::DbId>(conn)
-                .map_err(Into::into)
         })
         .await
         .map_err(|e| {
@@ -3007,21 +3009,23 @@ pub async fn generate_suggested_actions(
     let conn = crate::db::get_conn(&state_arc.pool).await?;
     #[cfg(feature = "sqlite-backend")]
     let mut conn = crate::db::get_conn(&state_arc.pool).await?;
-    let character_db_model = conn
+    let character_db_model: Character = conn
         .interact(move |conn| {
             app_schema::characters::table
                 .filter(app_schema::characters::id.eq(char_id))
                 .filter(app_schema::characters::user_id.eq(user_id)) // Ensure user owns character
-                .first::<Character>(conn)
-                .map_err(AppError::from)
+                .select(Character::as_select())
+                .first(conn)
+                .optional()
         })
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??; // Unwrap the Result from the query
+        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {e}")))??
+        .ok_or_else(|| AppError::NotFound(format!("Character {} not found", char_id)))?; // Unwrap the Result from the query
 
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
         user_id: character_db_model.user_id,
-        name: character_db_model.name.clone(),
+        name: character_db_model.name.clone().unwrap_or_default(),
         description: character_db_model.description.clone(),
         description_nonce: character_db_model.description_nonce.clone(),
         personality: character_db_model.personality.clone(),
@@ -3033,8 +3037,12 @@ pub async fn generate_suggested_actions(
         creator_comment: character_db_model.creator_comment.clone(),
         creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
         first_mes: character_db_model.first_mes.clone(),
-        created_at: character_db_model.created_at,
-        updated_at: character_db_model.updated_at,
+        created_at: character_db_model
+            .created_at
+            .unwrap_or_else(crate::db::DbTimestamp::now),
+        updated_at: character_db_model
+            .updated_at
+            .unwrap_or_else(crate::db::DbTimestamp::now),
     };
 
     // Construct context for the suggestion prompt
@@ -3655,11 +3663,20 @@ pub async fn expand_text_handler(
         presence_penalty: session_data.presence_penalty,
         top_k: session_data.top_k,
         top_p: session_data.top_p,
+        #[cfg(feature = "postgres-backend")]
+        stop_sequences: Some(
+            session_data
+                .stop_sequences
+                .0
+                .iter()
+                .flatten()
+                .cloned()
+                .collect(),
+        ),
+        #[cfg(feature = "sqlite-backend")]
         stop_sequences: session_data
             .stop_sequences
-            .0
-            .as_ref()
-            .map(|v| v.iter().flatten().cloned().collect()),
+            .map(|arr| arr.0.iter().flatten().cloned().collect()),
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
@@ -4002,23 +4019,32 @@ pub async fn impersonate_handler(
         system_prompt: Some(impersonation_system_prompt),
         temperature: session_data
             .temperature
-            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::from(v))),
         max_output_tokens: session_data.max_output_tokens,
         frequency_penalty: session_data
             .frequency_penalty
-            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::from(v))),
         presence_penalty: session_data
             .presence_penalty
-            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::from(v))),
         top_k: session_data.top_k,
         top_p: session_data
             .top_p
-            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::try_from(v).unwrap())),
+            .map(|v| crate::db::DbDecimal(bigdecimal::BigDecimal::from(v))),
+        #[cfg(feature = "postgres-backend")]
+        stop_sequences: Some(
+            session_data
+                .stop_sequences
+                .0
+                .iter()
+                .flatten()
+                .cloned()
+                .collect(),
+        ),
+        #[cfg(feature = "sqlite-backend")]
         stop_sequences: session_data
             .stop_sequences
-            .0
-            .as_ref()
-            .map(|v| v.iter().flatten().cloned().collect()),
+            .map(|arr| arr.0.iter().flatten().cloned().collect()),
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
@@ -4179,7 +4205,7 @@ async fn select_message_variant_handler(
         message_id,
         payload.variant_index,
         user.id,
-        &dek,
+        dek,
     )
     .await?;
 

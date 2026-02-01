@@ -19,7 +19,10 @@ use diesel::sql_types::Text;
 /// Stores any serializable type T as JSON in the database.
 /// Provides Deref/DerefMut for ergonomic access to the inner value.
 #[derive(Clone, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow))]
+#[cfg_attr(
+    feature = "postgres-backend",
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
 #[cfg_attr(feature = "postgres-backend", diesel(sql_type = Jsonb))]
 #[cfg_attr(
     all(feature = "sqlite-backend", not(feature = "postgres-backend")),
@@ -111,7 +114,7 @@ mod pg_impl {
         pg::{Pg, PgValue},
         serialize::{self, IsNull, Output, ToSql},
         sql_types::Text,
-        NullableExpressionMethods,
+        // NullableExpressionMethods,
     };
     use std::io::Write;
 
@@ -165,55 +168,6 @@ mod pg_impl {
             Ok(IsNull::No)
         }
     }
-
-    // Manual trait implementations for Diesel Expression support
-    impl<T> diesel::expression::Expression for Json<T> {
-        type SqlType = Jsonb;
-    }
-
-    impl<T, GB> diesel::expression::ValidGrouping<GB> for Json<T> {
-        type IsAggregate = diesel::expression::is_aggregate::No;
-    }
-
-    impl<T: 'static> diesel::query_builder::QueryId for Json<T> {
-        type QueryId = Self;
-        const HAS_STATIC_QUERY_ID: bool = false;
-    }
-
-    impl<T, QS> diesel::expression::AppearsOnTable<QS> for Json<T> where Self: diesel::Expression {}
-
-    impl<T> diesel::query_builder::QueryFragment<Pg> for Json<T>
-    where
-        T: Serialize + std::fmt::Debug,
-    {
-        fn walk_ast<'b>(
-            &'b self,
-            mut pass: diesel::query_builder::AstPass<'_, 'b, Pg>,
-        ) -> diesel::QueryResult<()> {
-            pass.push_bind_param::<Jsonb, _>(self)?;
-            Ok(())
-        }
-    }
-
-    impl<T> diesel::expression::AsExpression<diesel::sql_types::Nullable<Jsonb>> for Json<T>
-    where
-        T: Serialize + std::fmt::Debug,
-    {
-        type Expression = diesel::dsl::Nullable<diesel::helper_types::AsExprOf<Self, Jsonb>>;
-        fn as_expression(self) -> Self::Expression {
-            diesel::expression::AsExpression::<Jsonb>::as_expression(self).nullable()
-        }
-    }
-
-    impl<'a, T> diesel::expression::AsExpression<diesel::sql_types::Nullable<Jsonb>> for &'a Json<T>
-    where
-        T: Serialize + std::fmt::Debug,
-    {
-        type Expression = diesel::dsl::Nullable<diesel::helper_types::AsExprOf<Self, Jsonb>>;
-        fn as_expression(self) -> Self::Expression {
-            diesel::expression::AsExpression::<Jsonb>::as_expression(self).nullable()
-        }
-    }
 }
 
 // ============================================================================
@@ -231,18 +185,6 @@ mod sqlite_impl {
     };
 
     impl<T> FromSql<Text, Sqlite> for Json<T>
-    where
-        T: DeserializeOwned,
-    {
-        fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-            let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-            let value = serde_json::from_str(&text)
-                .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
-            Ok(Json(value))
-        }
-    }
-
-    impl<T> FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for Json<T>
     where
         T: DeserializeOwned,
     {

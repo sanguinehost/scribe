@@ -131,7 +131,7 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10, None)
+        .retrieve_points(Some(filter), 10, None, None)
         .await?;
 
     // Verify we got results
@@ -404,7 +404,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10, None)
+        .retrieve_points(Some(filter), 10, None, None)
         .await?;
 
     // Verify we got results

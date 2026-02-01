@@ -4,6 +4,7 @@ use scribe_backend::models::lorebook_dtos::{
 };
 use scribe_backend::test_helpers::{spawn_app, TestDataGuard};
 
+#[cfg(feature = "remote-vector")]
 #[tokio::test]
 async fn test_delete_lorebook_entry_cleans_up_qdrant() {
     // 1. Setup app with mock Qdrant

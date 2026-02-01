@@ -236,7 +236,7 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         created_char.tags,
-        scribe_backend::db::DbStringArray(Some(vec![])),
+        scribe_backend::db::unified_types::DbStringArray::empty(),
         "Tags should default to Some(vec![])"
     );
     assert_eq!(
@@ -429,11 +429,11 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         created_char.tags,
-        scribe_backend::models::OptionalStringArray(Some(vec![
+        scribe_backend::models::OptionalStringArray::from_vec(vec![
             Some("test".to_string()),
             Some("api".to_string()),
             Some("manual_creation".to_string())
-        ]))
+        ])
     );
     assert_eq!(created_char.creator.as_deref(), Some("API Tester"));
     assert_eq!(created_char.character_version.as_deref(), Some("1.0.0"));

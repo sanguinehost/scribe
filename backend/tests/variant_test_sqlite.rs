@@ -20,7 +20,10 @@ use scribe_backend::{
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
-        chats::{Chat, Message as DbChatMessage, MessageRole, NewChatMessage, NewMessageVariant},
+        chats::{
+            Chat, DbInsertableChatMessage, Message as DbChatMessage, MessageRole, NewChatMessage,
+            NewMessageVariant,
+        },
     },
     schema::{characters, chat_messages, chat_sessions, message_variants},
     test_helpers,
@@ -174,35 +177,15 @@ async fn create_test_message(
     let (encrypted_content, content_nonce) =
         crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
-    let msg_id = DbId::new();
-    let new_message = NewChatMessage {
-        id: msg_id.clone(),
+    let new_message = DbInsertableChatMessage::new(
         session_id,
         user_id,
-        message_type: role.clone(),
-        content: encrypted_content,
-        content_nonce: Some(content_nonce),
-        role: Some(role.to_string()),
-        parts: None,
-        attachments: None,
-        created_at: DbTimestamp::now(),
-        updated_at: DbTimestamp::now(),
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None,
-        raw_prompt_nonce: None,
-        model_name: "gemini-1.5-pro".to_string(),
-        status: "completed".to_string(),
-        variant_count: 0,
-        current_variant_index: 0,
-        credits_charged: 0,
-        credits_cost: 0.0,
-        actual_cost: 0.0,
-        modified_cost: 0.0,
-        credit_cost: 0,
-        actual_charge: 0.0,
-        game_time: None,
-    };
+        role.clone(),
+        encrypted_content,
+        Some(content_nonce),
+        "gemini-1.5-pro".to_string(),
+    );
+    let msg_id = new_message.id.clone();
 
     diesel::insert_into(chat_messages::table)
         .values(&new_message)
@@ -235,9 +218,6 @@ async fn create_message_variant_with_raw_prompt(
         variant_content,
         user_id,
         session_dek,
-        None,
-        None,
-        Some("gemini-1.5-pro".to_string()),
         Some(raw_prompt),
         None,
     )?;

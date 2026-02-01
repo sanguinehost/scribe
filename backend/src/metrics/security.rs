@@ -229,10 +229,13 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let webhook_metric = metric_families
             .iter()
-            .find(|m| m.name() == "webhook_signature_failures_total")
+            .find(|m| m.get_name() == "webhook_signature_failures_total")
             .expect("Webhook metric should exist");
 
-        assert_eq!(webhook_metric.get_metric()[0].get_counter().value(), 2.0);
+        assert_eq!(
+            webhook_metric.get_metric()[0].get_counter().get_value(),
+            2.0
+        );
     }
 
     #[test]
@@ -245,7 +248,7 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let auth_metric = metric_families
             .iter()
-            .find(|m| m.name() == "auth_failures_total")
+            .find(|m| m.get_name() == "auth_failures_total")
             .expect("Auth failure metric should exist");
 
         // Should have 2 distinct label combinations
@@ -262,7 +265,7 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let credit_metric = metric_families
             .iter()
-            .find(|m| m.name() == "credit_operations_amount")
+            .find(|m| m.get_name() == "credit_operations_amount")
             .expect("Credit operation metric should exist");
 
         // Should have 2 distinct label combinations (add, deduct)
@@ -279,16 +282,16 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let auth_metric = metric_families
             .iter()
-            .find(|m| m.name() == "auth_failures_total")
+            .find(|m| m.get_name() == "auth_failures_total")
             .unwrap();
 
         let labels = &auth_metric.get_metric()[0].get_label();
-        let user_hash_label = labels.iter().find(|l| l.name() == "user_hash").unwrap();
+        let user_hash_label = labels.iter().find(|l| l.get_name() == "user_hash").unwrap();
 
         // Should start with "user#" prefix (hashed ID format)
-        assert!(user_hash_label.value().starts_with("user#"));
+        assert!(user_hash_label.get_value().starts_with("user#"));
 
         // Should NOT be a valid UUID (raw PII)
-        assert!(!user_hash_label.value().contains('-')); // UUIDs have hyphens
+        assert!(!user_hash_label.get_value().contains('-')); // UUIDs have hyphens
     }
 }

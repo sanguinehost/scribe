@@ -956,7 +956,14 @@ impl AppError {
         };
 
         error!("{}", log_msg);
-        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+
+        let final_user_msg = if cfg!(feature = "desktop") {
+            format!("{}: {}", user_msg, log_msg)
+        } else {
+            user_msg.to_string()
+        };
+
+        (StatusCode::INTERNAL_SERVER_ERROR, final_user_msg)
     }
 
     fn handle_crypto_error(app_error: Self) -> (StatusCode, String) {
@@ -1553,9 +1560,9 @@ mod tests {
         // Use the conceptual test path
         let error = AppError::AiError("Simulated AI error".to_string());
         let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI service error");
+        assert_eq!(body["error"], "AI service request failed");
     }
 
     #[tokio::test]

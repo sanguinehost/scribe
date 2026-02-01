@@ -24,12 +24,38 @@
 
 set -euo pipefail
 
-# Configure local sentencepiece build
-export PKG_CONFIG_PATH="/home/socol/Workspace/sentencepiece/build:${PKG_CONFIG_PATH:-}"
-export LD_LIBRARY_PATH="/home/socol/Workspace/sentencepiece/build/src:${LD_LIBRARY_PATH:-}"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Helper functions
+log_info() {
+    echo -e "${BLUE}==> $1${NC}"
+}
+
+log_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+log_error() {
+    echo -e "${RED}ERROR: $1${NC}"
+}
+
+log_warn() {
+    echo -e "${YELLOW}WARNING: $1${NC}"
+}
 
 # Disable aws-lc-sys assembly optimizations to avoid assembler compatibility issues
 export AWS_LC_SYS_NO_ASM=1
+
+# Use stable protoc if systems one is broken
+if [ -z "${PROTOC:-}" ] && [ -f "/tmp/protoc_stable/bin/protoc" ]; then
+    export PROTOC="/tmp/protoc_stable/bin/protoc"
+    log_info "Using local stable protoc: $PROTOC"
+fi
 
 # Parse command line flags
 CLEAN_BUILD=false
@@ -78,28 +104,7 @@ for arg in "$@"; do
 done
 
 # Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
 
-# Helper functions
-log_info() {
-    echo -e "${BLUE}==> $1${NC}"
-}
-
-log_success() {
-    echo -e "${GREEN}✓ $1${NC}"
-}
-
-log_error() {
-    echo -e "${RED}ERROR: $1${NC}"
-}
-
-log_warn() {
-    echo -e "${YELLOW}WARNING: $1${NC}"
-}
 
 # Determine project root
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

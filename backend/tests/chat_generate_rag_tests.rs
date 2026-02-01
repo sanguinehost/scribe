@@ -7,12 +7,8 @@ use axum::{
     http::{header, Method, Request, StatusCode}, // Keep for other requests if any still use oneshot
 };
 use chrono::Utc;
-use genai::{
-    adapter::AdapterKind,
-    chat::{ChatResponse, MessageContent, Usage},
-    ModelIden,
-};
 use http_body_util::BodyExt;
+use scribe_backend::llm::RigChatResponse;
 use serde_json::Value;
 use std::time::Duration;
 use tower::ServiceExt; // Keep for other requests if any still use oneshot
@@ -139,7 +135,7 @@ The chunking process also preserves metadata about the source document, position
                     sharing_visibility: None,
                     status: None,
                     system_prompt_visibility: None,
-                    system_tags: scribe_backend::models::OptionalStringArray(None),
+                    system_tags: scribe_backend::db::unified_types::DbStringArray::none(),
                     usage_hints: None,
                     user_persona: None,
                     user_persona_visibility: None,
@@ -161,13 +157,13 @@ The chunking process also preserves metadata about the source document, position
                     user_persona_nonce: None,
                     post_history_instructions: None,
                     post_history_instructions_nonce: None,
-                    tags: scribe_backend::models::OptionalStringArray(None),
+                    tags: scribe_backend::db::unified_types::DbStringArray::none(),
                     creator: None,
-                    alternate_greetings: scribe_backend::models::OptionalStringArray(None),
+                    alternate_greetings: scribe_backend::db::unified_types::DbStringArray::none(),
                     nickname: None,
                     creator_notes_multilingual: None,
-                    source: scribe_backend::models::OptionalStringArray(None),
-                    group_only_greetings: scribe_backend::models::OptionalStringArray(None),
+                    source: scribe_backend::db::unified_types::DbStringArray::none(),
+                    group_only_greetings: scribe_backend::db::unified_types::DbStringArray::none(),
                     creation_date: None,
                     modification_date: None,
                     persona: None,
@@ -230,7 +226,7 @@ async fn create_test_chat_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray(None),
+                stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
                 chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 thinking_budget: None,
                 enable_code_execution: None,
@@ -373,13 +369,12 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     // Mock the AI response
     let mock_ai_content = "Response to trigger embedding.";
-    let mock_response = ChatResponse {
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        content: MessageContent::from(mock_ai_content.to_string()),
+    let mock_response = RigChatResponse {
+        content: mock_ai_content.to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: Usage::default(),
-        captured_raw_body: None,
     };
     test_app
         .mock_ai_client
@@ -710,7 +705,7 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::db::DbStringArray(None),
+                stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
                 chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 thinking_budget: None,
                 enable_code_execution: None,
@@ -775,16 +770,12 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
             Ok(vec![mock_retrieved_chunk.clone()]), // Clone here
         ]);
 
-    let mock_ai_response = ChatResponse {
-        model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-rag-model"),
-        provider_model_iden: genai::ModelIden::new(
-            genai::adapter::AdapterKind::Gemini,
-            "mock-rag-model",
-        ),
-        content: genai::chat::MessageContent::from("Mock AI response to RAG query".to_string()),
+    let mock_ai_response = RigChatResponse {
+        content: "Mock AI response to RAG query".to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: genai::chat::Usage::default(),
-        captured_raw_body: None,
     };
     test_app
         .mock_ai_client
@@ -870,12 +861,12 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     println!(
         "Checking AI request contents. System prompt: {:?}",
-        last_ai_request.system
+        last_ai_request.preamble
     );
 
     // Verify system prompt contains key elements for RAG functionality (not exact string match)
     let system_prompt = last_ai_request
-        .system
+        .preamble
         .as_ref()
         .expect("System prompt should be present");
 
@@ -925,19 +916,24 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
 
     // Verify user message contains the query (without RAG context, which is now in system prompt)
     let last_user_message_in_ai_request = last_ai_request
-        .messages
+        .history
         .iter()
-        .find(|m| matches!(m.role, genai::chat::ChatRole::User))
+        .find(|m| matches!(m, rig::message::Message::User { .. }))
         .expect("No user message found in AI request");
 
-    if let Some(user_content) = last_user_message_in_ai_request.content.first_text() {
+    if let rig::message::Message::User { content } = last_user_message_in_ai_request {
+        let user_content = match content.iter().next() {
+            Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+            _ => None,
+        }
+        .expect("Expected text content");
         assert!(
             user_content.contains(query_text),
             "User message content should contain the original query. Expected to find: '{query_text}'. Got: '{user_content}'"
         );
         println!("Verified user query in user message: {user_content}");
     } else {
-        panic!("Expected user message to be text content");
+        panic!("Expected user message to be user message");
     }
 
     Ok(())
@@ -1046,7 +1042,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::db::DbStringArray(None),
+                stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
                 chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 thinking_budget: None,
                 enable_code_execution: None,
@@ -1095,13 +1091,12 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
         ))]);
 
     let mock_ai_content = "Response without RAG context.";
-    let mock_response = ChatResponse {
-        content: genai::chat::MessageContent::from(mock_ai_content.to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: mock_ai_content.to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: Usage::default(),
-        captured_raw_body: None,
     };
     test_app
         .mock_ai_client
@@ -1151,7 +1146,7 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
     // The system prompt should be present and contain key elements for RAG functionality,
     // even if RAG retrieval fails (graceful degradation)
     let system_prompt = last_ai_request
-        .system
+        .preamble
         .as_ref()
         .expect("System prompt should be present");
 
@@ -1349,7 +1344,7 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::db::DbStringArray(None),
+                stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
                 chat_mode: scribe_backend::models::chats::ChatMode::Character,
                 thinking_budget: None,
                 enable_code_execution: None,
@@ -1388,13 +1383,12 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
         })?; // Handles diesel::result::Error
 
     let mock_ai_content = "Response to trigger embedding.";
-    let mock_response = ChatResponse {
-        content: MessageContent::from(mock_ai_content.to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: mock_ai_content.to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: Usage::default(),
-        captured_raw_body: None,
     };
     if let Some(mock_client) = &test_app.mock_ai_client {
         mock_client.set_response(Ok(mock_response));
@@ -1511,13 +1505,12 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
 async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?; // Use mock AI
 
-    let mock_response = genai::chat::ChatResponse {
-        content: MessageContent::from("Mock AI response to RAG query".to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: "Mock AI response to RAG query".to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: genai::chat::Usage::default(),
-        captured_raw_body: None,
     };
     context
         .app
@@ -1606,7 +1599,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     // Let's check prompt_builder.rs: if relevant_chunks is empty, rag_prompt_parts is empty.
     // Verify system prompt has expected structure and content for RAG functionality
     let system_prompt = last_ai_request
-        .system
+        .preamble
         .as_ref()
         .expect("System prompt should be present");
 
@@ -1625,13 +1618,18 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     );
 
     let last_user_message_in_ai_request = last_ai_request
-        .messages
+        .history
         .iter()
-        .filter(|m| matches!(m.role, genai::chat::ChatRole::User))
+        .filter(|m| matches!(m, rig::message::Message::User { .. }))
         .next_back()
         .expect("No user message found in AI request");
 
-    if let Some(text_content) = last_user_message_in_ai_request.content.first_text() {
+    if let rig::message::Message::User { content } = last_user_message_in_ai_request {
+        let text_content = match content.iter().next() {
+            Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+            _ => None,
+        }
+        .expect("Expected text content");
         assert!(
             text_content.contains(&user_query),
             "User message should contain the original query. Expected to find: '{}', Got: '{}'",
@@ -1639,7 +1637,7 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
             text_content
         );
     } else {
-        panic!("Expected last user message to be text content");
+        panic!("Expected last user message to be user message");
     }
     Ok(())
 }
@@ -1649,13 +1647,12 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
 async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
-    let mock_response = genai::chat::ChatResponse {
-        content: MessageContent::from("Mock AI response to RAG query".to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: "Mock AI response to RAG query".to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: genai::chat::Usage::default(),
-        captured_raw_body: None,
     };
     context
         .app
@@ -1740,7 +1737,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
     // System prompt should be the new RAG prompt format
     // Verify system prompt contains key elements for RAG functionality (not exact string match)
     let system_prompt = last_ai_request
-        .system
+        .preamble
         .as_ref()
         .expect("System prompt should be present");
 
@@ -1755,13 +1752,18 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
     );
 
     let last_user_message_in_ai_request = last_ai_request
-        .messages
+        .history
         .iter()
-        .filter(|m| matches!(m.role, genai::chat::ChatRole::User))
+        .filter(|m| matches!(m, rig::message::Message::User { .. }))
         .next_back()
         .expect("No user message found in AI request");
 
-    if let Some(text_content) = last_user_message_in_ai_request.content.first_text() {
+    if let rig::message::Message::User { content } = last_user_message_in_ai_request {
+        let text_content = match content.iter().next() {
+            Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+            _ => None,
+        }
+        .expect("Expected text content");
         assert!(
             text_content.contains(&user_query_empty_hist),
             "User message should contain the original query. Expected to find: '{}', Got: '{}'",
@@ -1769,7 +1771,7 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
             text_content
         );
     } else {
-        panic!("Expected last user message to be text content");
+        panic!("Expected last user message to be user message");
     }
     Ok(())
 }
@@ -1779,13 +1781,12 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
 async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
-    let mock_response = genai::chat::ChatResponse {
-        content: MessageContent::from("Mock AI response to RAG query".to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: "Mock AI response to RAG query".to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: genai::chat::Usage::default(),
-        captured_raw_body: None,
     };
     context
         .app
@@ -1867,7 +1868,7 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
     // System prompt should be the new RAG prompt format
     // Verify system prompt contains key elements for RAG functionality (not exact string match)
     let system_prompt = last_ai_request
-        .system
+        .preamble
         .as_ref()
         .expect("System prompt should be present");
 
@@ -1882,27 +1883,26 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
     );
 
     let last_user_message_in_ai_request = last_ai_request
-        .messages
+        .history
         .iter()
-        .filter(|m| matches!(m.role, genai::chat::ChatRole::User))
+        .filter(|m| matches!(m, rig::message::Message::User { .. }))
         .next_back()
         .expect("No user message found in AI request");
 
-    let text_content = last_user_message_in_ai_request
-        .content
-        .texts()
-        .first()
-        .copied()
-        .unwrap_or_default();
-    if !text_content.is_empty() {
+    if let rig::message::Message::User { content } = last_user_message_in_ai_request {
+        let text_content = match content.iter().next() {
+            Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+            _ => None,
+        }
+        .expect("Expected text content");
         assert!(
             text_content.contains(&user_query_no_chunks),
             "User message should contain the original query. Expected to find: '{}', Got: '{}'",
             user_query_no_chunks,
             text_content
-        ); // AI should still be called with original user query
+        );
     } else {
-        panic!("Expected last user message to be text content");
+        panic!("Expected last user message to be user message");
     }
     Ok(())
 }
@@ -1911,14 +1911,12 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
 async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?;
 
-    let mock_response = genai::chat::ChatResponse {
-        /* ... */
-        content: MessageContent::from_text("Mock AI response to RAG query".to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: "Mock AI response to RAG query".to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: genai::chat::Usage::default(),
-        captured_raw_body: None,
     };
     context
         .app
@@ -1930,13 +1928,13 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
     // This test relies on setup_test_data to have called the /generate endpoint once.
     // The options recorded by the mock AI client would be from that initial call.
     // If session settings were applied, they would have been from the character or defaults.
-    let last_options = context
+    let _last_request = context
         .app
         .mock_ai_client
         .as_ref()
         .expect("Mock client required")
-        .get_last_options();
-    println!("Last options: {last_options:?}");
+        .get_last_request();
+    println!("Last request: {_last_request:?}");
 
     // The tests are failing because the mock client is not capturing the ChatOptions correctly.
     // The option parameters are not being passed to the mock client.
@@ -1952,14 +1950,12 @@ async fn generate_chat_response_rag_uses_session_settings() -> anyhow::Result<()
 async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> anyhow::Result<()> {
     let context = setup_test_data(false).await?; // This already creates a session and character
 
-    let mock_response = genai::chat::ChatResponse {
-        /* ... */
-        content: MessageContent::from_text("Mock AI response to RAG query".to_string()),
-        model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
-        provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash"),
+    let mock_response = RigChatResponse {
+        content: "Mock AI response to RAG query".to_string(),
+        prompt_tokens: Some(10),
+        completion_tokens: Some(10),
+        total_tokens: Some(20),
         reasoning_content: None,
-        usage: genai::chat::Usage::default(),
-        captured_raw_body: None,
     };
     context
         .app
@@ -2014,13 +2010,13 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
     let _response = context.app.router.clone().oneshot(request).await?;
     // assert_eq!(response.status(), StatusCode::OK); // Already checked in setup
 
-    let last_options = context
+    let _last_request = context
         .app
         .mock_ai_client
         .as_ref()
         .expect("Mock client required")
-        .get_last_options();
-    println!("Last options: {last_options:?}");
+        .get_last_request();
+    println!("Last request: {_last_request:?}");
 
     // The tests are failing because the mock client is not capturing the ChatOptions correctly.
     // The option parameters are not being passed to the mock client.

@@ -17,6 +17,20 @@ cargo run --bin scribe-backend
 
 ### Backend Development
 
+> [!IMPORTANT]
+> **Command Output Handling**
+>
+> When running long-running commands like `cargo test`, `cargo check`, or `cargo build`, **always pipe output to a file in `/tmp/`** instead of using `tail` or `head`. This ensures the full output is available for review.
+>
+> ```bash
+> # Good - full output preserved
+> cargo test 2>&1 | tee /tmp/test-output.log
+> cargo check 2>&1 | tee /tmp/check-output.log
+>
+> # Bad - loses important output
+> cargo test 2>&1 | tail -n 50
+> ```
+
 
 ```bash
 # Build and run backend

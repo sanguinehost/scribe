@@ -248,6 +248,7 @@ impl CreditService {
         Ok(result)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_credits(
         &self,
         conn: &mut PgConnection,
@@ -880,7 +881,7 @@ impl CreditService {
         let refund_transaction = NewCreditTransaction {
             id: DbId::new(),
             user_id,
-            amount: refund_amount as i32, // Positive for refunds
+            amount: refund_amount, // Positive for refunds
             balance_after: updated_balance.balance,
             transaction_type: "refund".to_string(),
             description_encrypted: encrypted_data.description_encrypted,

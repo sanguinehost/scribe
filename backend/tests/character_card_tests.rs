@@ -205,14 +205,14 @@ fn test_from_parsed_card_v2_with_collections() {
     assert_eq!(new_char.spec_version, "2.0");
     assert_eq!(
         new_char.tags,
-        scribe_backend::models::OptionalStringArray(Some(vec![
+        scribe_backend::models::OptionalStringArray::from_vec(vec![
             Some("tag1".to_string()),
             Some("tag2".to_string())
-        ]))
+        ])
     );
     assert_eq!(
         new_char.alternate_greetings,
-        scribe_backend::models::OptionalStringArray(Some(vec![Some("hi".to_string())]))
+        scribe_backend::models::OptionalStringArray::from_vec(vec![Some("hi".to_string())])
     );
     assert_eq!(new_char.description, Some(b"A description".to_vec()));
 }
@@ -286,11 +286,11 @@ fn test_from_parsed_card_v3() {
     );
     assert_eq!(
         new_char.tags,
-        scribe_backend::models::OptionalStringArray(Some(vec![Some("v3tag".to_string())]))
+        scribe_backend::models::OptionalStringArray::from_vec(vec![Some("v3tag".to_string())])
     );
     assert_eq!(
         new_char.alternate_greetings,
-        scribe_backend::models::OptionalStringArray(Some(vec![Some("v3greet".to_string())]))
+        scribe_backend::models::OptionalStringArray::from_vec(vec![Some("v3greet".to_string())])
     );
     assert_eq!(new_char.creator, Some(data_v3.creator));
     assert_eq!(new_char.character_version, Some(data_v3.character_version));

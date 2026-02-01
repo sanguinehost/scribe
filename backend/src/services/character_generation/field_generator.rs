@@ -2,7 +2,7 @@ use rig::message::Message as RigMessage;
 use rig::one_or_many::OneOrMany;
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 use crate::{
     errors::AppError,
@@ -1088,14 +1088,14 @@ Show different scenarios, moods, or personality aspects."#
                 CharacterField::SystemPrompt | CharacterField::DepthPrompt => Some(8000), // Medium thinking for technical fields
                 _ => None, // No reasoning for simple fields
             },
-            capture_reasoning_content: match &request.field {
+            capture_reasoning_content: matches!(
+                &request.field,
                 CharacterField::AlternateGreeting
-                | CharacterField::Description
-                | CharacterField::Personality
-                | CharacterField::SystemPrompt
-                | CharacterField::DepthPrompt => true,
-                _ => false,
-            },
+                    | CharacterField::Description
+                    | CharacterField::Personality
+                    | CharacterField::SystemPrompt
+                    | CharacterField::DepthPrompt
+            ),
             safety_settings: Some(create_unrestricted_safety_settings()),
             ..Default::default()
         };
@@ -1136,19 +1136,18 @@ Show different scenarios, moods, or personality aspects."#
                     );
 
                     // Check if it's a safety filter error
-                    if error_str.contains("PropertyNotFound(\"/content/parts\")")
+                    if (error_str.contains("PropertyNotFound(\"/content/parts\")")
                         || error_str.contains("safety")
-                        || error_str.contains("blocked")
+                        || error_str.contains("blocked"))
+                        && retry_count < MAX_RETRIES
                     {
-                        if retry_count < MAX_RETRIES {
-                            // Try again with enhanced prompt
-                            debug!("Retrying with enhanced prompt due to safety filter");
-                            last_error = Some(AppError::AiError(
-                                "Request blocked by safety filters, retrying with enhanced prompt"
-                                    .to_string(),
-                            ));
-                            continue;
-                        }
+                        // Try again with enhanced prompt
+                        warn!("Retrying character generation due to model block: {error_str}");
+                        last_error = Some(AppError::AiError(
+                            "Request blocked by safety filters, retrying with enhanced prompt"
+                                .to_string(),
+                        ));
+                        continue;
                     }
 
                     // Non-safety error or final retry failed
@@ -1339,7 +1338,7 @@ Provide a detailed analysis including:
         // Generate using the LLM with structured output
         let generated_output = self
             .generate_with_structured_output(
-                &system_prompt,
+                system_prompt,
                 &messages,
                 &get_style_analysis_schema(),
                 &dummy_request,

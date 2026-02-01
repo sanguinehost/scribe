@@ -16,12 +16,12 @@ use std::time::Instant;
 use tracing::{debug, info, warn};
 
 use crate::{
-    crypto,
-    errors::AppError,
-    services::cognitive::RecallPipeline,
-    services::{agentic::narrative_tools::SearchKnowledgeBaseTool, ChronicleService},
+    crypto, errors::AppError, services::cognitive::RecallPipeline, services::ChronicleService,
     AppState,
 };
+
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+use crate::services::agentic::narrative_tools::SearchKnowledgeBaseTool;
 use secrecy::SecretBox;
 
 use super::tools::ScribeTool;
@@ -89,6 +89,7 @@ pub struct ToolCall {
 /// The lightweight context enrichment agent
 pub struct ContextEnrichmentAgent {
     state: Arc<AppState>,
+    #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
     search_tool: Arc<SearchKnowledgeBaseTool>,
     recall_pipeline: Arc<RecallPipeline>,
     _chronicle_service: Arc<ChronicleService>,
@@ -99,12 +100,15 @@ impl ContextEnrichmentAgent {
     /// Create a new context enrichment agent
     pub fn new(
         state: Arc<AppState>,
-        search_tool: Arc<SearchKnowledgeBaseTool>,
+        #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))] search_tool: Arc<
+            SearchKnowledgeBaseTool,
+        >,
         recall_pipeline: Arc<RecallPipeline>,
         chronicle_service: Arc<ChronicleService>,
     ) -> Self {
         Self {
             state,
+            #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
             search_tool,
             recall_pipeline,
             _chronicle_service: chronicle_service,
@@ -113,6 +117,7 @@ impl ContextEnrichmentAgent {
     }
 
     /// Main entry point: Enrich context for a chat session
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich_context(
         &self,
         session_id: crate::db::DbId,
@@ -148,6 +153,7 @@ impl ContextEnrichmentAgent {
             .await?;
 
         // Try to execute the enrichment, handling errors gracefully
+        #[allow(clippy::type_complexity)]
         let result: Result<
             (
                 String,
@@ -216,6 +222,7 @@ impl ContextEnrichmentAgent {
 
             // Step 2: Execute searches
             let mut all_search_results = Vec::new();
+            #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
             for search in &planned_searches {
                 let step_start = Instant::now();
 
@@ -692,6 +699,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     }
 
     /// Step 2: Execute a single search
+    #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+    #[allow(clippy::too_many_arguments)]
     async fn execute_search(
         &self,
         search: &PlannedSearch,
@@ -1076,6 +1085,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     }
 
     /// Update an existing analysis with results
+    #[allow(clippy::too_many_arguments)]
     async fn update_analysis(
         &self,
         analysis_id: crate::db::DbId,
@@ -1096,7 +1106,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
 
         // Convert planned searches to JSON (Value for PostgreSQL, String for SQLite)
         #[cfg(feature = "postgres-backend")]
-        let planned_searches_json = serde_json::to_value(&planned_searches)?;
+        let planned_searches_json = serde_json::to_value(planned_searches)?;
 
         #[cfg(feature = "sqlite-backend")]
         let planned_searches_json = serde_json::to_string(&planned_searches)?;

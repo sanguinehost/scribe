@@ -179,14 +179,14 @@ async fn create_chat_session_with_messages(
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: scribe_backend::models::OptionalStringArray(None),
+        tags: scribe_backend::db::unified_types::DbStringArray::none(),
         creator: None,
         character_version: None,
-        alternate_greetings: scribe_backend::models::OptionalStringArray(None),
+        alternate_greetings: scribe_backend::db::unified_types::DbStringArray::none(),
         nickname: None,
         creator_notes_multilingual: None,
-        source: scribe_backend::models::OptionalStringArray(None),
-        group_only_greetings: scribe_backend::models::OptionalStringArray(None),
+        source: scribe_backend::db::unified_types::DbStringArray::none(),
+        group_only_greetings: scribe_backend::db::unified_types::DbStringArray::none(),
         creation_date: None,
         modification_date: None,
         created_at: chrono::Utc::now().into(),
@@ -219,7 +219,7 @@ async fn create_chat_session_with_messages(
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: scribe_backend::models::OptionalStringArray(None),
+        system_tags: scribe_backend::db::unified_types::DbStringArray::none(),
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -296,7 +296,7 @@ async fn create_chat_session_with_messages(
             BigDecimal::from_str("0.9").unwrap(),
         )),
         seed: Some(42),
-        stop_sequences: scribe_backend::models::OptionalStringArray(None),
+        stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
         thinking_budget: Some(1000),
         enable_code_execution: Some(false),
         system_prompt_ciphertext: None,
@@ -348,33 +348,18 @@ async fn create_chat_session_with_messages(
         // Encrypt the content (in real app this would use proper encryption)
         let content_bytes = content.as_bytes().to_vec();
 
-        let message = DbInsertableChatMessage {
-            rag_embedding_id: None,
-            chat_id: session_id,
-            msg_type: role,
-            content: content_bytes,
-            content_nonce: None,
+        let message = DbInsertableChatMessage::new(
+            session_id,
             user_id,
-            role: Some(role.to_string()),
-            parts: None,
-            attachments: None,
-            prompt_tokens: Some(50),
-            completion_tokens: Some(100),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
-            model_name: "gemini-2.5-pro".to_string(),
-            status: "completed".to_string(),
-            error_message: None,
-            variant_count: 1,
-            current_variant_index: 0,
-            credits_charged: 0,
-            credits_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
-            actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
-            modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
-            credit_cost: 0,
-            actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
-            game_time: None,
-        };
+            role,
+            content_bytes,
+            None,
+            "gemini-2.5-pro".to_string(),
+        )
+        .with_role(role.to_string())
+        .with_token_counts(Some(50), Some(100))
+        .with_status(scribe_backend::models::chats::MessageStatus::Completed)
+        .with_variant_count(1);
 
         conn.interact(move |conn| {
             use schema::chat_messages::dsl::*;

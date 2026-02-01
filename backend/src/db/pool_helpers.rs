@@ -14,6 +14,14 @@
 use crate::db::DbPool;
 use crate::errors::AppError;
 
+/// Pooled connection type alias for all backends
+#[cfg(feature = "postgres-backend")]
+pub type DbConn = deadpool_diesel::postgres::Object;
+
+#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+pub type DbConn =
+    diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
+
 // Extension trait to provide async .get() for SQLite pools (compatibility with PostgreSQL async pools)
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 #[allow(async_fn_in_trait)]
@@ -90,19 +98,14 @@ impl SqliteInteractExt
 /// For PostgreSQL, this directly awaits the async pool operation.
 /// For SQLite, this wraps the sync operation in `spawn_blocking`.
 #[cfg(feature = "postgres-backend")]
-pub async fn get_conn(pool: &DbPool) -> Result<deadpool_diesel::postgres::Object, AppError> {
+pub async fn get_conn(pool: &DbPool) -> Result<DbConn, AppError> {
     pool.get()
         .await
         .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get connection: {}", e)))
 }
 
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-pub async fn get_conn(
-    pool: &DbPool,
-) -> Result<
-    diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>,
-    AppError,
-> {
+pub async fn get_conn(pool: &DbPool) -> Result<DbConn, AppError> {
     let pool = pool.clone();
     tokio::task::spawn_blocking(move || {
         pool.get()

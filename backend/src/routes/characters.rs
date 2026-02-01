@@ -30,7 +30,6 @@ use axum::{
     routing::{delete, get, post, put},
     Router,
 };
-#[cfg(feature = "postgres-backend")]
 use diesel::SelectableHelper;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, OptionalExtension,
@@ -424,7 +423,8 @@ pub async fn upload_character_base64_handler(
         .interact(move |conn_select_block| {
             characters
                 .find(returned_id)
-                .get_result::<Character>(conn_select_block)
+                .select(Character::as_select())
+                .get_result(conn_select_block)
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
@@ -435,7 +435,8 @@ pub async fn upload_character_base64_handler(
         crate::db::with_conn(&state.pool, move |conn_select_block| {
             characters
                 .find(returned_id)
-                .get_result::<Character>(conn_select_block)
+                .select(Character::as_select())
+                .get_result(conn_select_block)
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
         })
         .await?;
@@ -446,7 +447,10 @@ pub async fn upload_character_base64_handler(
     // Create character asset record with binary data
     let new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
-        &format!("{}_avatar", inserted_character.name),
+        &format!(
+            "{}_avatar",
+            inserted_character.name.as_deref().unwrap_or("unknown")
+        ),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
@@ -549,7 +553,8 @@ pub async fn upload_character_base64_handler(
             inserted_character = crate::db::with_conn(&state.pool, move |conn_refetch| {
                 characters
                     .find(character_id_for_refetch)
-                    .get_result::<Character>(conn_refetch)
+                    .select(Character::as_select())
+                    .get_result(conn_refetch)
                     .map_err(|e| {
                         AppError::InternalServerErrorGeneric(format!(
                             "Failed to re-fetch character after avatar update: {e}"
@@ -710,8 +715,14 @@ pub async fn upload_character_base64_handler(
         }
 
         let lorebook_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
-            name: format!("{} Lorebook", inserted_character.name),
-            description: Some(format!("Lorebook for {}", inserted_character.name)),
+            name: format!(
+                "{} Lorebook",
+                inserted_character.name.as_deref().unwrap_or("Unknown")
+            ),
+            description: Some(format!(
+                "Lorebook for {}",
+                inserted_character.name.as_deref().unwrap_or("Unknown")
+            )),
             is_public: false,
             entries: entries_map,
         };
@@ -1061,7 +1072,8 @@ pub async fn upload_character_handler(
         .interact(move |conn_select_block| {
             characters
                 .find(returned_id)
-                .get_result::<Character>(conn_select_block)
+                .select(Character::as_select())
+                .get_result(conn_select_block)
         })
         .await
         .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch interaction error: {e}")))?
@@ -1072,7 +1084,8 @@ pub async fn upload_character_handler(
         crate::db::with_conn(&state.pool, move |conn_select_block| {
             characters
                 .find(returned_id)
-                .get_result::<Character>(conn_select_block)
+                .select(Character::as_select())
+                .get_result(conn_select_block)
                 .map_err(|e| AppError::InternalServerErrorGeneric(format!("Fetch DB error: {e}")))
         })
         .await?;
@@ -1083,7 +1096,10 @@ pub async fn upload_character_handler(
     // Create character asset record with binary data
     let new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
-        &format!("{}_avatar", inserted_character.name),
+        &format!(
+            "{}_avatar",
+            inserted_character.name.as_deref().unwrap_or("unknown")
+        ),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
@@ -1186,7 +1202,8 @@ pub async fn upload_character_handler(
             inserted_character = crate::db::with_conn(&state.pool, move |conn_refetch| {
                 characters
                     .find(character_id_for_refetch)
-                    .get_result::<Character>(conn_refetch)
+                    .select(Character::as_select())
+                    .get_result(conn_refetch)
                     .map_err(|e| {
                         AppError::InternalServerErrorGeneric(format!(
                             "Failed to re-fetch character after avatar update: {e}"
@@ -1350,8 +1367,14 @@ pub async fn upload_character_handler(
         }
 
         let lorebook_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
-            name: format!("{} Lorebook", inserted_character.name),
-            description: Some(format!("Lorebook for {}", inserted_character.name)),
+            name: format!(
+                "{} Lorebook",
+                inserted_character.name.as_deref().unwrap_or("Unknown")
+            ),
+            description: Some(format!(
+                "Lorebook for {}",
+                inserted_character.name.as_deref().unwrap_or("Unknown")
+            )),
             is_public: false,
             entries: entries_map,
         };
@@ -1446,7 +1469,8 @@ pub async fn list_characters_handler(
     let characters_db: Vec<Character> = crate::db::with_conn(&state.pool, move |conn_block| {
         characters
             .filter(user_id.eq(local_user_id))
-            .load::<Character>(conn_block)
+            .select(Character::as_select())
+            .load(conn_block)
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
     })
     .await?;
@@ -1489,7 +1513,8 @@ pub async fn get_character_handler(
                     id.eq(character_id_for_direct_clone)
                         .and(user_id.eq(user_id_for_direct_clone)),
                 )
-                .first::<Character>(conn)
+                .select(Character::as_select())
+                .first(conn)
                 .optional()
                 .map_err(|e| {
                     error!(
@@ -1607,7 +1632,8 @@ pub async fn get_character_handler(
     let character_db_result: Option<Character> = crate::db::with_conn(&state.pool, move |conn| {
         characters
             .filter(id.eq(character_id_for_fetch_clone))
-            .first::<Character>(conn)
+            .select(Character::as_select())
+            .first(conn)
             .optional()
             .map_err(|e| {
                 error!(
@@ -1700,11 +1726,11 @@ pub async fn generate_character_handler(
     // Placeholder: Create a dummy Character, encrypt its description, then convert for client.
     let mut dummy_char_for_db = Character {
         // This is a Character struct, not NewCharacter
-        id: DbId::new().into(),
+        id: DbId::new(),
         user_id: user_id_val,
-        spec: "dummy_spec_placeholder".to_string(),
-        spec_version: "dummy_spec_version_placeholder".to_string(),
-        name: "Generated Placeholder".to_string(),
+        spec: Some("dummy_spec_placeholder".to_string()),
+        spec_version: Some("dummy_spec_version_placeholder".to_string()),
+        name: Some("Generated Placeholder".to_string()),
         description: None, // Will be set after potential encryption
         description_nonce: None,
         personality: Some(b"Placeholder".to_vec()),
@@ -1731,8 +1757,8 @@ pub async fn generate_character_handler(
         group_only_greetings: Default::default(),
         creation_date: None,
         modification_date: None,
-        created_at: chrono::Utc::now().into(),
-        updated_at: chrono::Utc::now().into(),
+        created_at: Some(chrono::Utc::now().into()),
+        updated_at: Some(chrono::Utc::now().into()),
         persona: None,
         persona_nonce: None,
         world_scenario: None,
@@ -1780,7 +1806,7 @@ pub async fn generate_character_handler(
         world: None,
         creator_comment: None,
         creator_comment_nonce: None,
-        depth_prompt: None,
+        depth_prompt: None, // Re-added to match schema
         depth_prompt_depth: None,
         depth_prompt_role: None,
         talkativeness: None,
@@ -1946,7 +1972,8 @@ pub async fn get_character_asset_handler(
         characters
             .find(character_id)
             .filter(user_id.eq(local_user_id))
-            .first::<Character>(conn_block)
+            .select(Character::as_select())
+            .first(conn_block)
             .optional()
             .map_err(|e| {
                 AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
@@ -1989,8 +2016,9 @@ pub async fn get_character_asset_handler(
     // Resize image if width or height parameters are provided
     if let (Some(width), Some(height)) = (params.width, params.height) {
         info!(%character_id, %asset_id, %width, %height, "Resizing image asset");
-        let format = ImageFormat::from_extension(content_type.split('/').last().unwrap_or("png"))
-            .unwrap_or(ImageFormat::Png);
+        let format =
+            ImageFormat::from_extension(content_type.split('/').next_back().unwrap_or("png"))
+                .unwrap_or(ImageFormat::Png);
 
         let decoded_image = image::load_from_memory_with_format(&final_image_data, format)
             .map_err(|e| {

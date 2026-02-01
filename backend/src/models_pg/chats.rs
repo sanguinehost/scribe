@@ -78,18 +78,23 @@ pub enum MessageStatus {
     Pending,
 }
 
-impl MessageStatus {
-    pub fn to_string(&self) -> String {
-        match self {
-            Self::Streaming => "streaming".to_string(),
-            Self::Completed => "completed".to_string(),
-            Self::Failed => "failed".to_string(),
-            Self::Partial => "partial".to_string(),
-            Self::Pending => "pending".to_string(),
-        }
+impl std::fmt::Display for MessageStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Streaming => "streaming",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Partial => "partial",
+            Self::Pending => "pending",
+        };
+        write!(f, "{}", s)
     }
+}
 
-    pub fn from_str(s: &str) -> Result<Self, AppError> {
+impl std::str::FromStr for MessageStatus {
+    type Err = AppError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "streaming" => Ok(Self::Streaming),
             "completed" => Ok(Self::Completed),
@@ -320,7 +325,7 @@ impl ChatListQuery {
             top_a: None,
             seed: None,
             logit_bias: None,
-            stop_sequences: self.stop_sequences,
+            stop_sequences: self.stop_sequences.clone(),
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
@@ -493,7 +498,7 @@ impl ChatSessionQuery {
             top_a: self.top_a,
             seed: self.seed,
             logit_bias: self.logit_bias,
-            stop_sequences: self.stop_sequences,
+            stop_sequences: self.stop_sequences.clone(),
             history_management_strategy: self.history_management_strategy,
             history_management_limit: self.history_management_limit,
             model_name: Some(self.model_name),
@@ -1501,8 +1506,8 @@ impl ChatMessage {
             content: final_content,
             created_at: self.created_at,
             user_id: self.user_id,
-            prompt_tokens: self.prompt_tokens.map(|t| t as i64),
-            completion_tokens: self.completion_tokens.map(|t| t as i64),
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
             raw_prompt,
             model_name: Some(self.model_name),
             status: self.status,
@@ -1628,6 +1633,12 @@ impl Default for Message {
 
 pub struct MessageBuilder {
     inner: Message,
+}
+
+impl Default for MessageBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MessageBuilder {
@@ -2050,8 +2061,8 @@ impl Message {
             content: final_decrypted_content,
             created_at: self.created_at,
             user_id: self.user_id,
-            prompt_tokens: self.prompt_tokens.map(|t| t as i64),
-            completion_tokens: self.completion_tokens.map(|t| t as i64),
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
             raw_prompt,
             model_name: Some(self.model_name),
             status: self.status,
@@ -2210,6 +2221,12 @@ impl Default for NewChatMessage {
 
 pub struct NewChatMessageBuilder {
     inner: NewChatMessage,
+}
+
+impl Default for NewChatMessageBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NewChatMessageBuilder {
@@ -2409,6 +2426,7 @@ impl std::fmt::Debug for NewChatMessage {
 #[diesel(table_name = chat_messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct DbInsertableChatMessage {
+    pub id: crate::db::DbId,
     #[diesel(column_name = session_id)]
     pub chat_id: crate::db::DbId,
     #[diesel(column_name = message_type)]
@@ -2437,11 +2455,14 @@ pub struct DbInsertableChatMessage {
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for DbInsertableChatMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DbInsertableChatMessage")
+            .field("id", &self.id)
             .field("chat_id", &self.chat_id)
             .field("msg_type", &self.msg_type)
             .field("content", &"[REDACTED_BYTES]")
@@ -2471,6 +2492,8 @@ impl std::fmt::Debug for DbInsertableChatMessage {
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
             .field("game_time", &self.game_time)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
             .finish()
     }
 }
@@ -2487,6 +2510,7 @@ impl DbInsertableChatMessage {
         model_name: String,
     ) -> Self {
         Self {
+            id: crate::db::DbId::new(),
             chat_id,
             user_id,
             msg_type,
@@ -2513,7 +2537,27 @@ impl DbInsertableChatMessage {
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
+            created_at: DbTimestamp::now(),
+            updated_at: DbTimestamp::now(),
         }
+    }
+
+    #[must_use]
+    pub fn with_id(mut self, id: crate::db::DbId) -> Self {
+        self.id = id;
+        self
+    }
+
+    #[must_use]
+    pub fn with_created_at(mut self, created_at: DbTimestamp) -> Self {
+        self.created_at = created_at;
+        self
+    }
+
+    #[must_use]
+    pub fn with_updated_at(mut self, updated_at: DbTimestamp) -> Self {
+        self.updated_at = updated_at;
+        self
     }
 
     /// Builder methods for optional fields
@@ -2601,6 +2645,18 @@ impl DbInsertableChatMessage {
         self.credits_charged = credits_charged;
         // Keep credits_cost for backwards compatibility
         self.credits_cost = actual_cost_clone;
+        self
+    }
+
+    #[must_use]
+    pub fn with_variant_count(mut self, variant_count: i32) -> Self {
+        self.variant_count = variant_count;
+        self
+    }
+
+    #[must_use]
+    pub fn with_current_variant_index(mut self, current_variant_index: i32) -> Self {
+        self.current_variant_index = current_variant_index;
         self
     }
 }
@@ -3710,10 +3766,10 @@ mod tests {
             top_a: None,
             seed: Some(12345),
             logit_bias: None,
-            stop_sequences: crate::db::unified_types::DbStringArray::from_vec(vec![
+            stop_sequences: crate::db::unified_types::DbStringArray(Some(vec![
                 Some("\n\n".to_string()),
                 Some("##".to_string()),
-            ]),
+            ])),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash".to_string(),
@@ -4445,6 +4501,22 @@ impl NewMessageVariant {
             completion_tokens: None,
             model_name: None,
         })
+    }
+    #[must_use]
+    pub fn with_token_counts(
+        mut self,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
+    ) -> Self {
+        self.prompt_tokens = prompt_tokens;
+        self.completion_tokens = completion_tokens;
+        self
+    }
+
+    #[must_use]
+    pub fn with_model_name(mut self, model_name: String) -> Self {
+        self.model_name = Some(model_name);
+        self
     }
 }
 

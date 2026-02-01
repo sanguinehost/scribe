@@ -226,7 +226,7 @@ async fn generate_chat_response_streaming_forbidden() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray(None),
+                stop_sequences: scribe_backend::db::DbStringArray(None),
                 thinking_budget: None,
                 enable_code_execution: None,
                 system_prompt_ciphertext: None,

@@ -23,7 +23,7 @@ use arrow::datatypes::{DataType, Field, Schema};
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{Connection, Table};
 
-use super::qdrant_client::QdrantClientServiceTrait;
+use super::QdrantClientServiceTrait;
 
 /// Default table name for embeddings
 pub const DEFAULT_TABLE_NAME: &str = "scribe_embeddings";
@@ -343,6 +343,7 @@ impl LanceDbClient {
                     use qdrant_client::qdrant::vectors::VectorsOptions;
                     match &vectors_struct.vectors_options {
                         Some(VectorsOptions::Vector(v)) => {
+                            #[allow(deprecated)]
                             let data = v.data.clone();
                             if data.is_empty() {
                                 error!("CRITICAL: Qdrant point has an empty Vector (VectorsOptions::Vector). Point ID: {:?}", point.id);

@@ -106,89 +106,79 @@ async fn create_test_app_state(
 }
 
 // Helper to create test messages
-fn create_test_messages(user_id: Uuid, session_id: Uuid) -> Vec<ChatMessage> {
-    vec![
+fn create_test_messages(user_id: Uuid, session_id: Uuid, dek: &SessionDek) -> Vec<ChatMessage> {
+    let mut messages = vec![
         ChatMessage {
             id: Uuid::new_v4().into(),
             session_id: session_id.into(),
             message_type: MessageRole::User,
-            content: "Hello! I want to start a new adventure where I play as a young wizard named Alex.".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
             prompt_tokens: Some(15),
             completion_tokens: Some(0),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
-        ..Default::default()
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4().into(),
             session_id: session_id.into(),
             message_type: MessageRole::Assistant,
-            content: "Welcome to the mystical realm of Aethermoor! You are Alex, a young wizard who has just arrived at the prestigious Starfall Academy. The ancient towers gleam in the moonlight as you approach the great oak doors.".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
             prompt_tokens: Some(20),
             completion_tokens: Some(35),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
-        ..Default::default()
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4().into(),
             session_id: session_id.into(),
             message_type: MessageRole::User,
-            content: "I knock on the doors and wait to see who answers.".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
             prompt_tokens: Some(12),
             completion_tokens: Some(0),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
-        ..Default::default()
+            ..Default::default()
         },
         ChatMessage {
             id: Uuid::new_v4().into(),
             session_id: session_id.into(),
             message_type: MessageRole::Assistant,
-            content: "The massive doors creak open to reveal Professor Willowshade, a tall elf with silver hair and kind eyes. 'Ah, you must be Alex! We've been expecting you. Welcome to Starfall Academy, young wizard.'".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
             prompt_tokens: Some(25),
             completion_tokens: Some(42),
-            raw_prompt_ciphertext: None,
-            raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
-            error_message: None,
-            superseded_at: None,
             variant_count: 1,
             current_variant_index: 0,
-        ..Default::default()
+            ..Default::default()
         },
-    ]
+    ];
+
+    messages[0]
+        .encrypt_content_field(
+            &dek.0,
+            "Hello! I want to start a new adventure where I play as a young wizard named Alex.",
+        )
+        .unwrap();
+    messages[1].encrypt_content_field(&dek.0, "Welcome to the mystical realm of Aethermoor! You are Alex, a young wizard who has just arrived at the prestigious Starfall Academy. The ancient towers gleam in the moonlight as you approach the great oak doors.").unwrap();
+    messages[2]
+        .encrypt_content_field(&dek.0, "I knock on the doors and wait to see who answers.")
+        .unwrap();
+    messages[3].encrypt_content_field(&dek.0, "The massive doors creak open to reveal Professor Willowshade, a tall elf with silver hair and kind eyes. 'Ah, you must be Alex! We've been expecting you. Welcome to Starfall Academy, young wizard.'").unwrap();
+
+    messages
 }
 
 mod agentic_chronicle_tests {
@@ -247,31 +237,13 @@ mod agentic_chronicle_tests {
         // Create a combined response that works for both triage and planning phases
         // The planning step will use the actions array, and triage will use the other fields
         let combined_response = json!({
-            "is_significant": true,
+            "should_create_event": true,
             "summary": "New adventure beginning with character introduction and world-building",
-            "event_type": "ADVENTURE_START",
-            "confidence": 0.9,
             "reasoning": "This is the start of a new adventure with clear characters and setting. A chronicle should be created to track the story.",
-            "actions": [
-                {
-                    "tool_name": "create_chronicle_event",
-                    "parameters": {
-                        "event_category": "PLOT",
-                        "event_type": "ADVENTURE_START",
-                        "event_subtype": "JOURNEY_BEGINS",
-                        "action": "Arrived",
-                        "subject": "Alex",
-                        "summary": "Alex arrives at Starfall Academy to begin wizard training",
-                        "event_data": {
-                            "character": "Alex",
-                            "location": "Starfall Academy",
-                            "setting": "Aethermoor",
-                            "description": "A young wizard named Alex arrives at the prestigious magical academy"
-                        }
-                    },
-                    "reasoning": "Create event documenting the adventure beginning"
-                }
-            ]
+            "keywords": ["Alex", "Starfall Academy", "wizard", "adventure"],
+            "facts": [],
+            "surprise_score": 0.5,
+            "significance_score": 0.9
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(
@@ -321,8 +293,8 @@ mod agentic_chronicle_tests {
             .expect("Failed to link chronicle to chat session");
 
         // Create test messages representing a new adventure starting
-        let messages = create_test_messages(user_id.into_uuid(), chat_session_id);
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
+        let messages = create_test_messages(user_id.into_uuid(), chat_session_id, &session_dek);
 
         // Run the agentic workflow - now WITH chronicle_id (simulating post-dialog flow)
         let result = agent_runner
@@ -451,7 +423,7 @@ mod agentic_chronicle_tests {
 
         // Create a combined response that works for both triage and planning phases
         let combined_response = json!({
-            "is_significant": true,
+            "should_create_event": true,
             "summary": "Character meets important NPC and receives guidance",
             "event_type": "CHARACTER_INTERACTION",
             "confidence": 0.85,
@@ -475,7 +447,9 @@ mod agentic_chronicle_tests {
                     },
                     "reasoning": "Document the important character introduction"
                 }
-            ]
+            ],
+            "significance_score": 0.9,
+            "facts": []
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(
@@ -507,8 +481,8 @@ mod agentic_chronicle_tests {
         );
 
         // Create messages and run workflow with existing chronicle
-        let messages = create_test_messages(user_id.into(), chat_session_id.into());
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
+        let messages = create_test_messages(user_id.into(), chat_session_id.into(), &session_dek);
 
         let result = agent_runner
             .process_narrative_event(
@@ -652,8 +626,8 @@ mod agentic_chronicle_tests {
             None, // Use default config
         );
 
-        let messages = create_test_messages(user_id.into(), chat_session_id.into());
         let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec())));
+        let messages = create_test_messages(user_id.into(), chat_session_id.into(), &session_dek);
 
         // Run workflow that should fail gracefully
         let result = agent_runner

@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
 use serde::{Deserialize, Serialize}; // For error handling
 
 use crate::models::users::User;
-use crate::models::OptionalStringArray;
+// use crate::models::OptionalStringArray;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
 // For encryption/decryption
@@ -43,9 +43,9 @@ use crate::services::encryption_service::EncryptionService; // Added
 pub struct Character {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
-    pub spec: String,
-    pub spec_version: String,
-    pub name: String,
+    pub spec: Option<String>,
+    pub spec_version: Option<String>,
+    pub name: Option<String>,
     pub description: Option<Vec<u8>>,
     pub personality: Option<Vec<u8>>,
     pub scenario: Option<Vec<u8>>,
@@ -54,18 +54,18 @@ pub struct Character {
     pub creator_notes: Option<Vec<u8>>,
     pub system_prompt: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<crate::models::OptionalStringArray>,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: crate::models::OptionalStringArray,
+    pub alternate_greetings: Option<crate::models::OptionalStringArray>,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<crate::db::DbJson>,
-    pub source: crate::models::OptionalStringArray,
-    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub source: Option<crate::models::OptionalStringArray>,
+    pub group_only_greetings: Option<crate::models::OptionalStringArray>,
     pub creation_date: Option<DbTimestamp>,
     pub modification_date: Option<DbTimestamp>,
-    pub created_at: DbTimestamp,
-    pub updated_at: DbTimestamp,
+    pub created_at: Option<DbTimestamp>,
+    pub updated_at: Option<DbTimestamp>,
     pub persona: Option<Vec<u8>>,
     pub world_scenario: Option<Vec<u8>>,
     pub avatar: Option<String>,
@@ -94,7 +94,7 @@ pub struct Character {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: crate::models::OptionalStringArray,
+    pub system_tags: Option<crate::models::OptionalStringArray>,
     pub token_budget: Option<crate::db::DbInt>,
     pub usage_hints: Option<crate::db::DbJson>,
     pub user_persona: Option<Vec<u8>>,
@@ -467,13 +467,13 @@ impl Character {
         let mut client_char = ClientCharacter {
             id: self.id,
             user_id: self.user_id,
-            name: self.name,
+            name: self.name.unwrap_or_default(),
             description: String::new(), // Will be populated below
-            concept: self.spec.clone(),
+            concept: self.spec.clone().unwrap_or_default(),
             // Get system_prompt if available, otherwise empty string
             voice_instructions: String::new(), // Will populate below
-            created_at: self.created_at,
-            updated_at: self.updated_at,
+            created_at: self.created_at.unwrap_or_else(DbTimestamp::now),
+            updated_at: self.updated_at.unwrap_or_else(DbTimestamp::now),
             is_favorite: self.favorite.unwrap_or(false),
             category: self.category.clone().unwrap_or_default(),
             chat_history_limit: self.token_budget.unwrap_or(100),
@@ -764,9 +764,9 @@ impl Character {
         CharacterDataForClient {
             id: self.id,
             user_id: self.user_id,
-            spec: self.spec,
-            spec_version: self.spec_version,
-            name: self.name,
+            spec: self.spec.unwrap_or_default(),
+            spec_version: self.spec_version.unwrap_or_default(),
+            name: self.name.unwrap_or_default(),
             description: decrypted_fields.description,
             personality: decrypted_fields.personality,
             scenario: decrypted_fields.scenario,
@@ -775,31 +775,20 @@ impl Character {
             creator_notes: decrypted_fields.creator_notes,
             system_prompt: decrypted_fields.system_prompt,
             post_history_instructions: decrypted_fields.post_history_instructions,
-            tags: OptionalStringArray(self.tags.0.or_else(|| Some(Vec::new()))),
+            tags: self.tags.clone(),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
-            alternate_greetings: self
-                .alternate_greetings
-                .0
-                .map(|greetings| {
-                    greetings
-                        .into_iter()
-                        .filter_map(|opt_greeting| opt_greeting)
-                        .collect()
-                })
-                .or_else(|| Some(Vec::new())),
+            alternate_greetings: self.alternate_greetings.clone(),
             nickname: default_empty_string_if_none(self.nickname),
             creator_notes_multilingual: self
                 .creator_notes_multilingual
                 .or_else(|| Some(crate::db::Json(serde_json::json!({})))),
-            source: OptionalStringArray(self.source.0.or_else(|| Some(Vec::new()))),
-            group_only_greetings: OptionalStringArray(
-                self.group_only_greetings.0.or_else(|| Some(Vec::new())),
-            ),
+            source: self.source.clone(),
+            group_only_greetings: self.group_only_greetings.clone(),
             creation_date: self.creation_date,
             modification_date: self.modification_date,
-            created_at: self.created_at,
-            updated_at: self.updated_at,
+            created_at: self.created_at.unwrap_or_else(DbTimestamp::now),
+            updated_at: self.updated_at.unwrap_or_else(DbTimestamp::now),
             persona: decrypted_fields.persona,
             world_scenario: decrypted_fields.world_scenario,
             avatar: self
@@ -832,7 +821,7 @@ impl Character {
             sharing_visibility: default_empty_string_if_none(self.sharing_visibility),
             status: default_empty_string_if_none(self.status),
             system_prompt_visibility: default_empty_string_if_none(self.system_prompt_visibility),
-            system_tags: OptionalStringArray(self.system_tags.0.or_else(|| Some(Vec::new()))),
+            system_tags: self.system_tags.clone(),
             token_budget: self.token_budget,
             usage_hints: self
                 .usage_hints
@@ -872,14 +861,14 @@ pub struct CharacterDataForClient {
     pub creator_notes: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<crate::models::OptionalStringArray>,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<String>>,
+    pub alternate_greetings: Option<crate::models::OptionalStringArray>,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<DbJson>,
-    pub source: crate::models::OptionalStringArray,
-    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub source: Option<crate::models::OptionalStringArray>,
+    pub group_only_greetings: Option<crate::models::OptionalStringArray>,
     pub creation_date: Option<DbTimestamp>,
     pub modification_date: Option<DbTimestamp>,
     pub created_at: DbTimestamp,
@@ -912,7 +901,7 @@ pub struct CharacterDataForClient {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: crate::models::OptionalStringArray,
+    pub system_tags: Option<crate::models::OptionalStringArray>,
     pub token_budget: Option<crate::db::DbInt>,
     pub usage_hints: Option<DbJson>,
     pub user_persona: Option<String>,
@@ -1261,9 +1250,9 @@ pub fn create_dummy_character() -> Character {
     Character {
         id: DbId::new(),
         user_id: user_uuid,
-        spec: "chara_card_v3_spec".to_string(),
-        spec_version: "1.0.0".to_string(),
-        name: "Dummy Character".to_string(),
+        spec: Some("chara_card_v3_spec".to_string()),
+        spec_version: Some("1.0.0".to_string()),
+        name: Some("Dummy Character".to_string()),
         description: None,
         personality: None,
         scenario: None,
@@ -1272,18 +1261,18 @@ pub fn create_dummy_character() -> Character {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None.into(),
+        tags: None,
         creator: None,
         character_version: None,
-        alternate_greetings: None.into(),
+        alternate_greetings: None,
         nickname: None,
         creator_notes_multilingual: None,
-        source: None.into(),
-        group_only_greetings: None.into(),
+        source: None,
+        group_only_greetings: None,
         creation_date: None,
         modification_date: None,
-        created_at: now.into(),
-        updated_at: now.into(),
+        created_at: Some(now.into()),
+        updated_at: Some(now.into()),
         persona: None,
         world_scenario: None,
         avatar: None,
@@ -1312,7 +1301,7 @@ pub fn create_dummy_character() -> Character {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None.into(),
+        system_tags: None,
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1425,7 +1414,7 @@ mod tests {
         // Verify they are identical after cloning
         assert_eq!(character1.id, character1_clone.id);
         assert_eq!(character1.name, character1_clone.name);
-        assert_eq!(character1.name, "Dummy Character");
+        assert_eq!(character1.name.as_deref(), Some("Dummy Character"));
     }
 
     #[tokio::test]

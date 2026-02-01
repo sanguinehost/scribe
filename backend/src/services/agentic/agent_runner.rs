@@ -198,6 +198,7 @@ impl NarrativeAgentRunner {
     }
 
     /// Deterministically create a cognitive update for every message exchange
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_narrative_event(
         &self,
         user_id: crate::db::DbId,
@@ -1250,6 +1251,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
     ///
     /// # Returns
     /// A `Result` containing the reconciled game state and a list of changes
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_game_state_update(
         &self,
         current_state: Option<&crate::models::game_state::GameState>,

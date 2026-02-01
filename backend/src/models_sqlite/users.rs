@@ -187,7 +187,6 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-
 pub struct UserDbQuery {
     pub id: DbId,
     pub username: String,

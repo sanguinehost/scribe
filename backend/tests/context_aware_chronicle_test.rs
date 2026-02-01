@@ -32,18 +32,14 @@ async fn test_chronicle_creation_refusal() {
 
     // Configure the mock client from the app
     if let Some(mock_client) = &app.mock_ai_client {
-        // We need to wrap the JSON in a ChatResponse
-        use genai::adapter::AdapterKind;
-        use genai::chat::{ChatResponse, MessageContent, Usage};
-        use genai::ModelIden;
+        use scribe_backend::llm::rig_client::RigChatResponse;
 
-        let chat_response = ChatResponse {
-            content: MessageContent::from_text(refusal_response.to_string()),
+        let chat_response = RigChatResponse {
+            content: refusal_response.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
         mock_client.set_response(Ok(chat_response));
     } else {
@@ -65,7 +61,7 @@ async fn test_chronicle_creation_refusal() {
 
     // Setup TokenizerService and HybridTokenCounter
     let tokenizer_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
     let tokenizer = TokenizerService::new(tokenizer_path).expect("Failed to create tokenizer");
     let token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer));
 
@@ -176,17 +172,14 @@ async fn test_chronicle_creation_success() {
     });
 
     if let Some(mock_client) = &app.mock_ai_client {
-        use genai::adapter::AdapterKind;
-        use genai::chat::{ChatResponse, MessageContent, Usage};
-        use genai::ModelIden;
+        use scribe_backend::llm::rig_client::RigChatResponse;
 
-        let chat_response = ChatResponse {
-            content: MessageContent::from_text(success_response.to_string()),
+        let chat_response = RigChatResponse {
+            content: success_response.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
         mock_client.set_response(Ok(chat_response));
     } else {
@@ -206,7 +199,7 @@ async fn test_chronicle_creation_success() {
     ));
 
     let tokenizer_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
     let tokenizer = TokenizerService::new(tokenizer_path).expect("Failed to create tokenizer");
     let token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer));
 

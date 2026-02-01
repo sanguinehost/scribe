@@ -8,7 +8,7 @@ use axum::{
 use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::prelude::*;
-use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
+use scribe_backend::llm::RigStreamEvent;
 use secrecy::ExposeSecret;
 use std::env;
 use std::time::Duration;
@@ -149,7 +149,7 @@ async fn create_test_chat_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: DbStringArray(None),
+                stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
                 thinking_budget: None,
                 enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -184,10 +184,7 @@ async fn perform_empty_response_stream_test(
     user_dek: &scribe_backend::models::users::SerializableSecretDek,
 ) {
     // Mock the AI client stream: Start -> End
-    let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Start),
-        Ok(ChatStreamEvent::End(StreamEnd::default())),
-    ];
+    let mock_stream_items = vec![Ok(RigStreamEvent::Content("".to_string()))];
 
     // Prepare expected events before moving mock_stream_items
     let expected_events = vec![ParsedSseEvent {
@@ -363,14 +360,10 @@ async fn perform_reasoning_chunk_stream_test(
 ) {
     // Mock the AI client stream: Start -> Reasoning -> Chunk -> End
     let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Start),
-        Ok(ChatStreamEvent::ReasoningChunk(StreamChunk {
-            content: "Thinking about the query...".to_string(),
-        })),
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Final answer. ".to_string(), // Add trailing space to match expected implementation
-        })),
-        Ok(ChatStreamEvent::End(StreamEnd::default())),
+        Ok(RigStreamEvent::Reasoning(
+            "Thinking about the query...".to_string(),
+        )),
+        Ok(RigStreamEvent::Content("Final answer. ".to_string())),
     ];
 
     // Prepare expected events before moving mock_stream_items

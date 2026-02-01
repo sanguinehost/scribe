@@ -1,13 +1,16 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata};
-use super::utils::{extract_string_from_payload, extract_uuid_from_payload};
 use crate::auth::SessionDek;
+#[cfg(feature = "remote-vector")]
 use crate::errors::AppError;
+#[cfg(feature = "remote-vector")]
 use crate::llm::EmbeddingClient;
-use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
-use qdrant_client::qdrant::Value as QdrantValue;
-use std::collections::HashMap;
+#[cfg(feature = "remote-vector")]
+use crate::vector_db::QdrantClientServiceTrait;
+#[cfg(feature = "remote-vector")]
 use std::sync::Arc;
-use tracing::{info, instrument, warn};
+use tracing::warn;
+#[cfg(feature = "remote-vector")]
+use tracing::{info, instrument};
 
 /// Helper function to decrypt lorebook content (encryption required)
 #[allow(deprecated)]
@@ -16,7 +19,7 @@ pub fn decrypt_lorebook_content(
     session_dek: Option<&SessionDek>,
 ) -> String {
     // Try to decrypt if we have encrypted content
-    if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+    if let (Some(encrypted_chunk), Some(nonce)) = (
         metadata.encrypted_chunk_text.as_ref(),
         metadata.chunk_text_nonce.as_ref(),
     ) {
@@ -53,7 +56,7 @@ pub fn decrypt_lorebook_title(
     session_dek: Option<&SessionDek>,
 ) -> String {
     // Try to decrypt if we have encrypted title
-    if let (Some(ref encrypted_title), Some(ref nonce)) = (
+    if let (Some(encrypted_title), Some(nonce)) = (
         metadata.encrypted_title.as_ref(),
         metadata.title_nonce.as_ref(),
     ) {
@@ -102,7 +105,7 @@ pub fn decrypt_chat_content(
     session_dek: Option<&SessionDek>,
 ) -> String {
     // Try to decrypt if we have encrypted content
-    if let (Some(ref encrypted_text), Some(ref nonce)) = (
+    if let (Some(encrypted_text), Some(nonce)) = (
         metadata.encrypted_text.as_ref(),
         metadata.text_nonce.as_ref(),
     ) {
@@ -155,6 +158,7 @@ pub struct RetrievedChunk {
 #[allow(dead_code)]
 #[instrument(skip(qdrant_service, embedding_client), err)]
 #[allow(deprecated)]
+#[cfg(feature = "remote-vector")]
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,

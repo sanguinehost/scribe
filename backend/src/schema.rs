@@ -113,11 +113,11 @@ diesel::table! {
         id -> Uuid,
         user_id -> Uuid,
         #[max_length = 255]
-        spec -> Varchar,
+        spec -> Nullable<Varchar>,
         #[max_length = 50]
-        spec_version -> Varchar,
+        spec_version -> Nullable<Varchar>,
         #[max_length = 255]
-        name -> Varchar,
+        name -> Nullable<Varchar>,
         description -> Nullable<Bytea>,
         personality -> Nullable<Bytea>,
         scenario -> Nullable<Bytea>,
@@ -139,8 +139,8 @@ diesel::table! {
         group_only_greetings -> Nullable<Array<Nullable<Text>>>,
         creation_date -> Nullable<Timestamptz>,
         modification_date -> Nullable<Timestamptz>,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
+        created_at -> Nullable<Timestamptz>,
+        updated_at -> Nullable<Timestamptz>,
         persona -> Nullable<Bytea>,
         world_scenario -> Nullable<Bytea>,
         avatar -> Nullable<Text>,

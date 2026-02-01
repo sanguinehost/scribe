@@ -793,7 +793,7 @@ async fn ai_generate_entries_handler(
                     let keys_text = None;
 
                     Some(GeneratedEntryPreview {
-                        id: id.into(),
+                        id,
                         entry_title,
                         keys_text,
                     })

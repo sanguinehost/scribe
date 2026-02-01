@@ -22,38 +22,41 @@ fn map_diesel_error(e: DieselError) -> AppError {
     }
 }
 
-/// Helper function to convert tuple to TemplatePreference
-fn tuple_to_template_preference(
-    tuple: (
-        crate::db::DbId,
-        crate::db::DbId,
-        Option<crate::db::DbId>,
-        Option<String>,
-        String,
-        String,
-        String,
-        String,
-        bool,
-        bool,
-        bool,
-        chrono::NaiveDateTime,
-        chrono::NaiveDateTime,
-    ),
-) -> TemplatePreference {
+// Internal representation for Diesel queries
+#[derive(Queryable)]
+#[allow(clippy::type_complexity)]
+struct TemplatePreferenceQueryRow {
+    id: crate::db::DbId,
+    user_id: crate::db::DbId,
+    character_id: Option<crate::db::DbId>,
+    template_id: Option<String>,
+    tense: String,
+    narration: String,
+    perspective: String,
+    length: String,
+    enable_info_box: bool,
+    enable_stats_tracker: bool,
+    enable_thinking: bool,
+    created_at: chrono::NaiveDateTime,
+    updated_at: chrono::NaiveDateTime,
+}
+
+/// Helper function to convert query row to TemplatePreference
+fn tuple_to_template_preference(row: TemplatePreferenceQueryRow) -> TemplatePreference {
     TemplatePreference {
-        id: tuple.0,
-        user_id: tuple.1,
-        character_id: tuple.2,
-        template_id: tuple.3,
-        tense: tuple.4,
-        narration: tuple.5,
-        perspective: tuple.6,
-        length: tuple.7,
-        enable_info_box: tuple.8,
-        enable_stats_tracker: tuple.9,
-        enable_thinking: tuple.10,
-        created_at: tuple.11,
-        updated_at: tuple.12,
+        id: row.id,
+        user_id: row.user_id,
+        character_id: row.character_id,
+        template_id: row.template_id,
+        tense: row.tense,
+        narration: row.narration,
+        perspective: row.perspective,
+        length: row.length,
+        enable_info_box: row.enable_info_box,
+        enable_stats_tracker: row.enable_stats_tracker,
+        enable_thinking: row.enable_thinking,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
     }
 }
 
@@ -104,21 +107,7 @@ impl TemplatePreferenceService {
                     template_preferences::created_at,
                     template_preferences::updated_at,
                 ))
-                .first::<(
-                    crate::db::DbId,
-                    crate::db::DbId,
-                    Option<crate::db::DbId>,
-                    Option<String>,
-                    String,
-                    String,
-                    String,
-                    String,
-                    bool,
-                    bool,
-                    bool,
-                    chrono::NaiveDateTime,
-                    chrono::NaiveDateTime,
-                )>(conn)
+                .first::<TemplatePreferenceQueryRow>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -206,21 +195,7 @@ impl TemplatePreferenceService {
                             template_preferences::created_at,
                             template_preferences::updated_at,
                         ))
-                        .first::<(
-                            crate::db::DbId,
-                            crate::db::DbId,
-                            Option<crate::db::DbId>,
-                            Option<String>,
-                            String,
-                            String,
-                            String,
-                            String,
-                            bool,
-                            bool,
-                            bool,
-                            chrono::NaiveDateTime,
-                            chrono::NaiveDateTime,
-                        )>(conn)
+                        .first::<TemplatePreferenceQueryRow>(conn)
                         .map_err(map_diesel_error)?;
 
                     let created = tuple_to_template_preference(tuple);
@@ -275,21 +250,7 @@ impl TemplatePreferenceService {
                     template_preferences::created_at,
                     template_preferences::updated_at,
                 ))
-                .first::<(
-                    crate::db::DbId,
-                    crate::db::DbId,
-                    Option<crate::db::DbId>,
-                    Option<String>,
-                    String,
-                    String,
-                    String,
-                    String,
-                    bool,
-                    bool,
-                    bool,
-                    chrono::NaiveDateTime,
-                    chrono::NaiveDateTime,
-                )>(conn)
+                .first::<TemplatePreferenceQueryRow>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
@@ -384,21 +345,7 @@ impl TemplatePreferenceService {
                             template_preferences::created_at,
                             template_preferences::updated_at,
                         ))
-                        .first::<(
-                            crate::db::DbId,
-                            crate::db::DbId,
-                            Option<crate::db::DbId>,
-                            Option<String>,
-                            String,
-                            String,
-                            String,
-                            String,
-                            bool,
-                            bool,
-                            bool,
-                            chrono::NaiveDateTime,
-                            chrono::NaiveDateTime,
-                        )>(conn)
+                        .first::<TemplatePreferenceQueryRow>(conn)
                         .map_err(map_diesel_error)?;
 
                     let created = tuple_to_template_preference(tuple);
@@ -483,21 +430,7 @@ impl TemplatePreferenceService {
                     template_preferences::created_at,
                     template_preferences::updated_at,
                 ))
-                .first::<(
-                    crate::db::DbId,
-                    crate::db::DbId,
-                    Option<crate::db::DbId>,
-                    Option<String>,
-                    String,
-                    String,
-                    String,
-                    String,
-                    bool,
-                    bool,
-                    bool,
-                    chrono::NaiveDateTime,
-                    chrono::NaiveDateTime,
-                )>(conn)
+                .first::<TemplatePreferenceQueryRow>(conn)
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
 
             let updated = tuple_to_template_preference(tuple);

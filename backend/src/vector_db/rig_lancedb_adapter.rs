@@ -1,26 +1,29 @@
+use super::utils::qdrant_value_to_serde_json;
 use super::VectorServiceTrait;
 use crate::config::Config;
 use crate::errors::AppError;
 use crate::llm::UnifiedEmbeddingModel;
-use ::rig_lancedb::LanceDbVectorIndex;
+use ::rig_lancedb::{LanceDbVectorIndex, SearchParams};
 use arrow::array::{
-    builder::{FixedSizeListBuilder, Float64Builder, StringBuilder},
-    ArrayRef, RecordBatch,
+    builder::{FixedSizeListBuilder, Float32Builder, StringBuilder},
+    RecordBatch,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use async_trait::async_trait;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use qdrant_client::qdrant::{
-    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter,
-};
+use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue, Filter, ScoredPoint};
 use rig::embeddings::EmbeddingModel;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
 
 pub struct RigLanceDbService {
-    index: Arc<LanceDbVectorIndex<UnifiedEmbeddingModel>>,
-    table: lancedb::Table,
+    connection: lancedb::Connection,
+    indices: Arc<RwLock<HashMap<String, Arc<LanceDbVectorIndex<UnifiedEmbeddingModel>>>>>,
     model: UnifiedEmbeddingModel,
+    config: Arc<Config>,
 }
 
 impl RigLanceDbService {
@@ -47,34 +50,153 @@ impl RigLanceDbService {
             .await
             .map_err(|e| AppError::VectorDbError(format!("Failed to connect to LanceDB: {}", e)))?;
 
-        let table_name = config.qdrant_collection_name.clone();
-
-        // Open the table first
-        let table = connection
-            .open_table(&table_name)
-            .execute()
-            .await
-            .map_err(|e| AppError::VectorDbError(format!("Failed to open LanceDB table: {}", e)))?;
-
-        // Create index for reading
-        let index = LanceDbVectorIndex::new(
-            table.clone(),
-            embedding_model.clone(),
-            "id", // Use "id" as the id field
-            Default::default(),
-        )
-        .await
-        .map_err(|e| AppError::VectorDbError(format!("Failed to create LanceDB index: {}", e)))?;
-
-        Ok(Self {
-            index: Arc::new(index),
-            table,
+        let service = Self {
+            connection,
+            indices: Arc::new(RwLock::new(HashMap::new())),
             model: embedding_model,
-        })
+            config,
+        };
+
+        // Initialize default table
+        let default_table = service.config.qdrant_collection_name.clone();
+        service.get_or_create_index(&default_table).await?;
+
+        Ok(service)
     }
 
-    pub fn index(&self) -> Arc<LanceDbVectorIndex<UnifiedEmbeddingModel>> {
-        self.index.clone()
+    async fn get_expected_schema(&self) -> Schema {
+        Schema::new(vec![
+            Field::new("id", DataType::Utf8, false),
+            Field::new(
+                "vector",
+                DataType::FixedSizeList(
+                    Arc::new(Field::new("item", DataType::Float32, true)),
+                    self.model.ndims() as i32,
+                ),
+                false,
+            ),
+            Field::new("payload", DataType::Utf8, false),
+        ])
+    }
+
+    async fn validate_schema(&self, table: &lancedb::Table) -> bool {
+        match table.schema().await {
+            Ok(schema) => {
+                let _expected = self.get_expected_schema().await;
+
+                // Check if basic fields exist and have correct types
+                let has_id = schema
+                    .field_with_name("id")
+                    .map(|f| f.data_type() == &DataType::Utf8)
+                    .unwrap_or(false);
+                let has_payload = schema
+                    .field_with_name("payload")
+                    .map(|f| f.data_type() == &DataType::Utf8)
+                    .unwrap_or(false);
+
+                let vector_field = schema.field_with_name("vector");
+                let vector_valid = if let Ok(f) = vector_field {
+                    if let DataType::FixedSizeList(_, dims) = f.data_type() {
+                        *dims == self.model.ndims() as i32
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if !has_id || !has_payload || !vector_valid {
+                    warn!(
+                        "LanceDB schema mismatch for table: has_id={}, has_payload={}, vector_valid={}",
+                        has_id, has_payload, vector_valid
+                    );
+                    return false;
+                }
+                true
+            }
+            Err(e) => {
+                warn!("Failed to get schema for validation: {}", e);
+                false
+            }
+        }
+    }
+
+    async fn get_or_create_index(
+        &self,
+        name: &str,
+    ) -> Result<Arc<LanceDbVectorIndex<UnifiedEmbeddingModel>>, AppError> {
+        // Read lock
+        {
+            let indices = self.indices.read().await;
+            if let Some(index) = indices.get(name) {
+                return Ok(index.clone());
+            }
+        }
+
+        // Write lock
+        let mut indices = self.indices.write().await;
+        // Double check
+        if let Some(index) = indices.get(name) {
+            return Ok(index.clone());
+        }
+
+        debug!("Opening/Creating LanceDB table: {}", name);
+
+        let table_names = self
+            .connection
+            .table_names()
+            .execute()
+            .await
+            .map_err(|e| AppError::VectorDbError(format!("Failed to list tables: {}", e)))?;
+
+        let table = if table_names.contains(&name.to_string()) {
+            let table = self
+                .connection
+                .open_table(name)
+                .execute()
+                .await
+                .map_err(|e| {
+                    AppError::VectorDbError(format!("Failed to open table {}: {}", name, e))
+                })?;
+
+            if self.validate_schema(&table).await {
+                table
+            } else {
+                info!("Dropping incompatible table: {}", name);
+                self.connection.drop_table(name, &[]).await.map_err(|e| {
+                    AppError::VectorDbError(format!("Failed to drop table {}: {}", name, e))
+                })?;
+
+                let schema = Arc::new(self.get_expected_schema().await);
+                self.connection
+                    .create_empty_table(name, schema)
+                    .execute()
+                    .await
+                    .map_err(|e| {
+                        AppError::VectorDbError(format!("Failed to recreate table {}: {}", name, e))
+                    })?
+            }
+        } else {
+            let schema = Arc::new(self.get_expected_schema().await);
+            self.connection
+                .create_empty_table(name, schema)
+                .execute()
+                .await
+                .map_err(|e| {
+                    AppError::VectorDbError(format!("Failed to create table {}: {}", name, e))
+                })?
+        };
+
+        let index = Arc::new(
+            LanceDbVectorIndex::new(table, self.model.clone(), "vector", SearchParams::default())
+                .await
+                .map_err(|e| {
+                    AppError::VectorDbError(format!("Failed to create index for {}: {}", name, e))
+                })?,
+        );
+
+        indices.insert(name.to_string(), index.clone());
+        Ok(index)
     }
 
     async fn add_documents_to_table(
@@ -82,267 +204,161 @@ impl RigLanceDbService {
         table: &lancedb::Table,
         documents: Vec<serde_json::Value>,
     ) -> Result<(), AppError> {
-        // 1. Extract text for embedding from documents
-        let mut texts = Vec::new();
-        for doc in &documents {
-            let text = doc
-                .get("content")
-                .or_else(|| doc.get("summary"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| doc.to_string());
-            texts.push(text);
-        }
+        let ndims = self.model.ndims() as i32;
+        let mut id_builder = StringBuilder::new();
+        let mut vector_builder = FixedSizeListBuilder::new(Float32Builder::new(), ndims);
+        let mut payload_builder = StringBuilder::new();
 
-        // 2. Generate embeddings
-        let embeddings =
-            self.model.embed_texts(texts).await.map_err(|e| {
-                AppError::VectorDbError(format!("Failed to embed documents: {}", e))
-            })?;
+        for doc in documents {
+            let id = doc["id"].as_str().unwrap_or("").to_string();
+            let vector = doc["vector"]
+                .as_array()
+                .map(|v| {
+                    v.iter()
+                        .map(|f| f.as_f64().unwrap_or(0.0) as f32)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|| vec![0.0; ndims as usize]);
+            let payload = serde_json::to_string(&doc["payload"]).unwrap_or_default();
 
-        let mut rows = Vec::new();
-        for (doc, embedding) in documents.into_iter().zip(embeddings) {
-            let mut row = doc;
-            if let serde_json::Value::Object(ref mut map) = row {
-                map.insert(
-                    "vector".to_string(),
-                    serde_json::to_value(embedding.vec).unwrap(),
-                );
+            id_builder.append_value(id);
+            for v in vector {
+                vector_builder.values().append_value(v);
             }
-            rows.push(row);
+            vector_builder.append(true);
+            payload_builder.append_value(payload);
         }
 
-        if rows.is_empty() {
-            return Ok(());
-        }
+        let schema = Arc::new(self.get_expected_schema().await);
 
-        // Manual conversion to RecordBatch
-        let ndims = self.model.ndims();
-        let mut columns: std::collections::HashMap<String, Vec<serde_json::Value>> =
-            std::collections::HashMap::new();
-        let mut keys = Vec::new();
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(id_builder.finish()),
+                Arc::new(vector_builder.finish()),
+                Arc::new(payload_builder.finish()),
+            ],
+        )
+        .map_err(|e| AppError::VectorDbError(format!("Failed to create record batch: {}", e)))?;
 
-        for row in &rows {
-            if let serde_json::Value::Object(map) = row {
-                for (k, v) in map {
-                    if !columns.contains_key(k) {
-                        keys.push(k.clone());
-                    }
-                    columns.entry(k.clone()).or_default().push(v.clone());
-                }
-            }
-        }
+        let batches =
+            arrow::record_batch::RecordBatchIterator::new(vec![Ok(batch)], schema.clone());
 
-        let mut fields = Vec::new();
-        let mut arrays = Vec::new();
-
-        for name in keys {
-            let values = columns.get(&name).unwrap();
-            if name == "vector" {
-                let mut builder = FixedSizeListBuilder::new(Float64Builder::new(), ndims as i32);
-                for val in values {
-                    if let serde_json::Value::Array(arr) = val {
-                        let vec: Vec<f64> = arr.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect();
-                        builder.values().append_slice(&vec);
-                        builder.append(true);
-                    } else {
-                        builder.append(false);
-                    }
-                }
-                fields.push(Field::new(
-                    name,
-                    DataType::FixedSizeList(
-                        Arc::new(Field::new("item", DataType::Float64, true)),
-                        ndims as i32,
-                    ),
-                    false,
-                ));
-                arrays.push(Arc::new(builder.finish()) as ArrayRef);
-            } else {
-                let mut builder = StringBuilder::new();
-                for val in values {
-                    match val {
-                        serde_json::Value::String(s) => builder.append_value(s),
-                        serde_json::Value::Null => builder.append_null(),
-                        _ => builder.append_value(val.to_string()),
-                    }
-                }
-                fields.push(Field::new(name, DataType::Utf8, true));
-                arrays.push(Arc::new(builder.finish()) as ArrayRef);
-            }
-        }
-
-        let schema = Arc::new(Schema::new(fields));
-        let batch = RecordBatch::try_new(schema.clone(), arrays)
-            .map_err(|e| AppError::VectorDbError(format!("Failed to create RecordBatch: {}", e)))?;
-
-        let batches = arrow::array::RecordBatchIterator::new(vec![Ok(batch)], schema);
-
-        table.add(Box::new(batches)).execute().await.map_err(|e| {
-            AppError::VectorDbError(format!("Failed to add documents to LanceDB: {}", e))
-        })?;
+        table
+            .add(Box::new(batches))
+            .execute()
+            .await
+            .map_err(|e| AppError::VectorDbError(format!("Failed to add to LanceDB: {}", e)))?;
 
         Ok(())
     }
 
-    /// Convert Qdrant Filter to LanceDB SQL WHERE clause
     fn filter_to_sql(&self, filter: &Filter) -> String {
         let mut conditions = Vec::new();
 
-        // Process MUST conditions (AND)
-        if !filter.must.is_empty() {
-            let must_conditions: Vec<String> = filter
-                .must
-                .iter()
-                .filter_map(|c| self.condition_to_sql(c))
-                .collect();
-            if !must_conditions.is_empty() {
-                conditions.push(format!("({})", must_conditions.join(" AND ")));
-            }
-        }
-
-        // Process SHOULD conditions (OR)
-        if !filter.should.is_empty() {
-            let should_conditions: Vec<String> = filter
-                .should
-                .iter()
-                .filter_map(|c| self.condition_to_sql(c))
-                .collect();
-            if !should_conditions.is_empty() {
-                conditions.push(format!("({})", should_conditions.join(" OR ")));
-            }
-        }
-
-        // Process MUST_NOT conditions (NOT)
-        if !filter.must_not.is_empty() {
-            let must_not_conditions: Vec<String> = filter
-                .must_not
-                .iter()
-                .filter_map(|c| self.condition_to_sql(c))
-                .collect();
-            if !must_not_conditions.is_empty() {
-                conditions.push(format!("NOT ({})", must_not_conditions.join(" OR ")));
-            }
-        }
-
-        if conditions.is_empty() {
-            String::new()
-        } else {
-            conditions.join(" AND ")
-        }
-    }
-
-    /// Convert a single Qdrant Condition to SQL
-    fn condition_to_sql(&self, condition: &Condition) -> Option<String> {
-        match &condition.condition_one_of {
-            Some(ConditionOneOf::Field(field_cond)) => self.field_condition_to_sql(field_cond),
-            Some(ConditionOneOf::Filter(nested)) => {
-                let sql = self.filter_to_sql(nested);
-                if sql.is_empty() {
-                    None
-                } else {
-                    Some(format!("({})", sql))
+        for condition in &filter.must {
+            if let Some(ConditionOneOf::Field(field_cond)) = &condition.condition_one_of {
+                if let Some(MatchValue::Keyword(k)) = field_cond
+                    .r#match
+                    .as_ref()
+                    .and_then(|m| m.match_value.as_ref())
+                {
+                    conditions.push(format!("payload.{} = '{}'", field_cond.key, k));
+                } else if let Some(MatchValue::Boolean(b)) = field_cond
+                    .r#match
+                    .as_ref()
+                    .and_then(|m| m.match_value.as_ref())
+                {
+                    conditions.push(format!("payload.{} = {}", field_cond.key, b));
                 }
             }
-            _ => None,
         }
+
+        conditions.join(" AND ")
     }
 
-    /// Convert a field condition to SQL
-    fn field_condition_to_sql(&self, field_cond: &FieldCondition) -> Option<String> {
-        let key = self.sanitize_column_name(&field_cond.key);
+    pub async fn add_documents_internal(
+        &self,
+        collection_name: &str,
+        documents: Vec<serde_json::Value>,
+    ) -> Result<(), AppError> {
+        let _index = self.get_or_create_index(collection_name).await?;
+        let ndims = self.model.ndims();
+        let mut docs_with_vectors = Vec::new();
+        let mut texts_to_embed = Vec::new();
+        let mut indices_to_embed = Vec::new();
 
-        if let Some(m) = &field_cond.r#match {
-            if let Some(match_value) = &m.match_value {
-                return match match_value {
-                    MatchValue::Keyword(s) => {
-                        Some(format!("{} = '{}'", key, self.escape_sql_string(s)))
-                    }
-                    MatchValue::Integer(i) => Some(format!("{} = {}", key, i)),
-                    MatchValue::Boolean(b) => Some(format!("{} = {}", key, b)),
-                    MatchValue::Text(s) => {
-                        Some(format!("{} LIKE '%{}%'", key, self.escape_sql_string(s)))
-                    }
-                    _ => None,
-                };
+        for (i, doc) in documents.iter().enumerate() {
+            if doc.get("vector").is_some() {
+                docs_with_vectors.push(doc.clone());
+            } else if let Some(content) = doc.get("content").and_then(|v| v.as_str()) {
+                texts_to_embed.push(content.to_string());
+                indices_to_embed.push(i);
+                docs_with_vectors.push(doc.clone());
+            } else if let Some(content) = doc.get("chunk_text").and_then(|v| v.as_str()) {
+                texts_to_embed.push(content.to_string());
+                indices_to_embed.push(i);
+                docs_with_vectors.push(doc.clone());
+            } else {
+                let mut new_doc = doc.clone();
+                new_doc["vector"] = serde_json::json!(vec![0.0; ndims]);
+                docs_with_vectors.push(new_doc);
             }
         }
-        None
-    }
 
-    /// Sanitize column name to prevent SQL injection
-    fn sanitize_column_name(&self, name: &str) -> String {
-        // Handle nested paths like "metadata.user_id" by using only the leaf name
-        let leaf_name = name.rsplit('.').next().unwrap_or(name);
-        // Only allow alphanumeric and underscore
-        leaf_name
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '_')
-            .collect()
-    }
+        if !texts_to_embed.is_empty() {
+            let embeddings =
+                self.model.embed_texts(texts_to_embed).await.map_err(|e| {
+                    AppError::VectorDbError(format!("Failed to embed texts: {}", e))
+                })?;
 
-    /// Escape SQL string values
-    fn escape_sql_string(&self, s: &str) -> String {
-        s.replace('\'', "''")
-    }
-
-    pub async fn add_document<T: rig::Embed + serde::Serialize + Send + Sync>(
-        &self,
-        document: T,
-    ) -> Result<(), AppError> {
-        self.add_documents(vec![document]).await
-    }
-
-    pub async fn add_documents<T: rig::Embed + serde::Serialize + Send + Sync>(
-        &self,
-        documents: Vec<T>,
-    ) -> Result<(), AppError> {
-        let mut docs = Vec::new();
-        for doc in documents {
-            docs.push(serde_json::to_value(doc).map_err(|e| {
-                AppError::VectorDbError(format!("Failed to serialize document: {}", e))
-            })?);
+            for (i, embedding) in embeddings.into_iter().enumerate() {
+                let original_index = indices_to_embed[i];
+                let vec_values: Vec<f32> = embedding.vec.into_iter().map(|v| v as f32).collect();
+                docs_with_vectors[original_index]["vector"] = serde_json::json!(vec_values);
+            }
         }
-        self.add_documents_to_table(&self.table, docs).await
-    }
 
-    pub async fn search<T: for<'a> serde::Deserialize<'a> + Send + Sync>(
-        &self,
-        query: &str,
-        limit: usize,
-        filter: Option<qdrant_client::qdrant::Filter>,
-    ) -> Result<Vec<(f32, T)>, AppError> {
-        let results = self.search_values(query, limit, filter).await?;
-        let mut typed_results = Vec::new();
-        for (score, val) in results {
-            let doc: T = serde_json::from_value(val).map_err(|e| {
-                AppError::VectorDbError(format!("Failed to deserialize document: {}", e))
+        // We need to access the underlying lancedb::Table from rig_lancedb::LanceDbVectorIndex
+        // rig-lancedb doesn't expose it directly, but RigLanceDbService was storing it.
+        // Let's use the connection to open it again (it's fast).
+        let table = self
+            .connection
+            .open_table(collection_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to open table for append {}: {}",
+                    collection_name, e
+                ))
             })?;
-            typed_results.push((score, doc));
-        }
-        Ok(typed_results)
-    }
-}
 
-#[async_trait]
-impl VectorServiceTrait for RigLanceDbService {
-    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
-        Ok(())
+        self.add_documents_to_table(&table, docs_with_vectors).await
     }
 
-    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
-        Ok(())
-    }
-
-    async fn search_points_with_threshold(
+    pub async fn search_points_with_threshold_internal(
         &self,
+        collection_name: &str,
         vector: Vec<f32>,
         limit: u64,
-        filter: Option<qdrant_client::qdrant::Filter>,
+        filter: Option<Filter>,
         score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
-        let mut lancedb_query = self
-            .table
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        let _index = self.get_or_create_index(collection_name).await?;
+        let table = self
+            .connection
+            .open_table(collection_name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to open table for search {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        let mut lancedb_query = table
             .query()
             .nearest_to(vector)
             .map_err(|e| AppError::VectorDbError(format!("Failed to create query: {}", e)))?
@@ -409,8 +425,8 @@ impl VectorServiceTrait for RigLanceDbService {
                     payload.insert(col_name, val);
                 }
 
-                final_results.push(qdrant_client::qdrant::ScoredPoint {
-                    id: None, // LanceDB doesn't have Qdrant PointId
+                final_results.push(ScoredPoint {
+                    id: None,
                     version: 0,
                     score,
                     payload,
@@ -423,39 +439,19 @@ impl VectorServiceTrait for RigLanceDbService {
 
         Ok(final_results)
     }
+}
 
-    async fn hybrid_search(
-        &self,
-        vector: Option<Vec<f32>>,
-        text_query: Option<String>,
-        _text_fields: Vec<String>,
-        limit: u64,
-        filter: Option<qdrant_client::qdrant::Filter>,
-        score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
-        if let Some(v) = vector {
-            self.search_points_with_threshold(v, limit, filter, score_threshold)
-                .await
-        } else if let Some(query) = text_query {
-            // Fallback to search_values and convert
-            let results = self.search_values(&query, limit as usize, filter).await?;
-            Ok(results
-                .into_iter()
-                .map(|(score, val)| {
-                    qdrant_client::qdrant::ScoredPoint {
-                        id: None,
-                        version: 0,
-                        score,
-                        payload: std::collections::HashMap::new(), // Simplified
-                        vectors: None,
-                        shard_key: None,
-                        order_value: None,
-                    }
-                })
-                .collect())
-        } else {
-            Ok(vec![])
-        }
+#[async_trait]
+impl VectorServiceTrait for RigLanceDbService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        let name = self.config.qdrant_collection_name.clone();
+        self.get_or_create_index(&name).await?;
+        Ok(())
+    }
+
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        self.get_or_create_index(collection_name).await?;
+        Ok(())
     }
 
     async fn add_document(&self, document: serde_json::Value) -> Result<(), AppError> {
@@ -463,7 +459,8 @@ impl VectorServiceTrait for RigLanceDbService {
     }
 
     async fn add_documents(&self, documents: Vec<serde_json::Value>) -> Result<(), AppError> {
-        self.add_documents_to_table(&self.table, documents).await
+        let name = self.config.qdrant_collection_name.clone();
+        self.add_documents_internal(&name, documents).await
     }
 
     async fn add_document_to_collection(
@@ -471,11 +468,7 @@ impl VectorServiceTrait for RigLanceDbService {
         collection_name: &str,
         document: serde_json::Value,
     ) -> Result<(), AppError> {
-        // For LanceDB, we'll just use the existing table if the name matches,
-        // otherwise we'd need to open/create another table.
-        // Since we don't easily have the connection here without storing it,
-        // we'll just use the current table for now if it's the same name.
-        self.add_documents_to_table(&self.table, vec![document])
+        self.add_documents_internal(collection_name, vec![document])
             .await
     }
 
@@ -483,8 +476,9 @@ impl VectorServiceTrait for RigLanceDbService {
         &self,
         query: &str,
         limit: usize,
-        filter: Option<qdrant_client::qdrant::Filter>,
+        filter: Option<Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        let name = self.config.qdrant_collection_name.clone();
         let query_embedding = self
             .model
             .embed_texts(vec![query.to_string()])
@@ -497,7 +491,8 @@ impl VectorServiceTrait for RigLanceDbService {
             })?;
 
         let results = self
-            .search_points_with_threshold(
+            .search_points_with_threshold_internal(
+                &name,
                 query_embedding.vec.into_iter().map(|v| v as f32).collect(),
                 limit as u64,
                 filter,
@@ -508,25 +503,84 @@ impl VectorServiceTrait for RigLanceDbService {
         Ok(results
             .into_iter()
             .map(|res| {
-                let doc_value = serde_json::Value::Object(
-                    res.payload
-                        .into_iter()
-                        .map(|(k, v)| (k, v.into()))
-                        .collect(),
-                );
+                let doc_value = qdrant_value_to_serde_json(qdrant_client::qdrant::Value {
+                    kind: Some(qdrant_client::qdrant::value::Kind::StructValue(
+                        qdrant_client::qdrant::Struct {
+                            fields: res.payload,
+                        },
+                    )),
+                });
                 (res.score, doc_value)
             })
             .collect())
     }
 
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        let name = self.config.qdrant_collection_name.clone();
+        self.search_points_with_threshold_internal(&name, vector, limit, filter, score_threshold)
+            .await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        _text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        let name = self.config.qdrant_collection_name.clone();
+        if let Some(v) = vector {
+            self.search_points_with_threshold_internal(&name, v, limit, filter, score_threshold)
+                .await
+        } else if let Some(query) = text_query {
+            let results = self.search_values(&query, limit as usize, filter).await?;
+            Ok(results
+                .into_iter()
+                .map(|(score, _val)| ScoredPoint {
+                    id: None,
+                    version: 0,
+                    score,
+                    payload: std::collections::HashMap::new(),
+                    vectors: None,
+                    shard_key: None,
+                    order_value: None,
+                })
+                .collect())
+        } else {
+            Ok(vec![])
+        }
+    }
+
     async fn retrieve_points(
         &self,
-        filter: Option<qdrant_client::qdrant::Filter>,
+        filter: Option<Filter>,
         limit: u64,
         offset: Option<u64>,
         _score_threshold: Option<f32>,
-    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
-        let mut lancedb_query = self.table.query().limit(limit as usize);
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        let name = self.config.qdrant_collection_name.clone();
+        let _index = self.get_or_create_index(&name).await?;
+        let table = self
+            .connection
+            .open_table(&name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to open table for retrieve {}: {}",
+                    name, e
+                ))
+            })?;
+
+        let mut lancedb_query = table.query().limit(limit as usize);
 
         if let Some(o) = offset {
             lancedb_query = lancedb_query.offset(o as usize);
@@ -581,7 +635,7 @@ impl VectorServiceTrait for RigLanceDbService {
                     payload.insert(col_name, val);
                 }
 
-                final_results.push(qdrant_client::qdrant::ScoredPoint {
+                final_results.push(ScoredPoint {
                     id: None,
                     version: 0,
                     score: 1.0,
@@ -600,6 +654,17 @@ impl VectorServiceTrait for RigLanceDbService {
         &self,
         ids: Vec<qdrant_client::qdrant::PointId>,
     ) -> Result<(), AppError> {
+        let name = self.config.qdrant_collection_name.clone();
+        let _index = self.get_or_create_index(&name).await?;
+        let table = self
+            .connection
+            .open_table(&name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!("Failed to open table for delete {}: {}", name, e))
+            })?;
+
         let id_strings: Vec<String> = ids
             .into_iter()
             .map(|id| match id.point_id_options {
@@ -619,7 +684,7 @@ impl VectorServiceTrait for RigLanceDbService {
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
             .join(",");
-        self.table
+        table
             .delete(&format!("id IN ({})", id_list))
             .await
             .map_err(|e| {
@@ -628,13 +693,21 @@ impl VectorServiceTrait for RigLanceDbService {
         Ok(())
     }
 
-    async fn delete_by_filter(
-        &self,
-        filter: ::qdrant_client::qdrant::Filter,
-    ) -> Result<(), AppError> {
+    async fn delete_by_filter(&self, filter: Filter) -> Result<(), AppError> {
+        let name = self.config.qdrant_collection_name.clone();
+        let _index = self.get_or_create_index(&name).await?;
+        let table = self
+            .connection
+            .open_table(&name)
+            .execute()
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!("Failed to open table for delete {}: {}", name, e))
+            })?;
+
         let sql_filter = self.filter_to_sql(&filter);
         if !sql_filter.is_empty() {
-            self.table.delete(&sql_filter).await.map_err(|e| {
+            table.delete(&sql_filter).await.map_err(|e| {
                 AppError::VectorDbError(format!("Failed to delete from LanceDB: {}", e))
             })?;
         }
@@ -642,19 +715,24 @@ impl VectorServiceTrait for RigLanceDbService {
     }
 
     async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
-        self.table
-            .delete(&format!("id = '{}'", id))
+        let name = self.config.qdrant_collection_name.clone();
+        let _index = self.get_or_create_index(&name).await?;
+        let table = self
+            .connection
+            .open_table(&name)
+            .execute()
             .await
             .map_err(|e| {
-                AppError::VectorDbError(format!("Failed to delete from LanceDB: {}", e))
+                AppError::VectorDbError(format!("Failed to open table for delete {}: {}", name, e))
             })?;
+
+        table.delete(&format!("id = '{}'", id)).await.map_err(|e| {
+            AppError::VectorDbError(format!("Failed to delete from LanceDB: {}", e))
+        })?;
         Ok(())
     }
 
     async fn optimize_collection(&self) -> Result<(), AppError> {
-        // LanceDB optimization (compaction)
-        // self.table.optimize(lancedb::table::OptimizeOptions::default()).await
-        //    .map_err(|e| AppError::VectorDbError(format!("Failed to optimize LanceDB: {}", e)))?;
         Ok(())
     }
 

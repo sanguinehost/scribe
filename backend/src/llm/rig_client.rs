@@ -15,6 +15,7 @@ pub struct RigCompletionRequest {
     pub preamble: Option<String>,
     pub history: Vec<rig::message::Message>,
     pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
     pub max_tokens: Option<i32>,
     pub reasoning_budget: Option<i32>,
     pub capture_reasoning_content: bool,
@@ -105,6 +106,9 @@ impl RigClient {
                     additional_params
                         .insert("safety_settings".to_string(), serde_json::json!(safety));
                 }
+                if let Some(top_p) = req.top_p {
+                    additional_params.insert("top_p".to_string(), serde_json::json!(top_p));
+                }
 
                 let completion_req = rig::completion::CompletionRequest {
                     preamble: req.preamble,
@@ -189,6 +193,9 @@ impl RigClient {
                     additional_params
                         .insert("safety_settings".to_string(), serde_json::json!(safety));
                 }
+                if let Some(top_p) = req.top_p {
+                    additional_params.insert("top_p".to_string(), serde_json::json!(top_p));
+                }
 
                 let completion_req = rig::completion::CompletionRequest {
                     preamble: req.preamble,
@@ -268,6 +275,9 @@ impl RigClient {
                 if let Some(safety) = req.safety_settings {
                     additional_params
                         .insert("safety_settings".to_string(), serde_json::json!(safety));
+                }
+                if let Some(top_p) = req.top_p {
+                    additional_params.insert("top_p".to_string(), serde_json::json!(top_p));
                 }
 
                 let completion_req = rig::completion::CompletionRequest {

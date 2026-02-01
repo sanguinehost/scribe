@@ -555,7 +555,7 @@ pub async fn delete_chat_handler(
                 // Note: We don't clean up embeddings because events are preserved
             }
 
-            "delete_events" | _ => {
+            _ => {
                 info!("Strategy: Delete only events created by this chat (default)");
 
                 // Clean up embeddings for events from this specific chat
@@ -656,9 +656,7 @@ pub struct PaginatedMessagesResponse {
 ///
 /// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
 fn parse_chat_id(id: &str) -> Result<crate::db::DbId, AppError> {
-    DbId::parse_str(id)
-        .map(Into::into)
-        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
+    DbId::parse_str(id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
 }
 
 /// Helper function to get authenticated user
@@ -834,6 +832,7 @@ async fn get_default_variant_content(
 }
 
 /// Helper function to decrypt and transform messages for client response with variant support
+#[allow(clippy::too_many_arguments)]
 async fn process_messages_for_response(
     state: Arc<AppState>,
     messages_db: Vec<Message>,
@@ -901,7 +900,7 @@ async fn process_messages_for_response(
         // Parts are created inline with template substitution below
         let response_attachments = msg_db
             .attachments
-            .unwrap_or_else(|| crate::db::Json(json!([])).into());
+            .unwrap_or_else(|| crate::db::Json(json!([])));
 
         let response_role = msg_db
             .role
@@ -949,13 +948,12 @@ async fn process_messages_for_response(
                     character_name,
                     user_persona_name
                 )
-            }]))
-            .into(),
+            }])),
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
-            prompt_tokens: msg_db.prompt_tokens.map(|t| t as i64),
-            completion_tokens: msg_db.completion_tokens.map(|t| t as i64),
+            prompt_tokens: msg_db.prompt_tokens,
+            completion_tokens: msg_db.completion_tokens,
             model_name: Some(msg_db.model_name),
             status: msg_db.status,
             error_message: msg_db.error_message,
@@ -1037,7 +1035,7 @@ async fn process_messages_for_response(
 /// - Chat not found or access denied
 /// - Database operation fails
 /// - Decryption fails
-/// Retrieves paginated messages for a specific chat session.
+///   Retrieves paginated messages for a specific chat session.
 ///
 /// # Errors
 ///
@@ -1079,13 +1077,14 @@ pub async fn get_messages_by_chat_id_handler(
             use crate::schema::characters;
             characters::table
                 .filter(characters::id.eq(char_id))
-                .select(characters::name)
-                .first::<String>(conn)
+                .select(characters::name) // <--- THIS is line 1083 (approx) in original file?
+                .first::<Option<String>>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .ok()
+        .flatten()
         .flatten()
     } else {
         None
@@ -1333,8 +1332,8 @@ pub async fn create_message_handler(
         .parts(payload.parts.clone()) // From the request payload
         .game_time(saved_db_message.game_time)
         .attachments(payload.attachments.clone()) // From the request payload
-        .prompt_tokens(saved_db_message.prompt_tokens.map(|t| t as i64))
-        .completion_tokens(saved_db_message.completion_tokens.map(|t| t as i64))
+        .prompt_tokens(saved_db_message.prompt_tokens)
+        .completion_tokens(saved_db_message.completion_tokens)
         .raw_prompt_ciphertext(saved_db_message.raw_prompt_ciphertext)
         .raw_prompt_nonce(saved_db_message.raw_prompt_nonce)
         .model_name(saved_db_message.model_name.clone())
@@ -1428,26 +1427,40 @@ pub async fn create_message_handler(
                     // Add history
                     if let Some(dek_arc) = &user_dek_for_gen {
                         for msg in managed_recent_history {
-                            let _role = match msg.message_type {
-                                crate::services::chat::types::MessageRole::User => {
-                                    MessageRole::User
-                                }
-                                crate::services::chat::types::MessageRole::Assistant => {
-                                    MessageRole::Assistant
-                                }
-                                crate::services::chat::types::MessageRole::System => {
-                                    MessageRole::System
-                                }
-                            };
-
-                            match msg.decrypt_content_field(&dek_arc) {
+                            match msg.decrypt_content_field(dek_arc) {
                                 Ok(content) => {
-                                    incoming_messages.push(RigMessage::Assistant {
-                                        id: None,
-                                        content: rig::one_or_many::OneOrMany::one(
-                                            rig::message::AssistantContent::text(content),
-                                        ),
-                                    });
+                                    let role = match msg.message_type {
+                                        crate::services::chat::types::MessageRole::User => {
+                                            MessageRole::User
+                                        }
+                                        crate::services::chat::types::MessageRole::Assistant => {
+                                            MessageRole::Assistant
+                                        }
+                                        crate::services::chat::types::MessageRole::System => {
+                                            MessageRole::System
+                                        }
+                                    };
+
+                                    match role {
+                                        MessageRole::User => {
+                                            incoming_messages.push(RigMessage::User {
+                                                content: rig::one_or_many::OneOrMany::one(
+                                                    rig::message::UserContent::text(content),
+                                                ),
+                                            });
+                                        }
+                                        MessageRole::Assistant => {
+                                            incoming_messages.push(RigMessage::Assistant {
+                                                id: None,
+                                                content: rig::one_or_many::OneOrMany::one(
+                                                    rig::message::AssistantContent::text(content),
+                                                ),
+                                            });
+                                        }
+                                        MessageRole::System => {
+                                            // Handle system messages if needed, or skip
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     error!(message_id = %msg.id, error = %e, "Failed to decrypt message for history, skipping");
@@ -1538,8 +1551,8 @@ pub async fn create_message_handler(
         attachments: response_attachments,
         created_at: client_message.created_at,
         raw_prompt: client_message.raw_prompt,
-        prompt_tokens: saved_db_message.prompt_tokens.map(|t| t as i64),
-        completion_tokens: saved_db_message.completion_tokens.map(|t| t as i64),
+        prompt_tokens: saved_db_message.prompt_tokens,
+        completion_tokens: saved_db_message.completion_tokens,
         model_name: Some(saved_db_message.model_name),
         status: saved_db_message.status,
         error_message: saved_db_message.error_message,
@@ -1774,8 +1787,8 @@ pub async fn get_message_by_id_handler(
             .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
-        prompt_tokens: message_db.prompt_tokens.map(|t| t as i64),
-        completion_tokens: message_db.completion_tokens.map(|t| t as i64),
+        prompt_tokens: message_db.prompt_tokens,
+        completion_tokens: message_db.completion_tokens,
         model_name: Some(message_db.model_name),
         status: message_db.status,
         error_message: message_db.error_message,
@@ -2239,7 +2252,7 @@ pub async fn delete_message_handler(
     // We must delete chronicle events and their embeddings before deleting the message
     // because the message deletion will cascade to variants, and we need the variants to find the events.
     {
-        let message_id_val = id.clone();
+        let message_id_val = id;
         let pool_clone = pool.clone();
         let embedding_service = state.embedding_pipeline_service.clone();
         let state_arc = Arc::new(state.clone());
@@ -2280,7 +2293,7 @@ pub async fn delete_message_handler(
             // 3. Delete embeddings for each event
             for event_id in &event_ids {
                 if let Err(e) = embedding_service
-                    .delete_chronicle_event_chunks(state_arc.clone(), event_id.clone(), user_id_val)
+                    .delete_chronicle_event_chunks(state_arc.clone(), *event_id, user_id_val)
                     .await
                 {
                     error!("Failed to delete embeddings for event {}: {}", event_id, e);
@@ -2697,8 +2710,8 @@ pub async fn select_message_variant_handler(
             .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
-        prompt_tokens: updated_message.prompt_tokens.map(|t| t as i64),
-        completion_tokens: updated_message.completion_tokens.map(|t| t as i64),
+        prompt_tokens: updated_message.prompt_tokens,
+        completion_tokens: updated_message.completion_tokens,
         model_name: Some(updated_message.model_name),
         status: updated_message.status,
         error_message: updated_message.error_message,

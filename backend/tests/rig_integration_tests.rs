@@ -2,14 +2,14 @@ use scribe_backend::llm::rig_client::{RigClient, RigCompletionRequest};
 
 #[tokio::test]
 async fn test_rig_client_initialization() {
-    let _client = RigClient::new(Some("dummy".to_string()));
+    let _client = RigClient::new(Some("dummy".to_string()), None);
     // This test currently passes because new() is implemented as a placeholder.
     // We will add more assertions as we implement functionality.
 }
 
 #[tokio::test]
 async fn test_rig_client_completion_placeholder() {
-    let client = RigClient::new(None);
+    let client = RigClient::new(None, None);
     let req = RigCompletionRequest {
         model_name: "gemini-pro".to_string(),
         provider: "gemini".to_string(),
@@ -18,6 +18,10 @@ async fn test_rig_client_completion_placeholder() {
         history: vec![],
         temperature: None,
         max_tokens: None,
+        reasoning_budget: None,
+        capture_reasoning_content: false,
+        safety_settings: None,
+        top_p: None,
     };
 
     // This will fail without API key, so we expect an error or mock it
@@ -27,7 +31,7 @@ async fn test_rig_client_completion_placeholder() {
 
 #[tokio::test]
 async fn test_rig_client_streaming_placeholder() {
-    let client = RigClient::new(None);
+    let client = RigClient::new(None, None);
     let req = RigCompletionRequest {
         model_name: "gemini-pro".to_string(),
         provider: "gemini".to_string(),
@@ -36,6 +40,10 @@ async fn test_rig_client_streaming_placeholder() {
         history: vec![],
         temperature: None,
         max_tokens: None,
+        reasoning_budget: None,
+        capture_reasoning_content: false,
+        safety_settings: None,
+        top_p: None,
     };
 
     // Just verify it compiles and returns a future

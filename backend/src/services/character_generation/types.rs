@@ -175,7 +175,7 @@ pub struct StylePreferences {
 }
 
 /// Options for controlling generation behavior
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GenerationOptions {
     pub creativity_level: Option<String>, // "conservative", "medium", "creative"
     pub include_metadata: Option<bool>,
@@ -487,7 +487,7 @@ impl ApiGenerationRequest {
         // Create generation options if any parameters are provided
         let generation_options = if self.max_tokens.is_some() || self.temperature.is_some() {
             Some(GenerationOptions {
-                temperature: self.temperature.map(|t| t as f32),
+                temperature: self.temperature,
                 max_length: self.max_tokens.map(|t| t as usize),
                 creativity_level: None,
                 include_metadata: Some(true),

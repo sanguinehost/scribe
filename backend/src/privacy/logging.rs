@@ -186,14 +186,7 @@ pub fn sanitize_json_value(value: &Value) -> Value {
         Value::Object(obj) => {
             let mut new_obj = serde_json::Map::new();
             for (key, val) in obj {
-                let sanitized_key = if key.to_lowercase().contains("password")
-                    || key.to_lowercase().contains("token")
-                    || key.to_lowercase().contains("key")
-                {
-                    key.clone()
-                } else {
-                    key.clone()
-                };
+                let sanitized_key = key.clone();
 
                 let sanitized_val = if key.to_lowercase().contains("password")
                     || key.to_lowercase().contains("token")

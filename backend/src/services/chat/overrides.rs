@@ -83,7 +83,7 @@ pub async fn set_character_override(
 
             // 3. Perform an upsert (insert or update on conflict)
             let new_override = NewChatCharacterOverride {
-                id: DbId::new().into(), // Generate a new ID for insert, conflict target will handle existing
+                id: DbId::new(), // Generate a new ID for insert, conflict target will handle existing
                 chat_session_id: session_id,
                 original_character_id,
                 field_name: field_name_clone,

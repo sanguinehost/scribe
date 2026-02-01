@@ -12,13 +12,7 @@
 #[cfg(feature = "payment")]
 mod payment_integration_tests {
     use chrono::{DateTime, Utc};
-    use scribe_backend::{
-        config::PaymentConfig,
-        services::payment::paddle_service::{
-            CreateTransactionRequest, CreateTransactionResponse, PaddleEventType, PaddleService,
-            PaddleWebhook, TransactionCheckout, TransactionItem,
-        },
-    };
+    use scribe_backend::{config::PaymentConfig, services::payment::paddle_service::*};
     use serde_json::json;
     use std::env;
 
