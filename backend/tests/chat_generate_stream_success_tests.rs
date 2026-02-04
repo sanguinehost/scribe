@@ -104,8 +104,8 @@ async fn create_test_character_and_session(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -360,8 +360,8 @@ async fn test_first_mes_included_in_history() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -583,4 +583,94 @@ async fn test_first_mes_included_in_history() {
         first_mes_content_plain,
         "First message content should match character's first_mes"
     );
+}
+
+#[tokio::test]
+async fn generate_chat_response_with_reasoning_success() {
+    let test_app = test_helpers::spawn_app(false, false, false).await;
+
+    if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
+        println!("Skipping mock test with real client");
+        return;
+    }
+
+    // Set up test data using helper functions
+    let (user, auth_cookie) = create_authenticated_user(&test_app).await;
+    let (_character, session) = create_test_character_and_session(&test_app, *user.id).await;
+
+    // Set up a mock AI client response with REASONING events
+    let mock_stream_items = vec![
+        Ok(RigStreamEvent::Reasoning(
+            "I should think about this properly.".to_string(),
+        )),
+        Ok(RigStreamEvent::Reasoning(" Step 1: Analyze.".to_string())),
+        Ok(RigStreamEvent::Content("Therefore, ".to_string())),
+        Ok(RigStreamEvent::Content("the answer is 42.".to_string())),
+    ];
+
+    test_app
+        .mock_ai_client
+        .as_ref()
+        .expect("Mock AI client should be present")
+        .set_stream_response(mock_stream_items);
+
+    // Send chat request
+    let response = send_chat_request(&test_app, *session.id, &auth_cookie).await;
+
+    // Verify response
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Chat generate request failed"
+    );
+
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .expect("Response should have Content-Type header")
+        .to_str()
+        .unwrap();
+
+    assert!(
+        content_type.contains("text/event-stream"),
+        "Response should be SSE stream, got: {content_type}"
+    );
+
+    let body_stream = response.into_body();
+    let sse_events = collect_full_sse_events(body_stream).await;
+
+    let mut found_thinking_1 = false;
+    let mut found_thinking_2 = false;
+    let mut found_content_1 = false;
+    let mut found_content_2 = false;
+    let mut found_done = false;
+
+    // Debug print events
+    for event in &sse_events {
+        println!("Event: {:?}", event);
+        if event.event.as_deref() == Some("thinking") {
+            if event.data.contains("I should think about this properly.") {
+                found_thinking_1 = true;
+            }
+            if event.data.contains("Step 1: Analyze.") {
+                found_thinking_2 = true;
+            }
+        } else if event.event.as_deref() == Some("content") {
+            // Content events are JSON serialized StreamedChunks
+            if event.data.contains("Therefore, ") {
+                found_content_1 = true;
+            }
+            if event.data.contains("the answer is 42.") {
+                found_content_2 = true;
+            }
+        } else if event.event.as_deref() == Some("done") {
+            found_done = true;
+        }
+    }
+
+    assert!(found_thinking_1, "Should receive first thinking chunk");
+    assert!(found_thinking_2, "Should receive second thinking chunk");
+    assert!(found_content_1, "Should receive first content chunk");
+    assert!(found_content_2, "Should receive second content chunk");
+    assert!(found_done, "Should receive done event");
 }

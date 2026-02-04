@@ -77,6 +77,8 @@ async fn create_test_user_with_dek(
     // kek_salt is already a Base64 string from generate_salt()
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
@@ -145,9 +147,9 @@ async fn create_test_chat_session(
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
         #[cfg(feature = "postgres-backend")]
-        created_at: Some(Utc::now().into()),
+        created_at: Utc::now().into(),
         #[cfg(feature = "postgres-backend")]
-        updated_at: Some(Utc::now().into()),
+        updated_at: Utc::now().into(),
         #[cfg(feature = "sqlite-backend")]
         created_at: Utc::now().into(),
         #[cfg(feature = "sqlite-backend")]
@@ -390,6 +392,7 @@ async fn create_message_variant_with_raw_prompt(
         session_dek,
         Some(raw_prompt),
         None, // game_state
+        None, // model_name
     )?
     .with_token_counts(None, None)
     .with_model_name("gemini-1.5-pro".to_string());

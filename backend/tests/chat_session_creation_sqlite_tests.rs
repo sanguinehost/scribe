@@ -80,6 +80,8 @@ fn insert_test_user_with_password(
     let user_id = DbId::new();
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: user_id,
         username: username.to_string(),
         password_hash: hashed_password,
@@ -92,8 +94,8 @@ fn insert_test_user_with_password(
         dek_nonce: DbBlob::from_bytes(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
         token_usage_updated_at: DbTimestamp::now(),

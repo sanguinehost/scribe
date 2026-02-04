@@ -17,9 +17,9 @@ use axum::routing::{delete, get, post};
 use axum::Json;
 use axum::Router;
 use axum_login::{AuthSession, AuthUser, AuthnBackend};
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 use secrecy::ExposeSecret;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,7 @@ pub struct LoginSuccessResponse {
 }
 
 // Desktop-specific request/response types (feature-gated)
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[derive(Debug, Serialize)]
 pub struct DesktopConfigResponse {
     pub setup_complete: bool,
@@ -78,13 +78,13 @@ pub struct DesktopConfigResponse {
     pub deployment_mode: String, // "local" | "remote"
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[derive(Debug, Deserialize)]
 pub struct DesktopSetupPayload {
     pub auth_mode: String, // "quick_start" | "account"
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[derive(Debug, Deserialize)]
 pub struct DesktopUpgradeAccountPayload {
     pub username: String,
@@ -92,7 +92,7 @@ pub struct DesktopUpgradeAccountPayload {
 }
 
 pub fn auth_routes() -> Router<AppState> {
-    #[cfg(feature = "desktop")]
+    #[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
     {
         Router::new()
             .route("/register", post(register_handler))
@@ -122,7 +122,7 @@ pub fn auth_routes() -> Router<AppState> {
             .route("/token/logout", post(token_logout_handler))
     }
 
-    #[cfg(not(feature = "desktop"))]
+    #[cfg(any(not(feature = "desktop"), feature = "postgres-backend"))]
     {
         Router::new()
             .route("/register", post(register_handler))
@@ -676,7 +676,7 @@ pub async fn create_session_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             use diesel::prelude::*;
             // SQLite doesn't support RETURNING, so we insert and query back
@@ -803,7 +803,7 @@ pub async fn extend_session_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
@@ -1120,7 +1120,7 @@ pub async fn recover_password_handler(
 }
 
 // Desktop-specific handlers (feature-gated)
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(err)]
 pub async fn get_desktop_config_handler() -> Result<Response, AppError> {
     info!("Desktop config handler entered");
@@ -1143,7 +1143,7 @@ pub async fn get_desktop_config_handler() -> Result<Response, AppError> {
     Ok(Json(response).into_response())
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(skip(state, auth_session, session, payload), err)]
 pub async fn desktop_setup_handler(
     State(state): State<AppState>,
@@ -1287,7 +1287,7 @@ pub async fn desktop_setup_handler(
     }
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(skip(state), err)]
 pub async fn desktop_auto_login_handler(
     State(state): State<AppState>,
@@ -1442,7 +1442,7 @@ pub async fn desktop_auto_login_handler(
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(skip(state, auth_session, payload), err)]
 pub async fn desktop_upgrade_account_handler(
     State(state): State<AppState>,

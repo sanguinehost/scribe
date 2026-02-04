@@ -1,5 +1,6 @@
 use super::*;
 #[cfg(feature = "sqlite-backend")]
+#[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;

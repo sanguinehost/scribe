@@ -107,6 +107,8 @@ async fn test_chronicle_creation_refusal() {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        reasoning_content: None,
+        reasoning_content_nonce: None,
         parts: None,
         attachments: None,
         rag_embedding_id: None,
@@ -221,6 +223,8 @@ async fn test_chronicle_creation_success() {
 
     let user_id = DbId::new();
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username: "testuser".to_string(),
         password_hash: "hash".to_string(),
@@ -233,8 +237,8 @@ async fn test_chronicle_creation_success() {
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
         total_token_cost_cents: 0,
         tokens_last_reset_at: None,
         token_usage_updated_at: DbTimestamp::now(),
@@ -294,6 +298,8 @@ async fn test_chronicle_creation_success() {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        reasoning_content: None,
+        reasoning_content_nonce: None,
         parts: None,
         attachments: None,
         rag_embedding_id: None,

@@ -43,9 +43,9 @@ use crate::services::encryption_service::EncryptionService; // Added
 pub struct Character {
     pub id: crate::db::DbId,
     pub user_id: crate::db::DbId,
-    pub spec: Option<String>,
-    pub spec_version: Option<String>,
-    pub name: Option<String>,
+    pub spec: String,
+    pub spec_version: String,
+    pub name: String,
     pub description: Option<Vec<u8>>,
     pub personality: Option<Vec<u8>>,
     pub scenario: Option<Vec<u8>>,
@@ -64,8 +64,8 @@ pub struct Character {
     pub group_only_greetings: Option<crate::models::OptionalStringArray>,
     pub creation_date: Option<DbTimestamp>,
     pub modification_date: Option<DbTimestamp>,
-    pub created_at: Option<DbTimestamp>,
-    pub updated_at: Option<DbTimestamp>,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
     pub persona: Option<Vec<u8>>,
     pub world_scenario: Option<Vec<u8>>,
     pub avatar: Option<String>,
@@ -467,13 +467,13 @@ impl Character {
         let mut client_char = ClientCharacter {
             id: self.id,
             user_id: self.user_id,
-            name: self.name.unwrap_or_default(),
+            name: self.name,
             description: String::new(), // Will be populated below
-            concept: self.spec.clone().unwrap_or_default(),
+            concept: self.spec.clone(),
             // Get system_prompt if available, otherwise empty string
             voice_instructions: String::new(), // Will populate below
-            created_at: self.created_at.unwrap_or_else(DbTimestamp::now),
-            updated_at: self.updated_at.unwrap_or_else(DbTimestamp::now),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
             is_favorite: self.favorite.unwrap_or(false),
             category: self.category.clone().unwrap_or_default(),
             chat_history_limit: self.token_budget.unwrap_or(100),
@@ -764,9 +764,9 @@ impl Character {
         CharacterDataForClient {
             id: self.id,
             user_id: self.user_id,
-            spec: self.spec.unwrap_or_default(),
-            spec_version: self.spec_version.unwrap_or_default(),
-            name: self.name.unwrap_or_default(),
+            spec: self.spec,
+            spec_version: self.spec_version,
+            name: self.name,
             description: decrypted_fields.description,
             personality: decrypted_fields.personality,
             scenario: decrypted_fields.scenario,
@@ -787,8 +787,8 @@ impl Character {
             group_only_greetings: self.group_only_greetings.clone(),
             creation_date: self.creation_date,
             modification_date: self.modification_date,
-            created_at: self.created_at.unwrap_or_else(DbTimestamp::now),
-            updated_at: self.updated_at.unwrap_or_else(DbTimestamp::now),
+            created_at: self.created_at,
+            updated_at: self.updated_at,
             persona: decrypted_fields.persona,
             world_scenario: decrypted_fields.world_scenario,
             avatar: self
@@ -1250,9 +1250,9 @@ pub fn create_dummy_character() -> Character {
     Character {
         id: DbId::new(),
         user_id: user_uuid,
-        spec: Some("chara_card_v3_spec".to_string()),
-        spec_version: Some("1.0.0".to_string()),
-        name: Some("Dummy Character".to_string()),
+        spec: "chara_card_v3_spec".to_string(),
+        spec_version: "1.0.0".to_string(),
+        name: "Dummy Character".to_string(),
         description: None,
         personality: None,
         scenario: None,
@@ -1271,8 +1271,8 @@ pub fn create_dummy_character() -> Character {
         group_only_greetings: None,
         creation_date: None,
         modification_date: None,
-        created_at: Some(now.into()),
-        updated_at: Some(now.into()),
+        created_at: now.into(),
+        updated_at: now.into(),
         persona: None,
         world_scenario: None,
         avatar: None,
@@ -1586,7 +1586,7 @@ mod tests {
 
     // Helper function to create a dummy V2 card
     fn create_dummy_v2_card() -> ParsedCharacterCard {
-        ParsedCharacterCard::V2Fallback(CharacterCardDataV3 {
+        ParsedCharacterCard::V2Fallback(Box::new(CharacterCardDataV3 {
             // V2 uses the V3 data struct as fallback
             name: Some("Test V2 Name".to_string()),
             description: "V2 Description".to_string(),
@@ -1607,7 +1607,7 @@ mod tests {
             // chat: None,
             // ... other V2 fields if they exist in the struct
             ..Default::default() // Use default for remaining fields in CharacterCardDataV3
-        })
+        }))
     }
 
     #[test]

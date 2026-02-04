@@ -1,4 +1,4 @@
-use crate::db::DbTimestamp;
+use crate::db::{DbBigInt, DbTimestamp};
 use crate::schema::{chat_messages, chat_sessions, message_variants};
 use bigdecimal::{BigDecimal, ToPrimitive};
 use diesel::{Associations, Identifiable, Insertable, Queryable, Selectable};
@@ -174,8 +174,8 @@ pub struct Chat {
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub model_provider: Option<String>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -219,8 +219,8 @@ pub struct ChatListQuery {
     pub history_management_strategy: String,
     pub history_management_limit: i32,
     pub stop_sequences: Option<crate::models::OptionalStringArray>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -389,8 +389,8 @@ pub struct ChatSessionQuery {
     pub player_chronicle_id: Option<crate::db::DbId>,
     pub agent_mode: Option<String>,
     pub model_provider: Option<String>,
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -736,8 +736,8 @@ pub struct NewChat {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub player_chronicle_id: Option<crate::db::DbId>,
     // Token tracking fields with default values
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub estimated_cost_cents: i32,
     pub tokens_counted_at: DbTimestamp,
     pub prompt_template_id: String,
@@ -1001,10 +1001,12 @@ pub struct ChatMessageQuery {
     pub content_nonce: Option<Vec<u8>>,
     pub created_at: DbTimestamp,
     pub user_id: crate::db::DbId,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub model_name: String,
     pub status: String,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
 }
 
 impl ChatMessageQuery {
@@ -1041,6 +1043,8 @@ impl ChatMessageQuery {
             modified_cost: crate::db::DbDecimal::from(0),
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
+            reasoning_content: self.reasoning_content,
+            reasoning_content_nonce: self.reasoning_content_nonce,
         }
     }
 }
@@ -1063,8 +1067,8 @@ pub struct ChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::db::DbJson>,
     pub attachments: Option<crate::db::DbJson>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1084,6 +1088,8 @@ pub struct ChatMessage {
     #[serde(serialize_with = "bigdecimal_serde::serialize_as_f64")]
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
 }
 
 impl Default for ChatMessage {
@@ -1118,6 +1124,8 @@ impl Default for ChatMessage {
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         }
     }
 }
@@ -1174,6 +1182,14 @@ impl ChatMessageBuilder {
         self.inner.updated_at = ts;
         self
     }
+    pub fn reasoning_content(mut self, content: Option<Vec<u8>>) -> Self {
+        self.inner.reasoning_content = content;
+        self
+    }
+    pub fn reasoning_content_nonce(mut self, nonce: Option<Vec<u8>>) -> Self {
+        self.inner.reasoning_content_nonce = nonce;
+        self
+    }
     pub fn build(self) -> ChatMessage {
         self.inner
     }
@@ -1208,6 +1224,18 @@ impl std::fmt::Debug for ChatMessage {
             .field(
                 "raw_prompt_nonce",
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
+            )
+            .field("game_time", &self.game_time)
+            .field(
+                "reasoning_content",
+                &self.reasoning_content.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "reasoning_content_nonce",
+                &self
+                    .reasoning_content_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
             )
             .finish()
     }
@@ -1367,6 +1395,83 @@ impl ChatMessage {
         }
     }
 
+    /// Encrypts the reasoning_content field if plaintext is provided and a DEK is available.
+    /// Updates `self.reasoning_content` and `self.reasoning_content_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError` if encryption fails
+    pub fn encrypt_reasoning_field(
+        &mut self,
+        dek: &SecretBox<Vec<u8>>,
+        plaintext_reasoning: &str,
+    ) -> Result<(), AppError> {
+        if plaintext_reasoning.is_empty() {
+            self.reasoning_content = None;
+            self.reasoning_content_nonce = None;
+        } else {
+            let (ciphertext, nonce) = encrypt_gcm(plaintext_reasoning.as_bytes(), dek)
+                .map_err(|e| AppError::CryptoError(e.to_string()))?;
+            self.reasoning_content = Some(ciphertext);
+            self.reasoning_content_nonce = Some(nonce);
+        }
+        Ok(())
+    }
+
+    /// Decrypts the reasoning_content field if a DEK is available and content is encrypted.
+    /// Returns the decrypted string.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
+    pub fn decrypt_reasoning_field(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
+        match (&self.reasoning_content, &self.reasoning_content_nonce) {
+            (None, None) => Ok(None),
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() {
+                    return Ok(Some(String::new()));
+                }
+
+                if nonce.is_empty() {
+                    tracing::error!(
+                        "ChatMessage ID {} reasoning_content is present but nonce is empty. Cannot decrypt.",
+                        self.id
+                    );
+                    return Err(AppError::DecryptionError(
+                        "Nonce is empty for reasoning decryption".to_string(),
+                    ));
+                }
+
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt chat message reasoning for ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Decryption failed for message reasoning: {e}"
+                    ))
+                })?;
+
+                let decrypted_text = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert decrypted message reasoning to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert message reasoning to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(decrypted_text))
+            }
+            _ => Err(AppError::DecryptionError(
+                "Mismatched reasoning ciphertext/nonce pair".to_string(),
+            )),
+        }
+    }
+
     /// Update the status and error message of this message in the database
     pub fn update_status(
         conn: &mut crate::DbConnection,
@@ -1499,6 +1604,23 @@ impl ChatMessage {
             }
         };
 
+        // Decrypt reasoning content if available
+        let reasoning_content = if let Some(dek) = user_dek_secret_box {
+            match self.decrypt_reasoning_field(dek) {
+                Ok(decrypted_reasoning) => decrypted_reasoning,
+                Err(e) => {
+                    error!("Failed to decrypt reasoning for message {}: {}", self.id, e);
+                    None
+                }
+            }
+        } else {
+            if self.reasoning_content.is_some() {
+                Some("[Reasoning encrypted, DEK not available]".to_string())
+            } else {
+                None
+            }
+        };
+
         Ok(ChatMessageForClient {
             id: self.id,
             session_id: self.session_id,
@@ -1518,6 +1640,7 @@ impl ChatMessage {
             credit_cost: Some(self.credit_cost),
             actual_charge: self.actual_charge.to_f64(),
             game_time: self.game_time.clone().map(|j| j.0),
+            reasoning_content,
         })
     }
 }
@@ -1539,8 +1662,8 @@ pub struct Message {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -1557,6 +1680,8 @@ pub struct Message {
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
 }
 
 impl From<Message> for ChatMessage {
@@ -1591,6 +1716,8 @@ impl From<Message> for ChatMessage {
             credit_cost: m.credit_cost,
             actual_charge: m.actual_charge,
             game_time: m.game_time,
+            reasoning_content: m.reasoning_content,
+            reasoning_content_nonce: m.reasoning_content_nonce,
         }
     }
 }
@@ -1627,6 +1754,8 @@ impl Default for Message {
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         }
     }
 }
@@ -1708,12 +1837,12 @@ impl MessageBuilder {
         self
     }
 
-    pub fn prompt_tokens(mut self, prompt_tokens: Option<i64>) -> Self {
+    pub fn prompt_tokens(mut self, prompt_tokens: Option<DbBigInt>) -> Self {
         self.inner.prompt_tokens = prompt_tokens;
         self
     }
 
-    pub fn completion_tokens(mut self, completion_tokens: Option<i64>) -> Self {
+    pub fn completion_tokens(mut self, completion_tokens: Option<DbBigInt>) -> Self {
         self.inner.completion_tokens = completion_tokens;
         self
     }
@@ -1790,6 +1919,16 @@ impl MessageBuilder {
 
     pub fn game_time(mut self, game_time: Option<crate::DbJson>) -> Self {
         self.inner.game_time = game_time;
+        self
+    }
+
+    pub fn reasoning_content(mut self, content: Option<Vec<u8>>) -> Self {
+        self.inner.reasoning_content = content;
+        self
+    }
+
+    pub fn reasoning_content_nonce(mut self, nonce: Option<Vec<u8>>) -> Self {
+        self.inner.reasoning_content_nonce = nonce;
         self
     }
 
@@ -1998,6 +2137,83 @@ impl Message {
         }
     }
 
+    /// Encrypts the reasoning_content field if plaintext is provided and a DEK is available.
+    /// Updates `self.reasoning_content` and `self.reasoning_content_nonce`.
+    ///
+    /// # Errors
+    /// Returns `AppError` if encryption fails
+    pub fn encrypt_reasoning_field(
+        &mut self,
+        dek: &SecretBox<Vec<u8>>,
+        plaintext_reasoning: &str,
+    ) -> Result<(), AppError> {
+        if plaintext_reasoning.is_empty() {
+            self.reasoning_content = None;
+            self.reasoning_content_nonce = None;
+        } else {
+            let (ciphertext, nonce) = encrypt_gcm(plaintext_reasoning.as_bytes(), dek)
+                .map_err(|e| AppError::CryptoError(e.to_string()))?;
+            self.reasoning_content = Some(ciphertext);
+            self.reasoning_content_nonce = Some(nonce);
+        }
+        Ok(())
+    }
+
+    /// Decrypts the reasoning_content field if a DEK is available and content is encrypted.
+    /// Returns the decrypted string.
+    ///
+    /// # Errors
+    /// Returns `AppError::DecryptionError` if the nonce is empty, missing, or decryption fails
+    pub fn decrypt_reasoning_field(
+        &self,
+        dek: &SecretBox<Vec<u8>>,
+    ) -> Result<Option<String>, AppError> {
+        match (&self.reasoning_content, &self.reasoning_content_nonce) {
+            (None, None) => Ok(None),
+            (Some(ciphertext), Some(nonce)) => {
+                if ciphertext.is_empty() {
+                    return Ok(Some(String::new()));
+                }
+
+                if nonce.is_empty() {
+                    tracing::error!(
+                        "Message ID {} reasoning_content is present but nonce is empty. Cannot decrypt.",
+                        self.id
+                    );
+                    return Err(AppError::DecryptionError(
+                        "Nonce is empty for reasoning decryption".to_string(),
+                    ));
+                }
+
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt message reasoning for ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!(
+                        "Decryption failed for message reasoning: {e}"
+                    ))
+                })?;
+
+                let decrypted_text = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to convert decrypted message reasoning to UTF-8: {}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to convert message reasoning to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(decrypted_text))
+            }
+            _ => Err(AppError::DecryptionError(
+                "Mismatched reasoning ciphertext/nonce pair".to_string(),
+            )),
+        }
+    }
+
     /// Convert this `ChatMessage` to a decrypted `ClientChatMessage`
     ///
     /// # Errors
@@ -2054,6 +2270,18 @@ impl Message {
             }
         };
 
+        // Decrypt reasoning if available before we start moving fields
+        let reasoning_content = if let Some(dek) = user_dek_secret_box {
+            self.decrypt_reasoning_field(dek).unwrap_or_else(|e| {
+                error!("Failed to decrypt reasoning for message {}: {}", self.id, e);
+                None
+            })
+        } else if self.reasoning_content.is_some() {
+            Some("[Reasoning encrypted, DEK not available]".to_string())
+        } else {
+            None
+        };
+
         Ok(ChatMessageForClient {
             id: self.id,
             session_id: self.session_id,
@@ -2073,6 +2301,7 @@ impl Message {
             credit_cost: Some(self.credit_cost),
             actual_charge: self.actual_charge.to_f64(),
             game_time: self.game_time.clone().map(|j| j.0),
+            reasoning_content,
         })
     }
 }
@@ -2087,6 +2316,7 @@ pub struct ClientChatMessage {
     pub role: Option<String>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub reasoning_content: Option<String>,
 }
 
 impl std::fmt::Debug for ClientChatMessage {
@@ -2099,6 +2329,10 @@ impl std::fmt::Debug for ClientChatMessage {
             .field("role", &self.role)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
+            .field(
+                "reasoning_content",
+                &self.reasoning_content.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -2112,8 +2346,8 @@ pub struct ChatMessageForClient {
     pub content: String,
     pub created_at: DbTimestamp,
     pub user_id: crate::db::DbId,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub raw_prompt: Option<String>,
     pub model_name: Option<String>,
     pub status: String,
@@ -2124,6 +2358,7 @@ pub struct ChatMessageForClient {
     pub credit_cost: Option<i32>, // Credits consumed (when credits actually used)
     pub actual_charge: Option<f64>, // Actual dollar amount charged to user
     pub game_time: Option<serde_json::Value>,
+    pub reasoning_content: Option<String>,
 }
 
 impl std::fmt::Debug for ChatMessageForClient {
@@ -2147,6 +2382,10 @@ impl std::fmt::Debug for ChatMessageForClient {
             .field("credit_cost", &self.credit_cost)
             .field("actual_charge", &self.actual_charge)
             .field("game_time", &self.game_time)
+            .field(
+                "reasoning_content",
+                &self.reasoning_content.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -2168,8 +2407,8 @@ pub struct NewChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String, // Changed to String to match schema
@@ -2183,6 +2422,8 @@ pub struct NewChatMessage {
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
 }
 
 impl Default for NewChatMessage {
@@ -2215,6 +2456,8 @@ impl Default for NewChatMessage {
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         }
     }
 }
@@ -2296,12 +2539,12 @@ impl NewChatMessageBuilder {
         self
     }
 
-    pub fn prompt_tokens(mut self, prompt_tokens: Option<i64>) -> Self {
+    pub fn prompt_tokens(mut self, prompt_tokens: Option<DbBigInt>) -> Self {
         self.inner.prompt_tokens = prompt_tokens;
         self
     }
 
-    pub fn completion_tokens(mut self, completion_tokens: Option<i64>) -> Self {
+    pub fn completion_tokens(mut self, completion_tokens: Option<DbBigInt>) -> Self {
         self.inner.completion_tokens = completion_tokens;
         self
     }
@@ -2368,6 +2611,16 @@ impl NewChatMessageBuilder {
 
     pub fn game_time(mut self, game_time: Option<crate::DbJson>) -> Self {
         self.inner.game_time = game_time;
+        self
+    }
+
+    pub fn reasoning_content(mut self, content: Option<Vec<u8>>) -> Self {
+        self.inner.reasoning_content = content;
+        self
+    }
+
+    pub fn reasoning_content_nonce(mut self, nonce: Option<Vec<u8>>) -> Self {
+        self.inner.reasoning_content_nonce = nonce;
         self
     }
 
@@ -2438,8 +2691,8 @@ pub struct DbInsertableChatMessage {
     pub role: Option<String>,
     pub parts: Option<crate::DbJson>,
     pub attachments: Option<crate::DbJson>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub model_name: String,
@@ -2455,6 +2708,8 @@ pub struct DbInsertableChatMessage {
     pub credit_cost: i32,
     pub actual_charge: crate::db::DbDecimal,
     pub game_time: Option<crate::DbJson>,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
 }
@@ -2492,6 +2747,17 @@ impl std::fmt::Debug for DbInsertableChatMessage {
                 &self.raw_prompt_nonce.as_ref().map(|_| "[REDACTED_NONCE]"),
             )
             .field("game_time", &self.game_time)
+            .field(
+                "reasoning_content",
+                &self.reasoning_content.as_ref().map(|_| "[REDACTED_BYTES]"),
+            )
+            .field(
+                "reasoning_content_nonce",
+                &self
+                    .reasoning_content_nonce
+                    .as_ref()
+                    .map(|_| "[REDACTED_NONCE]"),
+            )
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
@@ -2537,6 +2803,8 @@ impl DbInsertableChatMessage {
             credit_cost: 0,
             actual_charge: crate::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
             created_at: DbTimestamp::now(),
             updated_at: DbTimestamp::now(),
         }
@@ -2582,8 +2850,8 @@ impl DbInsertableChatMessage {
     #[must_use]
     pub const fn with_token_counts(
         mut self,
-        prompt_tokens: Option<i64>,
-        completion_tokens: Option<i64>,
+        prompt_tokens: Option<DbBigInt>,
+        completion_tokens: Option<DbBigInt>,
     ) -> Self {
         self.prompt_tokens = prompt_tokens;
         self.completion_tokens = completion_tokens;
@@ -2598,6 +2866,16 @@ impl DbInsertableChatMessage {
     ) -> Self {
         self.raw_prompt_ciphertext = raw_prompt_ciphertext;
         self.raw_prompt_nonce = raw_prompt_nonce;
+        self
+    }
+    #[must_use]
+    pub fn with_reasoning(
+        mut self,
+        reasoning_content: Option<Vec<u8>>,
+        reasoning_content_nonce: Option<Vec<u8>>,
+    ) -> Self {
+        self.reasoning_content = reasoning_content;
+        self.reasoning_content_nonce = reasoning_content_nonce;
         self
     }
 
@@ -2714,6 +2992,7 @@ impl std::fmt::Debug for GenerateResponsePayload {
 #[derive(Deserialize, Serialize)]
 pub struct CreateMessageVariantPayload {
     pub content: String,
+    pub reasoning: Option<String>,
 }
 
 impl std::fmt::Debug for CreateMessageVariantPayload {
@@ -2842,8 +3121,8 @@ pub struct ChatForClient {
     pub active_impersonated_character_id: Option<crate::db::DbId>,
     pub chat_mode: ChatMode,
     pub chronicle_id: Option<crate::db::DbId>, // Chronicle association (maps to player_chronicle_id in database)
-    pub total_prompt_tokens: i64,
-    pub total_completion_tokens: i64,
+    pub total_prompt_tokens: DbBigInt,
+    pub total_completion_tokens: DbBigInt,
     pub total_credits_used: crate::db::DbDecimal,
     pub total_actual_cost: crate::db::DbDecimal, // Raw API cost in dollars
     // Game Master Agent fields
@@ -3463,8 +3742,8 @@ pub struct MessageVariantResponse {
     pub index: i32,
     pub content: String,
     pub created_at: DbTimestamp,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub model_name: Option<String>,
 
     pub game_state: Option<serde_json::Value>,
@@ -3482,8 +3761,8 @@ pub struct MessageResponse {
     pub attachments: crate::DbJson,
     pub created_at: DbTimestamp,
     pub raw_prompt: Option<String>, // Debug field containing the full prompt sent to AI
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub model_name: Option<String>, // Optional for backward compatibility with existing messages
     pub status: String,
     pub error_message: Option<String>,
@@ -4369,9 +4648,11 @@ pub struct MessageVariant {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub game_state: Option<crate::db::DbJson>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub model_name: Option<String>,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
 }
 
 /// Insertable model for creating new message variants
@@ -4387,9 +4668,11 @@ pub struct NewMessageVariant {
     pub raw_prompt_ciphertext: Option<Vec<u8>>,
     pub raw_prompt_nonce: Option<Vec<u8>>,
     pub game_state: Option<crate::db::DbJson>,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub model_name: Option<String>,
+    pub reasoning_content: Option<Vec<u8>>,
+    pub reasoning_content_nonce: Option<Vec<u8>>,
 }
 
 impl MessageVariant {
@@ -4459,6 +4742,32 @@ impl MessageVariant {
             _ => Ok(None),
         }
     }
+
+    /// Decrypt the reasoning_content field using the provided DEK
+    pub fn decrypt_reasoning(&self, dek: &SecretBox<Vec<u8>>) -> Result<Option<String>, AppError> {
+        match (&self.reasoning_content, &self.reasoning_content_nonce) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                let plaintext_secret = decrypt_gcm(ciphertext, nonce, dek).map_err(|e| {
+                    error!(
+                        "Failed to decrypt reasoning for variant ID {}: {}",
+                        self.id, e
+                    );
+                    AppError::DecryptionError(format!("Decryption failed for reasoning: {e}"))
+                })?;
+
+                let reasoning_str = String::from_utf8(plaintext_secret.expose_secret().clone())
+                    .map_err(|e| {
+                        tracing::error!("Failed to convert decrypted reasoning to UTF-8: {}", e);
+                        AppError::DecryptionError(
+                            "Failed to convert reasoning to UTF-8".to_string(),
+                        )
+                    })?;
+
+                Ok(Some(reasoning_str))
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 impl NewMessageVariant {
@@ -4471,6 +4780,7 @@ impl NewMessageVariant {
         dek: &SecretBox<Vec<u8>>,
         raw_prompt_debug: Option<&str>,
         game_state: Option<serde_json::Value>,
+        reasoning: Option<&str>,
     ) -> Result<Self, AppError> {
         let (encrypted_content, nonce) = encrypt_gcm(content.as_bytes(), dek)
             .map_err(|e| AppError::CryptoError(e.to_string()))?;
@@ -4488,7 +4798,7 @@ impl NewMessageVariant {
             (None, None)
         };
 
-        Ok(Self {
+        let mut variant = Self {
             parent_message_id,
             variant_index,
             content: encrypted_content,
@@ -4500,13 +4810,26 @@ impl NewMessageVariant {
             prompt_tokens: None,
             completion_tokens: None,
             model_name: None,
-        })
+            reasoning_content: None,
+            reasoning_content_nonce: None,
+        };
+
+        if let Some(reasoning_text) = reasoning {
+            if !reasoning_text.is_empty() {
+                let (ciphertext, r_nonce) = encrypt_gcm(reasoning_text.as_bytes(), dek)
+                    .map_err(|e| AppError::CryptoError(e.to_string()))?;
+                variant.reasoning_content = Some(ciphertext);
+                variant.reasoning_content_nonce = Some(r_nonce);
+            }
+        }
+
+        Ok(variant)
     }
     #[must_use]
     pub fn with_token_counts(
         mut self,
-        prompt_tokens: Option<i64>,
-        completion_tokens: Option<i64>,
+        prompt_tokens: Option<DbBigInt>,
+        completion_tokens: Option<DbBigInt>,
     ) -> Self {
         self.prompt_tokens = prompt_tokens;
         self.completion_tokens = completion_tokens;
@@ -4530,11 +4853,12 @@ pub struct MessageVariantDto {
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
-    pub prompt_tokens: Option<i64>,
-    pub completion_tokens: Option<i64>,
+    pub prompt_tokens: Option<DbBigInt>,
+    pub completion_tokens: Option<DbBigInt>,
     pub model_name: Option<String>,
     pub raw_prompt: Option<String>,
     pub game_state: Option<serde_json::Value>,
+    pub reasoning_content: Option<String>,
 }
 
 impl MessageVariantDto {
@@ -4555,7 +4879,8 @@ impl MessageVariantDto {
             completion_tokens: None, // Not stored in message_variants table
             model_name: None,        // Not stored in message_variants table
             raw_prompt,
-            game_state: variant.game_state.map(|j| j.into_inner()),
+            game_state: variant.game_state.clone().map(|j| j.into_inner()),
+            reasoning_content: variant.decrypt_reasoning(dek)?,
         })
     }
 }

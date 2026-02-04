@@ -80,8 +80,8 @@ mod subscription_cancellation_tests {
                 status: "cancelled".to_string(),
                 current_period_start: (Utc::now() - Duration::days(7)).into(),
                 current_period_end: (Utc::now() + Duration::days(23)).into(),
-                created_at: Some((Utc::now() - Duration::days(7)).into()),
-                updated_at: Some((Utc::now() - Duration::hours(1)).into()),
+                created_at: (Utc::now(-Duration::days(7)).into()),
+                updated_at: (Utc::now() - Duration::hours(1)).into(),
                 cancel_at_period_end: Some(false),
                 trial_end: Some((Utc::now() - Duration::hours(1)).into()), // Expired 1 hour ago
                 credits_allocated_this_period: Some(false),
@@ -122,8 +122,8 @@ mod subscription_cancellation_tests {
                 status: "cancelled".to_string(),
                 current_period_start: (Utc::now() - Duration::days(5)).into(),
                 current_period_end: (Utc::now() + Duration::days(25)).into(),
-                created_at: Some((Utc::now() - Duration::days(5)).into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: (Utc::now(-Duration::days(5)).into()),
+                updated_at: Utc::now().into(),
                 cancel_at_period_end: Some(false),
                 trial_end: Some((Utc::now() + Duration::days(2)).into()), // Expires in 2 days
                 credits_allocated_this_period: Some(false),
@@ -164,8 +164,8 @@ mod subscription_cancellation_tests {
                 status: "active".to_string(),
                 current_period_start: (Utc::now() - Duration::days(5)).into(),
                 current_period_end: (Utc::now() + Duration::days(25)).into(),
-                created_at: Some((Utc::now() - Duration::days(5)).into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: (Utc::now(-Duration::days(5)).into()),
+                updated_at: Utc::now().into(),
                 cancel_at_period_end: Some(false),
                 trial_end: Some((Utc::now() - Duration::days(1)).into()), // Trial already ended
                 credits_allocated_this_period: Some(false),
@@ -206,8 +206,8 @@ mod subscription_cancellation_tests {
                 status: "cancelled".to_string(),
                 current_period_start: (Utc::now() - Duration::days(5)).into(),
                 current_period_end: (Utc::now() + Duration::days(25)).into(),
-                created_at: Some((Utc::now() - Duration::days(5)).into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: (Utc::now(-Duration::days(5)).into()),
+                updated_at: Utc::now().into(),
                 cancel_at_period_end: Some(false),
                 trial_end: None, // No trial
                 credits_allocated_this_period: Some(false),

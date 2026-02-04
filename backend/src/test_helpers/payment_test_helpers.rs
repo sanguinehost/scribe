@@ -87,11 +87,13 @@ pub mod payment_test_helpers {
             recovery_dek_nonce: None,
             role: UserRole::User,
             account_status: AccountStatus::Active,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_token_cost_cents: 0,
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_completion_tokens: crate::db::DbBigInt::from(0),
+            total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::DbTimestamp::now(),
+            created_at: crate::DbTimestamp::now(),
+            updated_at: crate::DbTimestamp::now(),
         };
 
         let user_from_db: UserDbQuery = diesel::insert_into(users::table)
@@ -127,8 +129,8 @@ pub mod payment_test_helpers {
             world_scenario: Some("Testing environment".to_string().into_bytes()),
             avatar: None,
             chat: None,
-            created_at: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
-            updated_at: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
+            created_at: crate::db::unified_types::DbTimestamp::from_datetime(now),
+            updated_at: crate::db::unified_types::DbTimestamp::from_datetime(now),
             creation_date: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
             modification_date: Some(crate::db::unified_types::DbTimestamp::from_datetime(now)),
             creator_notes_multilingual: None,

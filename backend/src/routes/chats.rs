@@ -1078,13 +1078,12 @@ pub async fn get_messages_by_chat_id_handler(
             characters::table
                 .filter(characters::id.eq(char_id))
                 .select(characters::name) // <--- THIS is line 1083 (approx) in original file?
-                .first::<Option<String>>(conn)
+                .first::<String>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         })
         .await
         .ok()
-        .flatten()
         .flatten()
     } else {
         None
@@ -1236,13 +1235,16 @@ pub async fn create_message_handler(
             charge_credits: false, // Manual message creation is not charged
             credits_cost_override: None, // Let save_message calculate from tokens
             game_time: None,
+            reasoning_content: None,
         },
     )
     .await?;
 
     // Track token usage for payment/quota tracking (for manually created user messages)
     #[cfg(feature = "payment")]
-    if message_role_enum == MessageRole::User && saved_db_message.prompt_tokens.unwrap_or(0) > 0 {
+    if message_role_enum == MessageRole::User
+        && saved_db_message.prompt_tokens.map(|t| t.0).unwrap_or(0) > 0
+    {
         use crate::services::encryption_service::EncryptionService;
         use crate::services::payment::UsageTrackingService;
 
@@ -1250,7 +1252,7 @@ pub async fn create_message_handler(
             UsageTrackingService::new((*state.config).clone(), EncryptionService::new());
 
         let user_id_for_payment = user_id;
-        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0) as i32; // Cast to i32 for payment tracking
+        let tokens_used = saved_db_message.prompt_tokens.map(|t| t.0).unwrap_or(0) as i32; // Cast to i32 for payment tracking
         let model_name_for_tracking = chat.model_name.clone();
 
         // Get a database connection for the usage tracking
@@ -2600,9 +2602,9 @@ async fn get_chat_token_usage_handler(
 
     let token_usage = ChatTokenUsage {
         chat_id: id,
-        total_prompt_tokens: chat.total_prompt_tokens as i32, // Cast to i32 for API compatibility
-        total_completion_tokens: chat.total_completion_tokens as i32, // Cast to i32 for API compatibility
-        total_tokens: total_tokens as i32, // Cast to i32 for API compatibility
+        total_prompt_tokens: chat.total_prompt_tokens.0 as i32, // Cast to i32 for API compatibility
+        total_completion_tokens: chat.total_completion_tokens.0 as i32, // Cast to i32 for API compatibility
+        total_tokens: total_tokens.0 as i32, // Cast to i32 for API compatibility
         estimated_cost_cents: chat.estimated_cost_cents,
         estimated_cost_dollars,
         tokens_counted_at: chat.tokens_counted_at,

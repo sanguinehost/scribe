@@ -51,8 +51,8 @@ async fn test_context_enrichment_with_encryption() -> Result<()> {
         description: Some("Knowledge about dragons".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now().into()),
-        updated_at: Some(Utc::now().into()),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
     };
 
     // Insert lorebook into database

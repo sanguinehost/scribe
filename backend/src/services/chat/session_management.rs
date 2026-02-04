@@ -315,11 +315,7 @@ fn validate_and_get_character(
 
 /// Sanitizes character name and validates it's not empty
 fn sanitize_character_name(character: &Character) -> Result<String, AppError> {
-    let sanitized_character_name = character
-        .name
-        .as_deref()
-        .unwrap_or_default()
-        .replace('\0', "");
+    let sanitized_character_name = character.name.replace('\0', "");
     if sanitized_character_name.is_empty() {
         error!(character_id = %character.id, "Character name is empty or consists only of invalid characters after sanitization.");
         return Err(AppError::BadRequest(
@@ -1019,6 +1015,7 @@ async fn process_first_message(
                                             charge_credits: false, // Character's first message is not charged
                                             credits_cost_override: None, // Let save_message calculate from tokens
                                             game_time: None,
+                                            reasoning_content: None,
                                         })
                                         .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
@@ -1045,6 +1042,7 @@ async fn process_first_message(
                                                     charge_credits: false,
                                                     credits_cost_override: None,
                                                     game_time: None,
+                                                    reasoning_content: None,
                                                 })
                                                 .await?;
                                             }

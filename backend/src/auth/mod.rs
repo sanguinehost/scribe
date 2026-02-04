@@ -343,6 +343,8 @@ pub fn create_user_sync(
         total_token_cost_cents: crate::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
+        created_at: crate::DbTimestamp::now(),
+        updated_at: crate::DbTimestamp::now(),
     };
 
     debug!("Inserting new user with encryption fields into database...");

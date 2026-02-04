@@ -63,6 +63,7 @@ pub async fn create_message_variant(
     dek: &SecretBox<Vec<u8>>,
     raw_prompt_debug: Option<&str>,
     game_state: Option<serde_json::Value>,
+    reasoning: Option<&str>,
 ) -> Result<(crate::models::chats::Message, crate::db::DbId), AppError> {
     tracing::info!(
         "🆕 Creating new variant for message {} with content length {}",
@@ -91,6 +92,7 @@ pub async fn create_message_variant(
         dek,
         raw_prompt_debug,
         game_state.clone(),
+        reasoning,
     )?;
 
     // Clone the DEK for use in the closure (create a new SecretBox from the exposed secret)
@@ -177,6 +179,25 @@ pub async fn create_message_variant(
                     _ => None,
                 };
 
+                // Decrypt parent's reasoning if available
+                let parent_reasoning = match (
+                    &parent_message.reasoning_content,
+                    &parent_message.reasoning_content_nonce,
+                ) {
+                    (Some(ciphertext), Some(nonce))
+                        if !ciphertext.is_empty() && !nonce.is_empty() =>
+                    {
+                        match crate::crypto::decrypt_gcm(ciphertext, nonce, &dek_for_closure) {
+                            Ok(decrypted_secret_box) => {
+                                let decrypted_bytes = decrypted_secret_box.expose_secret();
+                                String::from_utf8(decrypted_bytes.clone()).ok()
+                            }
+                            Err(_) => None,
+                        }
+                    }
+                    _ => None,
+                };
+
                 // Create variant 0 with original content AND raw_prompt (tokens/model not stored in variants table)
                 let original_variant = NewMessageVariant::new(
                     message_id,
@@ -186,6 +207,7 @@ pub async fn create_message_variant(
                     &dek_for_closure,
                     parent_raw_prompt.as_deref(), // Preserve original raw_prompt
                     None,                         // No game state for original variant
+                    parent_reasoning.as_deref(),  // Preserve original reasoning
                 )
                 .map_err(|e| {
                     AppError::DatabaseQueryError(format!("Failed to create original variant: {e}"))
@@ -482,6 +504,7 @@ pub async fn ensure_original_variant_exists(
             dek,
             None, // No raw_prompt for old variants
             None, // No game state for old variants
+            None, // No reasoning for old variants
         )?;
 
         #[cfg(feature = "postgres-backend")]

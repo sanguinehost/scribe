@@ -43,6 +43,8 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username,
         password_hash: hashed_password,

@@ -44,3 +44,8 @@ services:
 volumes:
   postgres_data:
   qdrant_data:
+
+networks:
+  default:
+    name: scribe_network
+    external: true

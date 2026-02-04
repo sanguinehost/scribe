@@ -1445,7 +1445,8 @@ mod tests {
         };
         // Box the card data as expected by ParsedCharacterCard::V3
         // Pass the card directly, not boxed
-        let parsed = ParsedCharacterCard::V3(card_v3);
+        // Box the card data as expected by ParsedCharacterCard::V3
+        let parsed = ParsedCharacterCard::V3(Box::new(card_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 
@@ -1504,8 +1505,8 @@ mod tests {
         };
         // Populate other fields as needed if the V2Fallback variant expects them
 
-        // Pass the V3 struct directly, not boxed
-        let parsed = ParsedCharacterCard::V2Fallback(data_v2_as_v3);
+        // Pass the V3 struct directly, boxed as expected
+        let parsed = ParsedCharacterCard::V2Fallback(Box::new(data_v2_as_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 

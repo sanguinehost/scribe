@@ -71,8 +71,8 @@ async fn setup_test_env(
         spec_version: "2.0.0".to_string(),
         name: "Test Character".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(Utc::now().into()),
-        updated_at: Some(Utc::now().into()),
+        created_at: Utc::now().into(),
+        updated_at: Utc::now().into(),
         ..Default::default()
     };
 

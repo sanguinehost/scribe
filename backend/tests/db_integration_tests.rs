@@ -153,6 +153,8 @@ fn insert_test_user(conn: &mut PgConnection, prefix: &str) -> Result<User, Diese
     let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username: test_username.clone(),
         password_hash: "test_hash".to_string(), // This hash won't match any real password process here
@@ -390,6 +392,8 @@ fn test_user_character_insert_and_query() {
         let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
         let new_user = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: Uuid::new_v4().into(),
             username: test_username.clone(),
             password_hash: test_password_hash.to_string(),
@@ -495,6 +499,8 @@ fn insert_test_user_with_password(
     let dummy_dek_nonce = vec![0u8; 12]; // 12b nonce
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username: username_param.to_string(),
         password_hash: hashed_password,
@@ -873,14 +879,14 @@ fn test_chat_session_insert_and_query() {
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
+            stop_sequences: Some(scribe_backend::db::unified_types::DbStringArray::empty()),
             thinking_budget: None,
             enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
+            total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+            total_completion_tokens: scribe_backend::db::DbBigInt(0),
             estimated_cost_cents: 0,
             tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
             total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -999,6 +1005,8 @@ async fn test_chat_message_insert_and_query() -> Result<(), AnyhowError> {
                     visibility: Some("private".to_string()),
                     model_name: Some("gemini-2.5-flash".to_string()),
                     tokens_counted_at: chrono::Utc::now().into(),
+                    total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+                    total_completion_tokens: scribe_backend::db::DbBigInt(0),
                     total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                     prompt_template_id: "default".to_string(),
                     ..Default::default()
@@ -1227,6 +1235,8 @@ async fn test_data_guard_cleanup_logic() -> anyhow::Result<()> {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         game_time: None,
+        reasoning_content: None,
+        reasoning_content_nonce: None,
     };
 
     conn_setup

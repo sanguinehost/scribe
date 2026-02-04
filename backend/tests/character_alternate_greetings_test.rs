@@ -28,7 +28,7 @@ fn test_alternate_greetings_v3_conversion() {
         ..Default::default()
     };
 
-    let parsed_card = ParsedCharacterCard::V3(card);
+    let parsed_card = ParsedCharacterCard::V3(Box::new(card));
     let user_id = Uuid::new_v4();
 
     // Convert to NewCharacter
@@ -60,7 +60,7 @@ fn test_alternate_greetings_v2_fallback_conversion() {
         ..Default::default()
     };
 
-    let parsed_card = ParsedCharacterCard::V2Fallback(card_data);
+    let parsed_card = ParsedCharacterCard::V2Fallback(Box::new(card_data));
     let user_id = Uuid::new_v4();
 
     // Convert to NewCharacter
@@ -96,7 +96,7 @@ fn test_empty_alternate_greetings_conversion() {
         ..Default::default()
     };
 
-    let parsed_card = ParsedCharacterCard::V3(card);
+    let parsed_card = ParsedCharacterCard::V3(Box::new(card));
     let user_id = Uuid::new_v4();
 
     // Convert to NewCharacter

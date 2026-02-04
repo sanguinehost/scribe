@@ -113,11 +113,11 @@ diesel::table! {
         id -> Uuid,
         user_id -> Uuid,
         #[max_length = 255]
-        spec -> Nullable<Varchar>,
+        spec -> Varchar,
         #[max_length = 50]
-        spec_version -> Nullable<Varchar>,
+        spec_version -> Varchar,
         #[max_length = 255]
-        name -> Nullable<Varchar>,
+        name -> Varchar,
         description -> Nullable<Bytea>,
         personality -> Nullable<Bytea>,
         scenario -> Nullable<Bytea>,
@@ -139,8 +139,8 @@ diesel::table! {
         group_only_greetings -> Nullable<Array<Nullable<Text>>>,
         creation_date -> Nullable<Timestamptz>,
         modification_date -> Nullable<Timestamptz>,
-        created_at -> Nullable<Timestamptz>,
-        updated_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
         persona -> Nullable<Bytea>,
         world_scenario -> Nullable<Bytea>,
         avatar -> Nullable<Text>,
@@ -291,6 +291,8 @@ diesel::table! {
         credit_cost -> Int4,
         actual_charge -> Numeric,
         game_time -> Nullable<Jsonb>,
+        reasoning_content -> Nullable<Bytea>,
+        reasoning_content_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -602,6 +604,8 @@ diesel::table! {
         prompt_tokens -> Nullable<Int8>,
         completion_tokens -> Nullable<Int8>,
         model_name -> Nullable<Text>,
+        reasoning_content -> Nullable<Bytea>,
+        reasoning_content_nonce -> Nullable<Bytea>,
     }
 }
 

@@ -847,7 +847,7 @@ impl NarrativeIntelligenceService {
 
         Ok(CharacterContext::new(
             character.id,
-            character.name.unwrap_or_default(),
+            character.name.clone(),
             description,
             personality,
             scenario,

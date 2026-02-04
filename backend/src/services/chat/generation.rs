@@ -518,7 +518,7 @@ pub async fn get_session_data_for_generation(
                 .filter(chat_sessions::id.eq(session_id))
                 .filter(chat_sessions::user_id.eq(user_id))
                 .select(chat_sessions::stop_sequences)
-                .first::<crate::db::DbStringArray>(conn_interaction)
+                .first::<Option<crate::db::DbStringArray>>(conn_interaction)
                 .map_err(|e| match e {
                     DieselError::NotFound => {
                         AppError::NotFound(format!("Chat session {session_id} not found"))
@@ -642,6 +642,8 @@ pub async fn get_session_data_for_generation(
                             chat_messages::model_name,
                             chat_messages::status,
                             chat_messages::game_time,
+                            chat_messages::reasoning_content,
+                            chat_messages::reasoning_content_nonce,
                         ));
 
                     #[cfg(feature = "postgres-backend")]
@@ -659,6 +661,8 @@ pub async fn get_session_data_for_generation(
                             String,
                             String,
                             Option<crate::DbJson>,
+                            Option<Vec<u8>>,
+                            Option<Vec<u8>>,
                         )>(conn_interaction)
                     }
 
@@ -677,6 +681,8 @@ pub async fn get_session_data_for_generation(
                             String,
                             String,
                             Option<crate::DbJson>,
+                            Option<Vec<u8>>,
+                            Option<Vec<u8>>,
                         )>(conn_interaction)
                     }
                 }
@@ -704,6 +710,8 @@ pub async fn get_session_data_for_generation(
                             model_name,
                             status,
                             game_time,
+                            reasoning_content,
+                            reasoning_content_nonce,
                         )| {
                             DbChatMessage {
                                 id,
@@ -718,8 +726,8 @@ pub async fn get_session_data_for_generation(
                                 role: None,
                                 parts: None,
                                 attachments: None,
-                                prompt_tokens,
-                                completion_tokens,
+                                prompt_tokens: prompt_tokens.map(crate::db::DbBigInt::from),
+                                completion_tokens: completion_tokens.map(crate::db::DbBigInt::from),
                                 model_name,
                                 status,
                                 raw_prompt_ciphertext: None,
@@ -735,6 +743,8 @@ pub async fn get_session_data_for_generation(
                                 credit_cost: 0,
                                 actual_charge: crate::db::DbDecimal::from(0),
                                 game_time,
+                                reasoning_content,
+                                reasoning_content_nonce,
                             }
                         },
                     )
@@ -757,6 +767,8 @@ pub async fn get_session_data_for_generation(
                             model_name,
                             status,
                             game_time,
+                            reasoning_content,
+                            reasoning_content_nonce,
                         )| {
                             DbChatMessage {
                                 id,
@@ -771,8 +783,8 @@ pub async fn get_session_data_for_generation(
                                 parts: None,
                                 attachments: None,
                                 rag_embedding_id: None,
-                                prompt_tokens,
-                                completion_tokens,
+                                prompt_tokens: prompt_tokens.map(crate::db::DbBigInt::from),
+                                completion_tokens: completion_tokens.map(crate::db::DbBigInt::from),
                                 raw_prompt_ciphertext: None,
                                 raw_prompt_nonce: None,
                                 model_name,
@@ -788,6 +800,8 @@ pub async fn get_session_data_for_generation(
                                 credit_cost: 0,
                                 actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                                 game_time,
+                                reasoning_content,
+                                reasoning_content_nonce,
                             }
                         },
                     )
@@ -1055,6 +1069,8 @@ pub async fn get_session_data_for_generation(
                     credit_cost: 0,
                     actual_charge: crate::db::DbDecimal::from(0),
                     game_time: None,
+                    reasoning_content: None,
+                    reasoning_content_nonce: None,
                 };
 
                 #[cfg(feature = "postgres-backend")]
@@ -1088,6 +1104,8 @@ pub async fn get_session_data_for_generation(
                     actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
                     modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                     credit_cost: 0,
+                    reasoning_content: None,
+                    reasoning_content_nonce: None,
                     actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                     game_time: None,
                 };
@@ -1903,6 +1921,8 @@ pub async fn get_session_data_for_generation(
                 modified_cost: crate::db::DbDecimal::from(0),
                 credit_cost: 0,
                 actual_charge: crate::db::DbDecimal::from(0),
+                reasoning_content: None,
+                reasoning_content_nonce: None,
             };
 
             #[cfg(feature = "postgres-backend")]
@@ -1936,6 +1956,8 @@ pub async fn get_session_data_for_generation(
                 credit_cost: 0,
                 actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                 game_time: None,
+                reasoning_content: None,
+                reasoning_content_nonce: None,
             };
 
             managed_recent_history.insert(0, first_mes_db_chat_message);
@@ -1976,7 +1998,7 @@ pub async fn get_session_data_for_generation(
         .with_parts(crate::db::Json(
             serde_json::json!([{"text": user_message_content}]),
         ))
-        .with_token_counts(user_prompt_tokens_val, None);
+        .with_token_counts(user_prompt_tokens_val.map(crate::db::DbBigInt::from), None);
 
     // --- Construct Final Tuple ---
     Ok((
@@ -2105,6 +2127,8 @@ pub struct ExecChatWithRetryParams {
     pub user_id: crate::db::DbId, // Added for per-user AI client selection
     pub character_name: Option<String>, // For prefill generation
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
+    pub reasoning_budget: Option<i32>,
+    pub capture_reasoning_content: bool,
 }
 
 /// Executes non-streaming AI chat with retry mechanism for safety filter blocks.
@@ -2185,6 +2209,8 @@ pub async fn completion_with_retry(
             history: attempt_history,
             temperature: params.temperature,
             max_tokens: params.max_tokens,
+            reasoning_budget: params.reasoning_budget,
+            capture_reasoning_content: params.capture_reasoning_content,
             ..Default::default()
         };
 
@@ -2501,6 +2527,7 @@ pub async fn stream_ai_response_and_save_message(
 
     let sse_stream = async_stream::stream! {
         let mut accumulated_content = String::new();
+        let mut accumulated_reasoning = String::new();
         let mut stream_error_occurred = false;
         let mut chunk_index: u32 = 0;
 
@@ -2552,6 +2579,7 @@ pub async fn stream_ai_response_and_save_message(
                 }
                 Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
                     if !reasoning.is_empty() {
+                        accumulated_reasoning.push_str(&reasoning);
                         yield Ok(ScribeSseEvent::Thinking(reasoning));
                     }
                 }
@@ -2606,6 +2634,7 @@ pub async fn stream_ai_response_and_save_message(
                                 charge_credits: charge_credits_clone_partial,
                                 credits_cost_override: None,
                                 game_time: game_time_clone_partial,
+                                reasoning_content: None, // No reasoning for partial saves yet, or could add accumulated so far?
                            }).await {
                                 Ok((saved_message, _variant_id)) => {
                                     debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
@@ -2675,6 +2704,12 @@ pub async fn stream_ai_response_and_save_message(
             let service_model_name_clone_full = service_model_name.clone(); // Clone model name for this task
             let token_sender_clone = token_sender.clone(); // Clone the sender for the spawned task
             let accumulated_content_clone = accumulated_content.clone(); // Clone content for the spawned task
+            // Clone reasoning content if it exists, otherwise use empty string which will become None later
+            let accumulated_reasoning_clone = if !accumulated_reasoning.is_empty() {
+                Some(accumulated_reasoning.clone())
+            } else {
+                None
+            };
             let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
             let charge_credits_clone_full = charge_credits; // Clone charge flag for this task
             let game_master_mode_enabled_clone = game_master_mode_enabled; // Copy flag for spawned task
@@ -2701,6 +2736,7 @@ pub async fn stream_ai_response_and_save_message(
                     model_name: service_model_name_clone_full.clone(),
                     raw_prompt_debug: Some(&raw_prompt_debug),
                     status: crate::models::chats::MessageStatus::Completed,
+                    reasoning_content: accumulated_reasoning_clone.as_deref(),
                     error_message: None,
                     variant_of,
                     charge_credits: charge_credits_clone_full, // Use charge flag from params
@@ -2716,7 +2752,7 @@ pub async fn stream_ai_response_and_save_message(
                             let soft_limit_service = SoftLimitService::new(state_for_full_save.config.clone());
                             let user_id_for_tracking = full_user_id_clone;
                             let model_for_tracking = service_model_name_clone_full.clone();
-                            let tokens_for_tracking = saved_message.completion_tokens.unwrap_or(0);
+                            let tokens_for_tracking = saved_message.completion_tokens.map(|t| t.0).unwrap_or(0);
 
                             // Track usage with unified database helper
                             let tracking_result = crate::db::with_conn(&state_for_full_save.pool, move |c| {
@@ -2760,8 +2796,8 @@ pub async fn stream_ai_response_and_save_message(
                         if let (Some(prompt_tokens), Some(completion_tokens)) = (saved_message.prompt_tokens, saved_message.completion_tokens) {
                             info!(
                                 session_id = %full_session_id_clone,
-                                prompt_tokens = prompt_tokens,
-                                completion_tokens = completion_tokens,
+                                prompt_tokens = prompt_tokens.0,
+                                completion_tokens = completion_tokens.0,
                                 model_name = %service_model_name_clone_full,
                                 "About to send tokenUsage SSE event with values: prompt={}, completion={}, model={}",
                                 prompt_tokens,
@@ -2769,8 +2805,8 @@ pub async fn stream_ai_response_and_save_message(
                                 service_model_name_clone_full
                             );
                             let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
-                                prompt_tokens: prompt_tokens as i32,
-                                completion_tokens: completion_tokens as i32,
+                                prompt_tokens: prompt_tokens.0 as i32,
+                                completion_tokens: completion_tokens.0 as i32,
                                 model_name: service_model_name_clone_full.clone(),
                             });
                             info!(session_id = %full_session_id_clone, "TokenUsage SSE event sent successfully");
@@ -2963,10 +2999,10 @@ pub async fn stream_ai_response_and_save_message(
                                             chars_dsl::characters
                                                 .filter(chars_dsl::id.eq(cid))
                                                 .select(chars_dsl::name)
-                                                .first::<Option<String>>(conn)
+                                                .first::<String>(conn)
                                                 .optional()
                                                 .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
-                                        }).await.ok().flatten().flatten()
+                                        }).await.ok().flatten()
                                     } else {
                                         None
                                     };

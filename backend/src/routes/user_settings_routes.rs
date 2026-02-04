@@ -198,14 +198,14 @@ async fn get_user_token_usage_handler(
 
     debug!(user_id = %user.id, "Getting user token usage statistics");
 
-    let total_tokens = user.total_prompt_tokens + user.total_completion_tokens;
-    let total_cost_dollars = user.total_token_cost_cents as f64 / 100.0;
+    let total_tokens = *user.total_prompt_tokens + *user.total_completion_tokens;
+    let total_cost_dollars = *user.total_token_cost_cents as f64 / 100.0;
 
     let token_usage = TokenUsageSummary {
-        total_prompt_tokens: user.total_prompt_tokens,
-        total_completion_tokens: user.total_completion_tokens,
+        total_prompt_tokens: *user.total_prompt_tokens,
+        total_completion_tokens: *user.total_completion_tokens,
         total_tokens,
-        total_cost_cents: user.total_token_cost_cents,
+        total_cost_cents: *user.total_token_cost_cents,
         total_cost_dollars,
         tokens_last_reset_at: user.tokens_last_reset_at,
         token_usage_updated_at: user.token_usage_updated_at,

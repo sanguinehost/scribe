@@ -2644,6 +2644,8 @@ pub mod db {
             total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
+            created_at: crate::db::DbTimestamp::now(),
+            updated_at: crate::db::DbTimestamp::now(),
         };
 
         #[cfg(feature = "postgres-backend")]
@@ -2763,6 +2765,8 @@ pub mod db {
             total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
+            created_at: crate::db::DbTimestamp::now(),
+            updated_at: crate::db::DbTimestamp::now(),
         };
 
         #[cfg(feature = "postgres-backend")]
@@ -2876,9 +2880,9 @@ pub mod db {
             avatar: None,
             chat: None,
             #[cfg(feature = "postgres-backend")]
-            created_at: Some(now),
+            created_at: now,
             #[cfg(feature = "postgres-backend")]
-            updated_at: Some(now),
+            updated_at: now,
             #[cfg(feature = "sqlite-backend")]
             created_at: now,
             #[cfg(feature = "sqlite-backend")]

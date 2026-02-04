@@ -1479,7 +1479,7 @@ impl ChronicleService {
                 characters::table
                     .filter(characters::id.eq(char_id))
                     .select(characters::name)
-                    .first::<Option<String>>(conn)
+                    .first::<String>(conn)
                     .optional()
                     .map_err(|e| {
                         error!("Diesel error when getting character name: {}", e);
@@ -1487,7 +1487,6 @@ impl ChronicleService {
                     })
             })
             .await?
-            .flatten()
         } else {
             None
         };

@@ -449,6 +449,8 @@ pub struct NewUser {
     pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewUser {

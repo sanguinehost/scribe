@@ -244,7 +244,7 @@ fn test_from_parsed_card_v3() {
         data: data_v3.clone(), // Clone data_v3 for comparison later
         ..Default::default()
     };
-    let parsed_v3 = ParsedCharacterCard::V3(card_v3);
+    let parsed_v3 = ParsedCharacterCard::V3(Box::new(card_v3));
 
     let new_char = NewCharacter::from_parsed_card(&parsed_v3, user_id);
 

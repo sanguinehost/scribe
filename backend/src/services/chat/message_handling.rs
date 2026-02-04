@@ -218,6 +218,7 @@ pub struct SaveMessageParams<'a> {
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
     pub credits_cost_override: Option<crate::db::DbDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
     pub game_time: Option<Value>, // ADDED: The in-game time when the message was sent
+    pub reasoning_content: Option<&'a str>, // ADDED: Reasoning content from Assistant
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -249,6 +250,7 @@ pub async fn save_message(
         #[cfg(not(feature = "postgres-backend"))]
             credits_cost_override: _,
         game_time,
+        reasoning_content,
     } = params;
 
     // Clone model_name early for later use in token tracking
@@ -353,6 +355,7 @@ pub async fn save_message(
                 dek_arc,
                 raw_prompt_debug, // Pass through the raw_prompt for the variant
                 None, // game_state will be updated later by narrative service if applicable
+                reasoning_content,
             )
             .await;
 
@@ -581,6 +584,21 @@ pub async fn save_message(
         (content.as_bytes().to_vec(), None)
     };
 
+    let (reasoning_to_save, reasoning_nonce_to_save) = if let Some(dek_arc) = &user_dek_secret_box {
+        if let Some(reasoning) = reasoning_content {
+            let (ciphertext, nonce) =
+                crypto::encrypt_gcm(reasoning.as_bytes(), dek_arc).map_err(|e| {
+                    error!(%session_id, "Failed to encrypt reasoning content: {}", e);
+                    AppError::EncryptionError(format!("Failed to encrypt reasoning: {e}"))
+                })?;
+            (Some(ciphertext), Some(nonce))
+        } else {
+            (None, None)
+        }
+    } else {
+        (reasoning_content.map(|r| r.as_bytes().to_vec()), None)
+    };
+
     // Generate new ID for SQLite (no DEFAULT in schema)
     #[cfg(feature = "sqlite-backend")]
     let message_id = crate::db::DbId::new();
@@ -594,6 +612,7 @@ pub async fn save_message(
         nonce_to_save,
         model_name,
     )
+    .with_reasoning(reasoning_to_save, reasoning_nonce_to_save)
     .with_id(message_id)
     .with_created_at(crate::db::DbTimestamp::now())
     .with_updated_at(crate::db::DbTimestamp::now())
@@ -608,6 +627,7 @@ pub async fn save_message(
         nonce_to_save,     // content_nonce field
         model_name,        // model_name field
     )
+    .with_reasoning(reasoning_to_save, reasoning_nonce_to_save)
     .with_status(status);
 
     if let Some(err_msg) = error_message {
@@ -624,8 +644,10 @@ pub async fn save_message(
         new_message_to_insert =
             new_message_to_insert.with_attachments(crate::db::Json(attachments_val));
     }
-    new_message_to_insert =
-        new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
+    new_message_to_insert = new_message_to_insert.with_token_counts(
+        prompt_tokens_val.map(crate::db::DbBigInt::from),
+        completion_tokens_val.map(crate::db::DbBigInt::from),
+    );
 
     if let Some(gt) = game_time {
         new_message_to_insert.game_time = Some(crate::db::Json(gt));

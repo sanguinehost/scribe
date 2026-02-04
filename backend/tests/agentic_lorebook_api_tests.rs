@@ -62,6 +62,8 @@ fn insert_test_user_with_password(
         .expect("Failed to encrypt DEK for test user");
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: scribe_backend::db::DbId::new(),
         username: username.to_string(),
         password_hash: hashed_password,
@@ -74,9 +76,9 @@ fn insert_test_user_with_password(
         dek_nonce: scribe_backend::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: Utc::now().into(),
     };
@@ -809,14 +811,14 @@ mod extract_from_chat_api_tests {
             top_k: None,
             top_p: None,
             seed: None,
-            stop_sequences: scribe_backend::db::unified_types::DbStringArray::none(),
+            stop_sequences: Some(scribe_backend::db::unified_types::DbStringArray::empty()),
             thinking_budget: None,
             enable_code_execution: None,
             system_prompt_ciphertext: None,
             system_prompt_nonce: None,
             player_chronicle_id: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
+            total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+            total_completion_tokens: scribe_backend::db::DbBigInt(0),
             estimated_cost_cents: 0,
             tokens_counted_at: now.into(),
             total_credits_used: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
@@ -913,6 +915,8 @@ mod extract_from_chat_api_tests {
                 credit_cost: 0,
                 actual_charge: scribe_backend::db::DbDecimal(bigdecimal::BigDecimal::from(0)),
                 game_time: None,
+                reasoning_content: None,
+                reasoning_content_nonce: None,
             };
 
             run_db_op(pool, move |conn| {

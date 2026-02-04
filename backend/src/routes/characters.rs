@@ -447,10 +447,7 @@ pub async fn upload_character_base64_handler(
     // Create character asset record with binary data
     let new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
-        &format!(
-            "{}_avatar",
-            inserted_character.name.as_deref().unwrap_or("unknown")
-        ),
+        &format!("{}_avatar", inserted_character.name.as_str()),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
@@ -715,14 +712,8 @@ pub async fn upload_character_base64_handler(
         }
 
         let lorebook_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
-            name: format!(
-                "{} Lorebook",
-                inserted_character.name.as_deref().unwrap_or("Unknown")
-            ),
-            description: Some(format!(
-                "Lorebook for {}",
-                inserted_character.name.as_deref().unwrap_or("Unknown")
-            )),
+            name: format!("{} Lorebook", inserted_character.name.as_str()),
+            description: Some(format!("Lorebook for {}", inserted_character.name.as_str())),
             is_public: false,
             entries: entries_map,
         };
@@ -1096,10 +1087,7 @@ pub async fn upload_character_handler(
     // Create character asset record with binary data
     let new_asset = NewCharacterAsset::new_avatar(
         inserted_character.id,
-        &format!(
-            "{}_avatar",
-            inserted_character.name.as_deref().unwrap_or("unknown")
-        ),
+        &format!("{}_avatar", inserted_character.name.as_str()),
         png_data.to_vec(),
         content_type, // Pass the extracted content_type
     );
@@ -1367,14 +1355,8 @@ pub async fn upload_character_handler(
         }
 
         let lorebook_payload = crate::models::lorebook_dtos::LorebookUploadPayload {
-            name: format!(
-                "{} Lorebook",
-                inserted_character.name.as_deref().unwrap_or("Unknown")
-            ),
-            description: Some(format!(
-                "Lorebook for {}",
-                inserted_character.name.as_deref().unwrap_or("Unknown")
-            )),
+            name: format!("{} Lorebook", inserted_character.name.as_str()),
+            description: Some(format!("Lorebook for {}", inserted_character.name.as_str())),
             is_public: false,
             entries: entries_map,
         };
@@ -1728,9 +1710,9 @@ pub async fn generate_character_handler(
         // This is a Character struct, not NewCharacter
         id: DbId::new(),
         user_id: user_id_val,
-        spec: Some("dummy_spec_placeholder".to_string()),
-        spec_version: Some("dummy_spec_version_placeholder".to_string()),
-        name: Some("Generated Placeholder".to_string()),
+        spec: "dummy_spec_placeholder".to_string(),
+        spec_version: "dummy_spec_version_placeholder".to_string(),
+        name: "Generated Placeholder".to_string(),
         description: None, // Will be set after potential encryption
         description_nonce: None,
         personality: Some(b"Placeholder".to_vec()),
@@ -1757,8 +1739,8 @@ pub async fn generate_character_handler(
         group_only_greetings: Default::default(),
         creation_date: None,
         modification_date: None,
-        created_at: Some(chrono::Utc::now().into()),
-        updated_at: Some(chrono::Utc::now().into()),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         persona: None,
         persona_nonce: None,
         world_scenario: None,

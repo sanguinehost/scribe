@@ -23,7 +23,7 @@ diesel::table! {
         model_used -> Nullable<Text>,
         created_at -> Nullable<Timestamp>,
         updated_at -> Nullable<Timestamp>,
-        message_id -> Nullable<Text>,
+        message_id -> Text,
         assistant_message_id -> Nullable<Text>,
         status -> Text,
         error_message -> Nullable<Text>,
@@ -91,9 +91,9 @@ diesel::table! {
     characters (id) {
         id -> Text,
         user_id -> Text,
-        spec -> Nullable<Text>,
-        spec_version -> Nullable<Text>,
-        name -> Nullable<Text>,
+        spec -> Text,
+        spec_version -> Text,
+        name -> Text,
         description -> Nullable<Binary>,
         personality -> Nullable<Binary>,
         scenario -> Nullable<Binary>,
@@ -112,8 +112,8 @@ diesel::table! {
         group_only_greetings -> Nullable<Text>,
         creation_date -> Nullable<Timestamp>,
         modification_date -> Nullable<Timestamp>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         persona -> Nullable<Binary>,
         world_scenario -> Nullable<Binary>,
         avatar -> Nullable<Text>,
@@ -245,6 +245,8 @@ diesel::table! {
         credit_cost -> Integer,
         actual_charge -> Double,
         game_time -> Nullable<Text>,
+        reasoning_content -> Nullable<Binary>,
+        reasoning_content_nonce -> Nullable<Binary>,
     }
 }
 
@@ -401,8 +403,8 @@ diesel::table! {
         paddle_price_id -> Nullable<Text>,
         active -> Nullable<Bool>,
         display_order -> Nullable<Integer>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -438,8 +440,8 @@ diesel::table! {
         token_count -> Integer,
         model_breakdown -> Nullable<Text>,
         soft_limit_triggered_at -> Nullable<Integer>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -541,6 +543,8 @@ diesel::table! {
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
         game_state -> Nullable<Text>,
+        reasoning_content -> Nullable<Binary>,
+        reasoning_content_nonce -> Nullable<Binary>,
     }
 }
 
@@ -626,8 +630,8 @@ diesel::table! {
         completed_at -> Nullable<Timestamp>,
         paddle_data_encrypted -> Nullable<Binary>,
         paddle_data_nonce -> Nullable<Binary>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
@@ -682,8 +686,8 @@ diesel::table! {
         features -> Nullable<Text>,
         display_name -> Text,
         description -> Nullable<Text>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         paddle_price_id_yearly -> Nullable<Text>,
         max_context_tokens -> Nullable<Integer>,
     }
@@ -729,8 +733,8 @@ diesel::table! {
         current_period_end -> Timestamp,
         cancel_at_period_end -> Nullable<Bool>,
         trial_end -> Nullable<Timestamp>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         credits_allocated_this_period -> Nullable<Bool>,
         soft_limit_override -> Nullable<Integer>,
         last_credit_grant -> Nullable<Timestamp>,
@@ -829,8 +833,8 @@ diesel::table! {
         lifetime_earned -> Integer,
         lifetime_spent -> Integer,
         last_monthly_grant -> Nullable<Timestamp>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         version -> Integer,
     }
 }
@@ -861,8 +865,8 @@ diesel::table! {
         mes_example_nonce -> Nullable<Binary>,
         system_prompt_nonce -> Nullable<Binary>,
         post_history_instructions_nonce -> Nullable<Binary>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 

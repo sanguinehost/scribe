@@ -70,6 +70,8 @@ async fn create_test_user_with_dek(
     let kek_salt_str = kek_salt.clone();
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
@@ -120,9 +122,9 @@ async fn create_test_chat_session(
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
         #[cfg(feature = "postgres-backend")]
-        created_at: Some(scribe_backend::db::DbTimestamp::now()),
+        created_at: scribe_backend::db::DbTimestamp::now(),
         #[cfg(feature = "postgres-backend")]
-        updated_at: Some(scribe_backend::db::DbTimestamp::now()),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         #[cfg(feature = "sqlite-backend")]
         created_at: scribe_backend::db::DbTimestamp::now(),
         #[cfg(feature = "sqlite-backend")]

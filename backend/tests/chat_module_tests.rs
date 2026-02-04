@@ -346,6 +346,8 @@ mod get_session_data_for_generation_tests {
     ) -> scribe_backend::db::DbId {
         let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: user_id,
             username: username.to_string(),
             password_hash: "hash".to_string(),
@@ -488,8 +490,8 @@ mod get_session_data_for_generation_tests {
             description: Some(description.to_string()),
             source_format: "scribe_v1".to_string(),
             is_public: false,
-            created_at: Some(chrono::Utc::now().into()),
-            updated_at: Some(chrono::Utc::now().into()),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         };
 
         // Insert lorebook
@@ -1051,6 +1053,8 @@ mod get_session_data_for_generation_tests {
         // Insert User
         let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user_for_trunc_test = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: user_id,
             username: "testuser_trunc".to_string(),
             password_hash: "anotherhash".to_string(),
@@ -1335,6 +1339,8 @@ mod get_session_data_for_generation_tests {
         // Insert User
         let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user_for_rag_total_limit_test = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: user_id,
             username: "testuser_rag_total_limit".to_string(),
             password_hash: "hash_rag_total_limit".to_string(),
@@ -1523,8 +1529,8 @@ mod get_session_data_for_generation_tests {
             ))
             .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
             .with_token_counts(
-                prompt_tokens_val.map(i64::from),
-                completion_tokens_val.map(i64::from),
+                prompt_tokens_val.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+                completion_tokens_val.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
             );
 
             conn.interact(move |conn_i| {
@@ -1734,6 +1740,8 @@ mod get_session_data_for_generation_tests {
         // Insert User
         let user_id: scribe_backend::db::DbId = Uuid::new_v4().into();
         let new_user_for_rag_older_hist_test = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: user_id,
             username: "testuser_rag_older_hist".to_string(),
             password_hash: "hash_rag_older_hist".to_string(),
@@ -1856,7 +1864,10 @@ mod get_session_data_for_generation_tests {
                 json!({"type": "text", "text": *content}),
             ))
             .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
-            .with_token_counts(pt.map(|v| v as i64), ct.map(|v| v as i64));
+            .with_token_counts(
+                pt.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+                ct.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+            );
             // created_at will be set by the database default `now()`.
             // Order of insertion will manage "older" vs "recent".
 
@@ -2015,7 +2026,10 @@ mod get_session_data_for_generation_tests {
                 json!({"type": "text", "text": *content}),
             ))
             .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
-            .with_token_counts(pt.map(i64::from), ct.map(i64::from));
+            .with_token_counts(
+                pt.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+                ct.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+            );
 
             conn.interact({
                 let m_insert = insertable_recent_msg.clone();

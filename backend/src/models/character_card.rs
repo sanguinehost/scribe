@@ -552,8 +552,8 @@ pub struct NewCharacter {
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DbTimestamp>,
+    pub created_at: DbTimestamp, // Consistent with schema and Character struct
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -852,8 +852,8 @@ impl NewCharacter {
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption
-            created_at: None,
-            updated_at: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         }
     }
 

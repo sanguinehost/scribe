@@ -289,9 +289,9 @@ impl CharacterService {
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
             #[cfg(feature = "postgres-backend")]
-            created_at: Some(DbTimestamp::from(Utc::now())),
+            created_at: DbTimestamp::from(Utc::now()),
             #[cfg(feature = "postgres-backend")]
-            updated_at: Some(DbTimestamp::from(Utc::now())),
+            updated_at: DbTimestamp::from(Utc::now()),
             #[cfg(feature = "sqlite-backend")]
             created_at: Utc::now().into(),
             #[cfg(feature = "sqlite-backend")]
@@ -470,7 +470,7 @@ impl CharacterService {
 
         // Apply updates from DTO
         if let Some(name_val) = update_dto.name {
-            existing_character.name = Some(name_val);
+            existing_character.name = name_val;
         }
 
         // Encrypted fields
@@ -620,7 +620,7 @@ impl CharacterService {
         }
 
         // Always update the 'updated_at' timestamp
-        existing_character.updated_at = Some(Utc::now().into());
+        existing_character.updated_at = Utc::now().into();
         // Update modification_date if it wasn't explicitly provided in the DTO
         if update_dto.modification_date.is_none() {
             existing_character.modification_date = Some(DbTimestamp::from(Utc::now()));

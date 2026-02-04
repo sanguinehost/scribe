@@ -106,12 +106,7 @@ pub type DbInt = i32;
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 pub type DbInt = i32;
 
-// BigInt type - i64 for both PostgreSQL (BigInt) and SQLite (BigInt/Integer)
-#[cfg(feature = "postgres-backend")]
-pub type DbBigInt = i64;
-
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-pub type DbBigInt = i64;
+// BigInt type - DbBigInt is provided by unified_types module
 
 // DbJson is now provided by unified_types module
 
@@ -141,4 +136,4 @@ pub use json_wrapper::Json;
 pub use backend_traits::DbType;
 
 /// Re-export all unified types
-pub use unified_types::{DbBlob, DbDecimal, DbId, DbJson, DbStringArray, DbTimestamp};
+pub use unified_types::{DbBigInt, DbBlob, DbDecimal, DbId, DbJson, DbStringArray, DbTimestamp};

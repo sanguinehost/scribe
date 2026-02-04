@@ -23,7 +23,7 @@ pub type DbConn =
     diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
 
 // Extension trait to provide async .get() for SQLite pools (compatibility with PostgreSQL async pools)
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 #[allow(async_fn_in_trait)]
 pub trait SqlitePoolExt {
     type Connection;
@@ -35,7 +35,7 @@ pub trait SqlitePoolExt {
     >;
 }
 
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 impl SqlitePoolExt for DbPool {
     type Connection =
         diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>;
@@ -68,7 +68,7 @@ impl SqlitePoolExt for DbPool {
 //
 // IMPORTANT: This means SQLite code must use `let mut conn` while PostgreSQL uses `let conn`.
 // The trait signature matches the closure return type: T can be Result<U, E> to support ?? pattern.
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 #[allow(async_fn_in_trait)]
 pub trait SqliteInteractExt {
     async fn interact<F, T>(&mut self, f: F) -> Result<T, AppError>
@@ -77,7 +77,7 @@ pub trait SqliteInteractExt {
         T: Send + 'static;
 }
 
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 impl SqliteInteractExt
     for diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<crate::db::DbConnection>>
 {

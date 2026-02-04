@@ -542,8 +542,8 @@ pub struct NewCharacter {
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DbTimestamp>,
+    pub created_at: DbTimestamp, // Consistent with schema and Character struct
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -843,8 +843,8 @@ impl NewCharacter {
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption
-            created_at: None,
-            updated_at: None,
+            created_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
+            updated_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
         }
     }
 
@@ -975,8 +975,8 @@ impl NewCharacter {
             depth_prompt_nonce: None,
             world_ciphertext: None,
             world_nonce: None,
-            created_at: None,
-            updated_at: None,
+            created_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
+            updated_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
         }
     }
 
@@ -1409,7 +1409,8 @@ mod tests {
         };
         // Box the card data as expected by ParsedCharacterCard::V3
         // Pass the card directly, not boxed
-        let parsed = ParsedCharacterCard::V3(card_v3);
+        // Box the card data as expected by ParsedCharacterCard::V3
+        let parsed = ParsedCharacterCard::V3(Box::new(card_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 
@@ -1476,8 +1477,8 @@ mod tests {
         };
         // Populate other fields as needed if the V2Fallback variant expects them
 
-        // Pass the V3 struct directly, not boxed
-        let parsed = ParsedCharacterCard::V2Fallback(data_v2_as_v3);
+        // Pass the V3 struct directly, boxed as expected
+        let parsed = ParsedCharacterCard::V2Fallback(Box::new(data_v2_as_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 

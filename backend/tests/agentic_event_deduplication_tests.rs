@@ -50,6 +50,8 @@ async fn create_test_user(
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: scribe_backend::db::DbId::new(),
         username: username.clone(),
         password_hash: hashed_password,

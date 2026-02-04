@@ -74,9 +74,9 @@ async fn create_test_character(
         name: name.to_string(),
         visibility: Some("private".to_string()),
         #[cfg(feature = "postgres-backend")]
-        created_at: Some(Utc::now().into()),
+        created_at: Utc::now().into(),
         #[cfg(feature = "postgres-backend")]
-        updated_at: Some(Utc::now().into()),
+        updated_at: Utc::now().into(),
         #[cfg(feature = "sqlite-backend")]
         created_at: Utc::now().into(),
         #[cfg(feature = "sqlite-backend")]

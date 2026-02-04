@@ -467,10 +467,10 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: crate::db::unified_types::DbStringArray::from_vec(vec![
+            tags: Some(crate::db::unified_types::DbStringArray::from_vec(vec![
                 Some("tag1".to_string()),
                 Some("tag2".to_string()),
-            ]),
+            ])),
             avatar: Some("avatar.png".to_string()),
             description_nonce: Some(DbBlob::from(vec![7, 8, 9])),
             personality_nonce: Some(DbBlob::from(vec![10, 11, 12])),
@@ -506,9 +506,9 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: crate::db::unified_types::DbStringArray::from_vec(vec![Some(
-                "client_tag1".to_string(),
-            )]),
+            tags: Some(crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("client_tag1".to_string()),
+            ])),
             avatar: Some("client_avatar.png".to_string()),
             created_at: DbTimestamp::now(),
             updated_at: DbTimestamp::now(),
@@ -554,7 +554,7 @@ mod tests {
             system_prompt_nonce: None,
             post_history_instructions: None,
             post_history_instructions_nonce: None,
-            tags: crate::db::unified_types::DbStringArray::empty(),
+            tags: Some(crate::db::unified_types::DbStringArray::empty()),
             avatar: None,
             created_at: DbTimestamp::now(),
             updated_at: DbTimestamp::now(),

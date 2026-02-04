@@ -134,7 +134,7 @@ async fn get_user_handler(
     let user_detail = AdminUserDetailResponse {
         id: user.id,
         username: user.username,
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         email: user.email,
         #[cfg(feature = "postgres-backend")]
         email: Some(user.email),
@@ -187,7 +187,7 @@ async fn lock_user_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
@@ -250,7 +250,7 @@ async fn unlock_user_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
@@ -324,7 +324,7 @@ async fn update_user_role_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
@@ -351,7 +351,7 @@ async fn update_user_role_handler(
     let user_detail = AdminUserDetailResponse {
         id: updated_user.id,
         username: updated_user.username,
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         email: updated_user.email,
         #[cfg(feature = "postgres-backend")]
         email: Some(updated_user.email),

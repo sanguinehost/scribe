@@ -443,6 +443,8 @@ async fn test_agent_analysis_storage_security() {
             credit_cost: 0,
             actual_charge: scribe_backend::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         };
 
         insert_into(chat_messages::table)
@@ -478,6 +480,8 @@ async fn test_agent_analysis_storage_security() {
             credit_cost: 0,
             actual_charge: scribe_backend::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         };
 
         insert_into(chat_messages::table)

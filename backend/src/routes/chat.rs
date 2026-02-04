@@ -3,6 +3,7 @@
 use crate::auth::session_dek::SessionDek;
 use crate::auth::token_auth::UnifiedAuth;
 #[cfg(feature = "sqlite-backend")]
+#[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 use crate::errors::AppError;
@@ -360,7 +361,7 @@ pub async fn generate_chat_response(
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
         user_id: character_db_model.user_id,
-        name: character_db_model.name.clone().unwrap_or_default(),
+        name: character_db_model.name.clone(),
         description: character_db_model.description.clone(),
         description_nonce: character_db_model.description_nonce.clone(),
         personality: character_db_model.personality.clone(),
@@ -372,12 +373,8 @@ pub async fn generate_chat_response(
         creator_comment: character_db_model.creator_comment.clone(),
         creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
         first_mes: character_db_model.first_mes.clone(),
-        created_at: character_db_model
-            .created_at
-            .unwrap_or_else(crate::db::DbTimestamp::now),
-        updated_at: character_db_model
-            .updated_at
-            .unwrap_or_else(crate::db::DbTimestamp::now),
+        created_at: character_db_model.created_at,
+        updated_at: character_db_model.updated_at,
     };
     trace!(%session_id, character_id = %character_metadata_for_prompt_builder.id, "Constructed CharacterMetadata for prompt builder.");
 
@@ -446,7 +443,14 @@ pub async fn generate_chat_response(
 
         // Load subscription tier configuration
         let config_path = std::path::Path::new("backend/config/subscription_tiers.json");
-        let config_content = std::fs::read_to_string(config_path).map_err(|_| {
+        let config_path_alt = std::path::Path::new("config/subscription_tiers.json");
+
+        let config_content = if config_path.exists() {
+            std::fs::read_to_string(config_path)
+        } else {
+            std::fs::read_to_string(config_path_alt)
+        }
+        .map_err(|_| {
             AppError::InternalServerErrorGeneric(
                 "Failed to load subscription tiers config".to_string(),
             )
@@ -760,6 +764,7 @@ pub async fn generate_chat_response(
             charge_credits: false,       // User messages are never charged
             credits_cost_override: None, // Let save_message calculate from tokens
             game_time: None,
+            reasoning_content: None,
         })
         .await
         {
@@ -773,7 +778,7 @@ pub async fn generate_chat_response(
                         crate::services::payment::SoftLimitService::new(state_arc.config.clone());
                     let user_id_for_tracking = user_id_value;
                     let model_for_tracking = model_to_use.clone();
-                    let tokens_for_tracking = saved_msg.prompt_tokens.unwrap_or(0);
+                    let tokens_for_tracking = saved_msg.prompt_tokens.map(|t| t.0).unwrap_or(0);
 
                     // Track usage with unified database helper
                     let tracking_result = crate::db::with_conn(&state_arc.pool, move |c| {
@@ -1352,7 +1357,7 @@ pub async fn generate_chat_response(
                 enable_code_execution: gen_enable_code_execution,
                 request_thinking,
                 user_dek: session_dek_arc.clone(),
-                character_name: character_db_model.name.clone(),
+                character_name: Some(character_db_model.name.clone()),
                 player_chronicle_id,
                 variant_of: payload.variant_of,
                 #[cfg(feature = "payment")]
@@ -1627,8 +1632,10 @@ pub async fn generate_chat_response(
                 max_tokens: gen_max_output_tokens,
                 session_id,
                 user_id: user_id_value,
-                character_name: character_db_model.name.clone(),
+                character_name: Some(character_db_model.name.clone()),
                 user_dek: session_dek_arc.clone(),
+                reasoning_budget: gen_thinking_budget,
+                capture_reasoning_content: request_thinking,
             };
 
             trace!(%session_id, ?rig_params, "Prepared RigParams for AI (non-streaming, JSON path)");
@@ -1701,15 +1708,22 @@ pub async fn generate_chat_response(
                     // Calculate actual generation cost (API cost + user-facing credits)
                     #[cfg(feature = "payment")]
                     let cost_info = if prompt_tokens > 0 || completion_tokens > 0 {
-                        // Load token-based pricing from config
+                        // Load subscription tier configuration
                         let config_path =
                             std::path::Path::new("backend/config/subscription_tiers.json");
-                        let config_content =
-                            std::fs::read_to_string(config_path).map_err(|_| {
-                                AppError::InternalServerErrorGeneric(
-                                    "Failed to load subscription tiers config".to_string(),
-                                )
-                            })?;
+                        let config_path_alt =
+                            std::path::Path::new("config/subscription_tiers.json");
+
+                        let config_content = if config_path.exists() {
+                            std::fs::read_to_string(config_path)
+                        } else {
+                            std::fs::read_to_string(config_path_alt)
+                        }
+                        .map_err(|_| {
+                            AppError::InternalServerErrorGeneric(
+                                "Failed to load subscription tiers config".to_string(),
+                            )
+                        })?;
                         let tiers_config: crate::DbJson = serde_json::from_str(&config_content)
                             .map_err(|_| {
                                 AppError::InternalServerErrorGeneric(
@@ -1933,6 +1947,7 @@ pub async fn generate_chat_response(
                                 #[cfg(not(feature = "payment"))]
                                 credits_cost_override: None,
                                 game_time: None,
+                                reasoning_content: chat_response.reasoning_content.as_deref(),
                             },
                         )
                         .await
@@ -2201,7 +2216,7 @@ pub async fn generate_chat_response(
                     enable_code_execution: gen_enable_code_execution,
                     request_thinking,
                     user_dek: dek_for_fallback_stream_service,
-                    character_name: character_db_model.name.clone(),
+                    character_name: Some(character_db_model.name.clone()),
                     player_chronicle_id,
                     variant_of: payload.variant_of,
                     #[cfg(feature = "payment")]
@@ -2780,6 +2795,7 @@ async fn create_message_variant_handler(
             &session_dek.0,
             None, // raw_prompt_debug not available in direct variant creation
             None, // game_state not available in direct variant creation
+            payload.reasoning.as_deref(),
         )
         .await?;
 
@@ -3025,7 +3041,7 @@ pub async fn generate_suggested_actions(
     let character_metadata_for_prompt_builder = CharacterMetadata {
         id: character_db_model.id,
         user_id: character_db_model.user_id,
-        name: character_db_model.name.clone().unwrap_or_default(),
+        name: character_db_model.name.clone(),
         description: character_db_model.description.clone(),
         description_nonce: character_db_model.description_nonce.clone(),
         personality: character_db_model.personality.clone(),
@@ -3037,12 +3053,8 @@ pub async fn generate_suggested_actions(
         creator_comment: character_db_model.creator_comment.clone(),
         creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
         first_mes: character_db_model.first_mes.clone(),
-        created_at: character_db_model
-            .created_at
-            .unwrap_or_else(crate::db::DbTimestamp::now),
-        updated_at: character_db_model
-            .updated_at
-            .unwrap_or_else(crate::db::DbTimestamp::now),
+        created_at: character_db_model.created_at,
+        updated_at: character_db_model.updated_at,
     };
 
     // Construct context for the suggestion prompt
