@@ -1414,7 +1414,7 @@ mod tests {
         // Verify they are identical after cloning
         assert_eq!(character1.id, character1_clone.id);
         assert_eq!(character1.name, character1_clone.name);
-        assert_eq!(character1.name.as_deref(), Some("Dummy Character"));
+        assert_eq!(character1.name, "Dummy Character");
     }
 
     #[tokio::test]
@@ -1552,7 +1552,7 @@ mod tests {
 
     // Helper function to create a dummy V3 card
     fn create_dummy_v3_card() -> ParsedCharacterCard {
-        ParsedCharacterCard::V3(CharacterCardV3 {
+        ParsedCharacterCard::V3(Box::new(CharacterCardV3 {
             spec: "chara_card_v3_spec".to_string(),
             spec_version: "1.0.0".to_string(),
             data: CharacterCardDataV3 {
@@ -1581,7 +1581,7 @@ mod tests {
                 extensions: HashMap::default(), // Keep extensions
             },
             ..Default::default()
-        })
+        }))
     }
 
     // Helper function to create a dummy V2 card

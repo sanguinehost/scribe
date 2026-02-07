@@ -34,6 +34,9 @@
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { ChatController } from '$lib/controllers/chat-controller.svelte';
 	import GameStateSidebar from './gamemaster/GameStateSidebar.svelte';
+	import { LLMStore } from '$lib/stores/llm.svelte';
+	import { SelectedModel } from '$lib/hooks/selected-model.svelte';
+	import { getAllAvailableModels } from '$lib/ai/models';
 
 	let {
 		user,
@@ -106,6 +109,22 @@
 		return () => {
 			controller.activeStreamingService.disconnect();
 		};
+	});
+
+	// --- Model Capabilities ---
+	const llmStore = LLMStore.fromContext();
+	const selectedChatModel = SelectedModel.fromContext();
+
+	const availableModels = $derived.by(() => {
+		const localModels = llmStore.models.filter((m) => m.isLocal && m.downloaded);
+		return getAllAvailableModels(localModels);
+	});
+
+	const supportsReasoning = $derived.by(() => {
+		const modelId = controller.chat?.model_name || selectedChatModel.value;
+		if (!modelId) return false;
+		const model = availableModels.find((m) => m.id === modelId);
+		return model?.supportsReasoning || modelId.toLowerCase().includes('gemini');
 	});
 
 	// --- Token Counter State ---
@@ -559,7 +578,9 @@
 						bind:value={controller.chatInput}
 						isLoading={controller.isLoading}
 						{stopGeneration}
+						chat={chat}
 						chatId={chat?.id}
+						supportsReasoning={supportsReasoning}
 						placeholder={placeholderText}
 						onImpersonate={(response) => {
 							controller.chatInput = response;

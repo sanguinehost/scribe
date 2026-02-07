@@ -38,6 +38,7 @@ export interface Message {
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
 	game_state?: GameState | null; // Game state associated with this message variant
+	reasoning_content?: string | null; // Reasoning/thoughts from the model
 }
 
 // Message variant response type
@@ -270,9 +271,9 @@ export interface ScribeChatSession {
 	top_k?: number | null;
 	top_p?: number | null;
 	seed?: number | null;
-	gemini_thinking_budget?: number | null;
-	gemini_thinking_level?: string | null;
-	gemini_enable_code_execution?: boolean | null;
+	thinking_budget?: number | null;
+	thinking_level?: string | null;
+	enable_code_execution?: boolean | null;
 	context_total_token_limit?: number | null;
 	context_recent_history_budget?: number | null;
 	context_rag_budget?: number | null;
@@ -653,6 +654,7 @@ export type MessageResponse = {
 	attachments: MessageAttachment[];
 	created_at: Date;
 	raw_prompt?: string | null; // Debug field containing the full prompt sent to AI
+	reasoning_content?: string | null; // Reasoning/thoughts from the model
 };
 
 // Scribe-specific chat message interface for frontend components
@@ -685,10 +687,13 @@ export interface ScribeChatMessage {
 	parent_message_id?: string | null; // UUID of parent message if this is a variant
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
 	game_state?: GameState | null; // Game state associated with this message variant
+	reasoning_content?: string | null; // Reasoning/thoughts from the model
 	// UI state
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages
 	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
+	is_thinking?: boolean; // Reasoning in progress (from backend)
+	isThinking?: boolean; // Reasoning in progress (frontend UI state)
 }
 
 export type DocumentResponse = {
@@ -741,9 +746,10 @@ export interface UpdateChatSessionSettingsRequest {
 	active_custom_persona_id?: string | null;
 	model_name?: string | null;
 	model_provider?: string | null;
-	gemini_thinking_budget?: number | null;
-	gemini_thinking_level?: string | null;
-	gemini_enable_code_execution?: boolean | null;
+	thinking_budget?: number | null;
+	thinking_level?: string | null;
+
+	enable_code_execution?: boolean | null;
 	agent_mode?: string | null;
 	prompt_template_id?: string | null;
 	rag_chronicles_limit?: number | null;
@@ -767,9 +773,10 @@ export interface ChatSessionSettingsResponse {
 	top_p?: number | null;
 	seed?: number | null;
 	stop_sequences?: (string | null)[] | null;
-	gemini_thinking_budget?: number | null;
-	gemini_thinking_level?: string | null;
-	gemini_enable_code_execution?: boolean | null;
+	thinking_budget?: number | null;
+	thinking_level?: string | null;
+
+	enable_code_execution?: boolean | null;
 	chronicle_id?: string | null; // Chronicle association (backend API returns chronicle_id)
 	// Context fields that don't exist in backend but are expected by frontend components
 	context_total_token_limit?: number | null;
@@ -796,10 +803,10 @@ export interface UpdateUserSettingsRequest {
 	default_top_k?: number | null;
 	default_seed?: number | null;
 
-	// Gemini-Specific Settings
-	default_gemini_thinking_budget?: number | null;
-	default_gemini_thinking_level?: string | null;
-	default_gemini_enable_code_execution?: boolean | null;
+	// Thinking & Code Execution Settings
+	default_thinking_budget?: number | null;
+	default_thinking_level?: string | null;
+	default_enable_code_execution?: boolean | null;
 
 	// Context Management Settings
 	default_context_total_token_limit?: number | null;
@@ -831,10 +838,10 @@ export interface UserSettingsResponse {
 	default_top_k?: number | null;
 	default_seed?: number | null;
 
-	// Gemini-Specific Settings
-	default_gemini_thinking_budget?: number | null;
-	default_gemini_thinking_level?: string | null;
-	default_gemini_enable_code_execution?: boolean | null;
+	// Thinking & Code Execution Settings
+	default_thinking_budget?: number | null;
+	default_thinking_level?: string | null;
+	default_enable_code_execution?: boolean | null;
 
 	// Context Management Settings
 	default_context_total_token_limit?: number | null;

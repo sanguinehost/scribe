@@ -11,15 +11,11 @@ pub type ChatStream = Pin<Box<dyn Stream<Item = ChatStreamItem> + Send>>;
 pub mod cloud_embedding_client;
 pub mod mistralrs_adapter;
 pub mod model_registry;
-pub mod response_utils; // Utilities for handling LLM responses
+pub mod response_utils;
 pub mod rig_client;
-pub mod unified_embedding; // Added unified_embedding module
+pub mod unified_embedding;
 
 pub use unified_embedding::UnifiedEmbeddingModel;
-
-// MistralRs integration (feature-gated)
-#[cfg(feature = "local-llm")]
-pub mod mistralrs_adapter;
 
 // Import the public request struct for use in the trait
 pub use cloud_embedding_client::BatchEmbeddingContentRequest;

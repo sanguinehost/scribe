@@ -90,7 +90,7 @@ struct GenerationDbData {
     _session_stop_sequences_db: Option<crate::db::DbStringArray>,
     session_model_name_db: String,
     session_model_provider_db: Option<String>,
-    session_thinking_budget_db: Option<i32>,
+    session_reasoning_budget_db: Option<i32>,
     session_thinking_level_db: Option<String>,
     session_enable_code_execution_db: Option<bool>,
     existing_messages_db_raw: Vec<DbChatMessage>,
@@ -123,7 +123,7 @@ impl Default for GenerationDbData {
             _session_stop_sequences_db: None,
             session_model_name_db: "gemini-1.5-pro".to_string(),
             session_model_provider_db: None,
-            session_thinking_budget_db: None,
+            session_reasoning_budget_db: None,
             session_thinking_level_db: None,
             session_enable_code_execution_db: None,
             existing_messages_db_raw: Vec::new(),
@@ -202,8 +202,8 @@ impl GenerationDbDataBuilder {
         self.inner.session_model_provider_db = provider;
         self
     }
-    pub fn session_thinking_budget(mut self, val: Option<i32>) -> Self {
-        self.inner.session_thinking_budget_db = val;
+    pub fn session_reasoning_budget(mut self, val: Option<i32>) -> Self {
+        self.inner.session_reasoning_budget_db = val;
         self
     }
     pub fn session_thinking_level(mut self, val: Option<String>) -> Self {
@@ -901,7 +901,7 @@ pub async fn get_session_data_for_generation(
                     .session_seed(seed_val)
                     .session_model_name(model_n)
                     .session_model_provider(model_prov)
-                    .session_thinking_budget(gem_think_budget)
+                    .session_reasoning_budget(gem_think_budget)
                     .session_thinking_level(gem_think_level)
                     .session_enable_code_execution(gem_enable_code_exec)
                     .existing_messages(messages_raw_db)
@@ -936,7 +936,7 @@ pub async fn get_session_data_for_generation(
         _session_stop_sequences_db,
         session_model_name_db,
         session_model_provider_db,
-        session_thinking_budget_db,
+        session_reasoning_budget_db,
         session_thinking_level_db,
         session_enable_code_execution_db,
         existing_messages_db_raw,
@@ -2017,10 +2017,10 @@ pub async fn get_session_data_for_generation(
         session_model_name_db.to_string(), // 12: model_name (String) - MOVED
         session_model_provider_db,      // 13: model_provider (Option<String>) - NEW
         // -- Thinking Options --
-        session_thinking_budget_db, // 14: thinking_budget (Option<i32>) - MOVED
-        session_thinking_level_db,  // 15: thinking_level (Option<String>) - NEW
+        session_reasoning_budget_db, // 14: thinking_budget (Option<i32>) - MOVED
+        session_thinking_level_db,   // 15: thinking_level (Option<String>) - NEW
         session_enable_code_execution_db, // 16: enable_code_execution (Option<bool>) - MOVED
-        user_db_message_to_save,    // 17: The user message struct (DbInsertableChatMessage) - MOVED
+        user_db_message_to_save, // 17: The user message struct (DbInsertableChatMessage) - MOVED
         // -- RAG Context & Recent History Tokens --
         actual_recent_history_tokens, // 18: actual_recent_history_tokens (usize) - MOVED
         rag_context_items,            // 19: rag_context_items (Vec<RetrievedChunk>) - MOVED
@@ -2057,7 +2057,7 @@ pub struct StreamAiParams {
     pub seed: Option<i32>,                   // Mark as unused for now
     pub model_name: String,
     pub model_provider: Option<String>,
-    pub thinking_budget: Option<i32>,
+    pub reasoning_budget: Option<i32>,
     pub thinking_level: Option<String>,
     pub enable_code_execution: Option<bool>,
     pub request_thinking: bool,                       // New parameter
@@ -2128,6 +2128,7 @@ pub struct ExecChatWithRetryParams {
     pub character_name: Option<String>, // For prefill generation
     pub user_dek: Arc<SecretBox<Vec<u8>>>, // Mandatory for security - no fallback to unsecured
     pub reasoning_budget: Option<i32>,
+    pub thinking_level: Option<String>,
     pub capture_reasoning_content: bool,
 }
 
@@ -2176,23 +2177,27 @@ pub async fn completion_with_retry(
                     .unwrap_or_else(|| create_jailbreak_prompt(""))
             };
 
-            // Add prefill as fake assistant message for all attempts
+            // Add prefill as fake assistant message for all attempts, EXCEPT when thinking is requested
             let mut history_with_prefill = params.history.clone();
-            let prefill_content = if retry_count == 0 {
-                // First attempt: use standard prefill
-                create_standard_prefill(params.character_name.as_deref())
-            } else {
-                // Retry attempts: use enhanced jailbreak prefill
-                create_jailbreak_prefill(params.character_name.as_deref())
-            };
+            if params.thinking_level.is_none() {
+                let prefill_content = if retry_count == 0 {
+                    // First attempt: use standard prefill
+                    create_standard_prefill(params.character_name.as_deref())
+                } else {
+                    // Retry attempts: use enhanced jailbreak prefill
+                    create_jailbreak_prefill(params.character_name.as_deref())
+                };
 
-            let prefill_message = rig::message::Message::Assistant {
-                id: None,
-                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
-                    prefill_content,
-                )),
-            };
-            history_with_prefill.push(prefill_message);
+                let prefill_message = rig::message::Message::Assistant {
+                    id: None,
+                    content: rig::one_or_many::OneOrMany::one(
+                        rig::message::AssistantContent::text(prefill_content),
+                    ),
+                };
+                history_with_prefill.push(prefill_message);
+            } else {
+                info!(session_id = %params.session_id, "Thinking requested, skipping prefill injection to ensure model reasoning is not interfered with.");
+            }
 
             (Some(system_prompt), history_with_prefill)
         };
@@ -2210,6 +2215,7 @@ pub async fn completion_with_retry(
             temperature: params.temperature,
             max_tokens: params.max_tokens,
             reasoning_budget: params.reasoning_budget,
+            thinking_level: params.thinking_level.clone(),
             capture_reasoning_content: params.capture_reasoning_content,
             ..Default::default()
         };
@@ -2270,7 +2276,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             user_id: params.user_id,
             model_name: params.model_name.clone(),
             model_provider: params.model_provider.clone(),
-            thinking_budget: params.thinking_budget,
+            reasoning_budget: params.reasoning_budget,
             thinking_level: params.thinking_level.clone(),
             enable_code_execution: params.enable_code_execution,
             history: {
@@ -2287,7 +2293,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                     _ => false,
                 });
 
-                if !has_guidance {
+                if !has_guidance && !params.request_thinking {
                     let prefill_content = if retry_count == 0 {
                         // First attempt: use standard prefill
                         create_standard_prefill(params.character_name.as_deref())
@@ -2304,6 +2310,8 @@ pub async fn stream_ai_response_and_save_message_with_retry(
                         ),
                     };
                     messages_with_prefill.push(prefill_message);
+                } else if params.request_thinking {
+                    info!(session_id = %params.session_id, "Thinking requested, skipping prefill injection and search to ensure model reasoning is not interfered with.");
                 } else {
                     info!(session_id = %params.session_id, "Guidance detected in user message, skipping prefill injection to ensure adherence.");
                 }
@@ -2395,8 +2403,8 @@ pub async fn stream_ai_response_and_save_message(
         seed: _,
         model_name,
         model_provider,
-        thinking_budget,
-        thinking_level: _thinking_level,
+        reasoning_budget,
+        thinking_level,
         enable_code_execution: _enable_code_execution,
         request_thinking,
         user_dek,
@@ -2482,12 +2490,26 @@ pub async fn stream_ai_response_and_save_message(
         history: history.clone(),
         temperature: temperature.as_ref().and_then(|t| t.to_f64()),
         max_tokens: max_output_tokens,
+        thinking_level: thinking_level.clone(),
         ..Default::default()
     };
 
     // Add thinking/reasoning if requested
-    if request_thinking {
-        rig_req.reasoning_budget = thinking_budget;
+    let mut final_reasoning_budget = reasoning_budget;
+    let mut effective_request_thinking = request_thinking;
+
+    if let Some(level) = &thinking_level {
+        let mapped_budget = map_thinking_level_to_budget(level);
+        if mapped_budget != 0 {
+            final_reasoning_budget = Some(mapped_budget);
+            effective_request_thinking = true;
+        } else if level == "none" {
+            effective_request_thinking = false;
+        }
+    }
+
+    if effective_request_thinking {
+        rig_req.reasoning_budget = final_reasoning_budget;
         rig_req.capture_reasoning_content = true;
     }
 
@@ -2579,6 +2601,7 @@ pub async fn stream_ai_response_and_save_message(
                 }
                 Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
                     if !reasoning.is_empty() {
+                        tracing::info!("🔥 BACKEND (SSE): Yielding Thinking block (len: {}) - content: \"{}\"", reasoning.len(), reasoning.chars().take(50).collect::<String>());
                         accumulated_reasoning.push_str(&reasoning);
                         yield Ok(ScribeSseEvent::Thinking(reasoning));
                     }
@@ -3218,5 +3241,19 @@ async fn get_message_content_with_variant(
                 }),
             }
         }
+    }
+}
+
+/// Maps a provider-agnostic thinking level to a specific token budget.
+/// Returns 0 if thinking should be disabled.
+pub fn map_thinking_level_to_budget(level: &str) -> i32 {
+    // Max thinkingBudget for gemini-2.5-flash is 24576
+    match level.to_lowercase().as_str() {
+        "low" => 8_192,     // ~8k tokens
+        "medium" => 16_384, // ~16k tokens
+        "high" => 24_576,   // ~24k tokens (max for Gemini 2.5)
+        "minimal" => 4_096, // ~4k tokens
+        "dynamic" => -1,    // Dynamic thinking
+        _ => 0,
     }
 }

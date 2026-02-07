@@ -3063,8 +3063,8 @@ pub struct GenerateChatRequest {
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning
     pub game_master_mode_enabled: Option<bool>,
+    pub thinking_level: Option<String>,
 }
-
 impl std::fmt::Debug for GenerateChatRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GenerateChatRequest")
@@ -3084,6 +3084,7 @@ impl std::fmt::Debug for GenerateChatRequest {
             .field("analysis_mode", &self.analysis_mode)
             .field("guidance", &self.guidance.as_ref().map(|_| "[REDACTED]"))
             .field("variant_of", &self.variant_of)
+            .field("thinking_level", &self.thinking_level)
             .finish()
     }
 }
@@ -3522,6 +3523,7 @@ pub struct UpdateChatSettingsRequest {
     pub model_provider: Option<String>,
     // Gemini-specific options
     pub thinking_budget: Option<i32>,
+    pub thinking_level: Option<String>,
     pub enable_code_execution: Option<bool>,
     // Chronicle association
     pub chronicle_id: Option<crate::db::DbId>,
@@ -3535,7 +3537,6 @@ pub struct UpdateChatSettingsRequest {
     pub prompt_template_id: Option<String>,
     // Game Master mode enable/disable
     pub game_master_mode_enabled: Option<bool>,
-    pub thinking_level: Option<String>,
     // RAG Limits
     #[validate(range(min = 0, max = 1000000))]
     pub rag_chronicles_limit: Option<i32>,

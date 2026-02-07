@@ -45,8 +45,12 @@
 
 	// Show loading when no content or regenerating
 	// CRITICAL: Add null guards to prevent TypeError when message is undefined during reactive updates
+	// ALSO: Don't show loading spinner if reasoning content is active (the reasoning block handles its own indicator)
 	let hasTextContent = $derived((message?.content || '').replace(/\s/g, '').length > 0);
-	let shouldShowLoading = $derived(!hasTextContent || message?.isRegenerating === true);
+	let hasReasoningContent = $derived((message?.reasoningContent || '').length > 0 || message?.isThinking === true);
+	let shouldShowLoading = $derived(
+		(!hasTextContent && !hasReasoningContent) || message?.isRegenerating === true
+	);
 
 	// Timeout for stuck loading states (30 seconds - needs to account for slow model cold starts)
 	let isStuckLoading = $state(false);

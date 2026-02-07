@@ -15,8 +15,8 @@ interface ChatModel {
 
 export const cloudModels: Array<ChatModel> = [
 	{
-		id: 'gemini-3-pro',
-		name: 'Gemini 3 Pro',
+		id: 'gemini-3-pro-preview',
+		name: 'Gemini 3 Pro Preview',
 		description: 'Next-generation Pro model with advanced reasoning',
 		supportsReasoning: true
 	},
@@ -29,27 +29,32 @@ export const cloudModels: Array<ChatModel> = [
 	{
 		id: 'gemini-2.5-pro',
 		name: 'Gemini 2.5 Pro',
-		description: 'More intelligent and expensive model'
+		description: 'Most intelligent and expensive model',
+		supportsReasoning: true
 	},
 	{
 		id: 'gemini-2.5-flash',
 		name: 'Gemini 2.5 Flash',
-		description: 'Fast and efficient model'
+		description: 'Fast and efficient model',
+		supportsReasoning: true
 	},
 	{
 		id: 'gemini-2.5-flash-preview-09-2025',
 		name: 'Gemini 2.5 Flash Preview',
-		description: 'Latest preview with enhanced capabilities'
+		description: 'Latest preview with enhanced capabilities',
+		supportsReasoning: true
 	},
 	{
 		id: 'gemini-2.5-flash-lite-preview-09-2025',
 		name: 'Gemini 2.5 Flash Lite',
-		description: 'Ultra-fast and cost-effective model (FREE)'
+		description: 'Ultra-fast and cost-effective model (FREE)',
+		supportsReasoning: true
 	},
 	{
 		id: 'gemini-2.5-flash-image',
 		name: 'Gemini 2.5 Flash Image',
-		description: 'Chat model with image generation support'
+		description: 'Chat model with image generation support',
+		supportsReasoning: true
 	}
 ];
 

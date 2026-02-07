@@ -279,7 +279,7 @@ pub async fn generate_chat_response(
         gen_seed,                    // 11: Option<i32> (was 13)
         gen_model_name_from_service, // 12: String (was 15)
         gen_model_provider_from_service, // 13: Option<String> (NEW)
-        gen_thinking_budget,         // 14: Option<i32> (was 16)
+        gen_reasoning_budget,        // 14: Option<i32> (was 16)
         gen_thinking_level,          // 15: Option<String> (NEW)
         gen_enable_code_execution,   // 16: Option<bool> (was 17)
         user_message_struct_to_save, // 17: DbInsertableChatMessage (was 18)
@@ -1321,8 +1321,8 @@ pub async fn generate_chat_response(
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
 
-    let request_thinking = query_params.request_thinking;
-    debug!(%session_id, %request_thinking, "request_thinking value from query parameters");
+    let request_thinking = query_params.request_thinking || payload.thinking_level.is_some();
+    debug!(%session_id, %request_thinking, thinking_level = ?payload.thinking_level, "request_thinking value determined");
 
     // The system_prompt_from_service is now part of final_system_prompt_str
     // The old final_system_prompt logic is removed.
@@ -1352,8 +1352,8 @@ pub async fn generate_chat_response(
                 seed: gen_seed,
                 model_name: model_to_use,
                 model_provider: gen_model_provider_from_service,
-                thinking_budget: gen_thinking_budget,
-                thinking_level: gen_thinking_level,
+                reasoning_budget: gen_reasoning_budget,
+                thinking_level: payload.thinking_level.or(gen_thinking_level),
                 enable_code_execution: gen_enable_code_execution,
                 request_thinking,
                 user_dek: session_dek_arc.clone(),
@@ -1634,7 +1634,8 @@ pub async fn generate_chat_response(
                 user_id: user_id_value,
                 character_name: Some(character_db_model.name.clone()),
                 user_dek: session_dek_arc.clone(),
-                reasoning_budget: gen_thinking_budget,
+                reasoning_budget: gen_reasoning_budget,
+                thinking_level: payload.thinking_level.or(gen_thinking_level),
                 capture_reasoning_content: request_thinking,
             };
 
@@ -2211,7 +2212,7 @@ pub async fn generate_chat_response(
                     seed: gen_seed,
                     model_name: model_to_use.clone(),
                     model_provider: gen_model_provider_from_service,
-                    thinking_budget: gen_thinking_budget,
+                    reasoning_budget: gen_reasoning_budget,
                     thinking_level: gen_thinking_level.clone(),
                     enable_code_execution: gen_enable_code_execution,
                     request_thinking,
@@ -2975,7 +2976,7 @@ pub async fn generate_suggested_actions(
         _gen_seed,
         _gen_model_name_from_service, // We use a fixed model for suggestions
         gen_model_provider_from_service, // Model provider field
-        _gen_thinking_budget,
+        _gen_reasoning_budget,
         _gen_thinking_level,
         _gen_enable_code_execution,
         _user_message_struct_to_save, // Not saving a user message here
@@ -3693,7 +3694,7 @@ pub async fn expand_text_handler(
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
-        thinking_budget: None,
+        reasoning_budget: None,
         thinking_level: None,
         enable_code_execution: Some(false),
         request_thinking: false,
@@ -3947,6 +3948,7 @@ pub async fn impersonate_handler(
         variant_of: None,    // Impersonation doesn't create variants
         parent_message_id: None,
         game_master_mode_enabled: Some(false),
+        thinking_level: None,
     };
 
     // Call the existing generate_chat_response handler logic but collect the response
@@ -4062,7 +4064,7 @@ pub async fn impersonate_handler(
         seed: session_data.seed,
         model_name: session_data.model_name,
         model_provider: None, // ChatSessionQuery doesn't store model_provider
-        thinking_budget: None,
+        reasoning_budget: None,
         thinking_level: None,
         enable_code_execution: Some(false),
         request_thinking: false,

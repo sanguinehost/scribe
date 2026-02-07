@@ -1512,7 +1512,7 @@ pub async fn create_message_handler(
                             seed,
                             model_name,
                             model_provider,
-                            thinking_budget,
+                            reasoning_budget: thinking_budget,
                             thinking_level: None, // TODO: Fetch from settings if needed
                             enable_code_execution,
                             request_thinking: false, // Default to false for now

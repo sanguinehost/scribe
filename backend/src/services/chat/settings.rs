@@ -81,6 +81,7 @@ struct ChatSessionUpdateBuilder {
     model_provider: DatabaseUpdate<String>,
     thinking_budget: DatabaseUpdate<i32>,
     enable_code_execution: DatabaseUpdate<bool>,
+    thinking_level: DatabaseUpdate<String>,
     player_chronicle_id: DatabaseUpdate<Option<crate::db::DbId>>,
     agent_mode: DatabaseUpdate<String>,
     active_custom_persona_id: DatabaseUpdate<Option<crate::db::DbId>>,
@@ -152,6 +153,11 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
+            thinking_level: match self.thinking_level {
+                DatabaseUpdate::SetValue(v) => Some(Some(v)),
+                DatabaseUpdate::SetNull => Some(None),
+                _ => None,
+            },
             player_chronicle_id: match self.player_chronicle_id {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 DatabaseUpdate::SetNull => Some(None),
@@ -200,6 +206,7 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.model_provider, DatabaseUpdate::NoChange)
             || !matches!(self.thinking_budget, DatabaseUpdate::NoChange)
             || !matches!(self.enable_code_execution, DatabaseUpdate::NoChange)
+            || !matches!(self.thinking_level, DatabaseUpdate::NoChange)
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
             || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
             || !matches!(self.active_custom_persona_id, DatabaseUpdate::NoChange)
@@ -233,6 +240,7 @@ struct ChatSessionUpdateChangeset {
     model_provider: Option<String>,
     thinking_budget: Option<i32>,
     enable_code_execution: Option<bool>,
+    thinking_level: Option<Option<String>>,
     player_chronicle_id: Option<Option<crate::db::DbId>>,
     agent_mode: Option<String>,
     active_custom_persona_id: Option<Option<crate::db::DbId>>,
@@ -673,6 +681,9 @@ fn apply_payload_to_builder(
     }
     if let Some(gem_exec) = payload.enable_code_execution {
         update_builder.enable_code_execution = DatabaseUpdate::SetValue(gem_exec);
+    }
+    if let Some(level) = payload.thinking_level {
+        update_builder.thinking_level = DatabaseUpdate::SetValue(level);
     }
     // Chronicle ID handling
     if let Some(chronicle_id) = payload.chronicle_id {

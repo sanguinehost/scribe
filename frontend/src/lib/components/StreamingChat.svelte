@@ -270,6 +270,35 @@
 										</div>
 									{/if}
 
+									<!-- Reasoning/Thinking Content -->
+									{#if message.reasoningContent}
+										<div class="mb-3 rounded-md border border-border/50 bg-background/50">
+											<details class="group">
+												<summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+													<div class="flex items-center gap-2">
+														{#if message.isThinking}
+															<span class="relative flex h-2 w-2">
+																<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
+																<span class="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
+															</span>
+															<span>Thinking...</span>
+														{:else}
+															<svg class="h-3 w-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+															</svg>
+															<span>Thought Process</span>
+														{/if}
+													</div>
+												</summary>
+												<div class="border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+													<div class="prose prose-sm prose-invert max-w-none dark:prose-invert">
+														<p class="whitespace-pre-wrap text-xs leading-relaxed">{message.reasoningContent}</p>
+													</div>
+												</div>
+											</details>
+										</div>
+									{/if}
+
 									<!-- Message Content with Typewriter Effect -->
 									<TypewriterMessage {message} className="text-foreground" />
 

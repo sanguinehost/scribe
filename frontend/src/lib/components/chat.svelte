@@ -689,7 +689,9 @@
 						// Include regeneration flag for loading indicator
 						isRegenerating: msg.isRegenerating,
 						// Preserve shouldAnimate flag for animation control
-						shouldAnimate: msg.shouldAnimate
+						shouldAnimate: msg.shouldAnimate,
+						// Reasoning content mapping
+						reasoning_content: msg.reasoningContent,
 						// Note: _variantChangedAt removed due to type conflicts
 					};
 
@@ -1517,12 +1519,18 @@
 				historyLength: existingHistoryForApi.length,
 				model: currentModel
 			});
+			console.log('🧠 [SEND] chat.thinking_level at SEND time:', {
+				value: chat.thinking_level,
+				budget: chat.thinking_budget,
+				type: typeof chat.thinking_level
+			});
 			await service.connect({
 				chatId: chat.id,
 				userMessage: content,
 				history: existingHistoryForApi,
 				model: currentModel || undefined,
-				agentMode: agentMode
+				agentMode: agentMode,
+				thinking_level: chat.thinking_level || undefined
 			});
 			console.log(`✅ ${serviceName}.connect() completed at ${Date.now()}`);
 
@@ -1587,7 +1595,8 @@
 				userMessage: lastUserMessage.content,
 				history: historyToSend.slice(0, -1), // Exclude the last user message since it's passed separately
 				model: currentModel || undefined,
-				agentMode: agentMode
+				agentMode: agentMode,
+				thinking_level: chat.thinking_level || undefined
 			});
 		} catch (_error) {
 			console.error('Failed to generate AI response:', _error);
@@ -1723,7 +1732,8 @@
 				isRegeneration: true, // Prevent duplicate user message
 				guidance: guidance, // Pass guidance for regeneration steering
 				targetMessageId: targetMessageIdForVariant, // Pass target message ID for variant update
-				variantOf: originalMessageId // Create response as variant of original message
+				variantOf: originalMessageId, // Create response as variant of original message
+				thinking_level: chat.thinking_level || undefined
 			});
 
 			// Refresh chat metadata to update token counts and costs

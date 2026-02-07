@@ -127,20 +127,20 @@ mod get_session_data_for_generation_tests {
             creator_notes: Some(b"Char creator notes".to_vec()),
             system_prompt: Some(b"Char system prompt".to_vec()),
             post_history_instructions: Some(b"Char post history instructions".to_vec()),
-            tags: DbStringArray(Some(vec![
+            tags: Some(DbStringArray(vec![
                 Some("tag1".to_string()),
                 Some("tag2".to_string()),
             ])),
             creator: Some("Test Creator".to_string()),
             character_version: Some("1.0".to_string()),
-            alternate_greetings: DbStringArray(Some(vec![
+            alternate_greetings: Some(DbStringArray(vec![
                 Some("Hi".to_string()),
                 Some("Hello".to_string()),
             ])),
             nickname: Some("Test Nickname".to_string()),
             creator_notes_multilingual: Some(DbJson::from(json!({"en": "English notes"}))),
-            source: DbStringArray(Some(vec![Some("TestSource".to_string())])),
-            group_only_greetings: DbStringArray(Some(vec![Some("Group Hi".to_string())])),
+            source: Some(DbStringArray(vec![Some("TestSource".to_string())])),
+            group_only_greetings: Some(DbStringArray(vec![Some("Group Hi".to_string())])),
             creation_date: Some(chrono::Utc::now().into()),
             modification_date: Some(chrono::Utc::now().into()),
             created_at: chrono::Utc::now().into(),
@@ -166,14 +166,14 @@ mod get_session_data_for_generation_tests {
             model_prompt: Some(b"Char model prompt".to_vec()),
             model_prompt_visibility: Some("private".to_string()),
             model_temperature: Some(DbDecimal(BigDecimal::from_str("0.7").unwrap())),
-            num_interactions: Some(10),
+            num_interactions: Some(scribe_backend::db::DbBigInt(10)),
             permanence: Some(DbDecimal(BigDecimal::from_str("0.5").unwrap())),
             persona_visibility: Some("private".to_string()),
             revision: Some(1),
             sharing_visibility: Some("private".to_string()),
             status: Some("active".to_string()),
             system_prompt_visibility: Some("private".to_string()),
-            system_tags: DbStringArray(Some(vec![Some("system_tag1".to_string())])),
+            system_tags: Some(DbStringArray(vec![Some("system_tag1".to_string())])),
             token_budget: Some(2048),
             usage_hints: Some(DbJson::from(json!({"hint": "value"}))),
             user_persona: Some(b"Char user persona".to_vec()),
@@ -490,8 +490,8 @@ mod get_session_data_for_generation_tests {
             description: Some(description.to_string()),
             source_format: "scribe_v1".to_string(),
             is_public: false,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
+            created_at: Some(chrono::Utc::now().into()),
+            updated_at: Some(chrono::Utc::now().into()),
         };
 
         // Insert lorebook
@@ -627,8 +627,8 @@ mod get_session_data_for_generation_tests {
             ))
             .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
             .with_token_counts(
-                prompt_tokens_val.map(i64::from),
-                completion_tokens_val.map(i64::from),
+                prompt_tokens_val.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+                completion_tokens_val.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
             );
 
             conn.interact(move |conn_i| {
@@ -1184,8 +1184,8 @@ mod get_session_data_for_generation_tests {
             ))
             .with_attachments(scribe_backend::db::DbJson::from(serde_json::Value::Null))
             .with_token_counts(
-                prompt_tokens_val.map(i64::from),
-                completion_tokens_val.map(i64::from),
+                prompt_tokens_val.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
+                completion_tokens_val.map(|v| scribe_backend::db::DbBigInt(i64::from(v))),
             );
 
             conn.interact(move |conn_i| {
