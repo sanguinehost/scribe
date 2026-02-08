@@ -2762,6 +2762,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "424e0138278faeb2b401f174ad17e715c829512d74f3d1e81eb43365c2e0590e"
+dependencies = [
+ "ctor-proc-macro",
+ "dtor",
+]
+
+[[package]]
+name = "ctor-proc-macro"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52560adf09603e58c9a7ee1fe1dcb95a16927b17c127f0ac02d6e768a0e25bc1"
+
+[[package]]
 name = "ctr"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4135,6 +4151,21 @@ checksum = "cd1511a7b6a56299bd043a9c167a6d2bfb37bf84a6dfceaba651168adfb43c87"
 dependencies = [
  "dtoa",
 ]
+
+[[package]]
+name = "dtor"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "404d02eeb088a82cfd873006cb713fe411306c7d182c344905e101fb1167d301"
+dependencies = [
+ "dtor-proc-macro",
+]
+
+[[package]]
+name = "dtor-proc-macro"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f678cf4a922c215c63e0de95eb1ff08a958a81d47e485cf9da1e27bf6305cfa5"
 
 [[package]]
 name = "dunce"
@@ -6667,20 +6698,6 @@ checksum = "cd62e6b5e86ea8eeeb8db1de02880a6abc01a397b2ebb64b5d74ac255318f5cb"
 
 [[package]]
 name = "image"
-version = "0.24.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5690139d2f55868e080017335e4b94cb7414274c74f1669c84fb5feba2c9f69d"
-dependencies = [
- "bytemuck",
- "byteorder",
- "color_quant",
- "jpeg-decoder",
- "num-traits",
- "png 0.17.16",
-]
-
-[[package]]
-name = "image"
 version = "0.25.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6506c6c10786659413faa717ceebcb8f70731c0a60cbae39795fdf114519c1a"
@@ -6996,12 +7013,6 @@ dependencies = [
  "getrandom 0.3.4",
  "libc",
 ]
-
-[[package]]
-name = "jpeg-decoder"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
 
 [[package]]
 name = "js-sys"
@@ -8319,7 +8330,7 @@ dependencies = [
  "clap",
  "either",
  "futures",
- "image 0.25.9",
+ "image",
  "indexmap 2.13.0",
  "mistralrs-core",
  "mistralrs-macros",
@@ -8381,7 +8392,7 @@ dependencies = [
  "hound",
  "html2text",
  "http 1.4.0",
- "image 0.25.9",
+ "image",
  "indexmap 2.13.0",
  "indicatif 0.18.3",
  "interprocess",
@@ -8505,7 +8516,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d79247946a50fdac4300e80504bc6950e298a9c2e7e1a2bcd948fe91852b8a7b"
 dependencies = [
  "candle-core",
- "image 0.25.9",
+ "image",
  "rayon",
 ]
 
@@ -9409,7 +9420,7 @@ dependencies = [
  "clap",
  "fancy-regex 0.13.0",
  "futures",
- "image 0.25.9",
+ "image",
  "regex",
  "reqwest 0.12.28",
  "rustc-hash 1.1.0",
@@ -11374,24 +11385,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest-middleware"
-version = "0.4.2"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57f17d28a6e6acfe1733fe24bcd30774d13bffa4b8a22535b4c8c98423088d4e"
-dependencies = [
- "anyhow",
- "async-trait",
- "http 1.4.0",
- "reqwest 0.12.28",
- "serde",
- "thiserror 1.0.69",
- "tower-service",
-]
-
-[[package]]
-name = "reqwest-middleware"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f42e2f48018a33d679ee7f477a446b697663a14e91ab0b3a0206792a22dd3aa8"
+checksum = "199dda04a536b532d0cc04d7979e39b1c763ea749bf91507017069c00b96056f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -11414,7 +11410,7 @@ dependencies = [
  "http 1.4.0",
  "hyper 1.8.1",
  "reqwest 0.13.1",
- "reqwest-middleware 0.5.0",
+ "reqwest-middleware",
  "retry-policies",
  "thiserror 2.0.18",
  "tokio",
@@ -12106,7 +12102,7 @@ dependencies = [
  "cocoa",
  "cookie",
  "crc32fast",
- "ctor",
+ "ctor 0.6.3",
  "datafusion",
  "datafusion-expr",
  "deadpool",
@@ -12133,7 +12129,7 @@ dependencies = [
  "icu_provider_blob",
  "icu_segmenter 2.1.2",
  "icu_testdata",
- "image 0.24.9",
+ "image",
  "jsonwebtoken 10.3.0",
  "lancedb",
  "lazy_static",
@@ -12157,7 +12153,7 @@ dependencies = [
  "rcgen",
  "regex",
  "reqwest 0.13.1",
- "reqwest-middleware 0.4.2",
+ "reqwest-middleware",
  "reqwest-retry",
  "rig-core",
  "rig-lancedb",
@@ -14073,7 +14069,7 @@ dependencies = [
  "anyhow",
  "brotli",
  "cargo_metadata",
- "ctor",
+ "ctor 0.2.9",
  "dunce",
  "glob",
  "html5ever 0.29.1",
