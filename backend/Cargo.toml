@@ -141,7 +141,7 @@ tokio-rustls = "0.26.0"
 rcgen = "0.14.5"  # For generating self-signed certificates
 
 # Local LLM dependencies (only with feature flag)
-sysinfo = { version = "0.37", optional = true }  # For hardware detection
+sysinfo = { version = "0.38", optional = true }  # For hardware detection
 nix = { version = "0.30", features = ["signal"], optional = true }  # For Unix process management
 which = { version = "7.0", optional = true }  # For finding executables in PATH
 tempfile = { version = "3.19.1", optional = true }  # For temporary files in model management
