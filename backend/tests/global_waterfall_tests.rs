@@ -123,7 +123,7 @@ async fn test_global_waterfall_fills_context() -> anyhow::Result<()> {
                 content: content.into_bytes(),
                 created_at: now.into(),
                 updated_at: now.into(),
-                prompt_tokens: Some(100),
+                prompt_tokens: Some(scribe_backend::db::DbBigInt(100)),
                 model_name: "test-model".to_string(),
                 status: "completed".to_string(),
                 ..Default::default()
@@ -187,6 +187,7 @@ async fn test_global_waterfall_fills_context() -> anyhow::Result<()> {
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()

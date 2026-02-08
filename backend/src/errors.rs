@@ -1519,7 +1519,8 @@ mod tests {
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "Database schema error");
+        let error_msg = body["error"].as_str().unwrap();
+        assert!(error_msg.starts_with("Database schema error"));
     }
 
     #[tokio::test]

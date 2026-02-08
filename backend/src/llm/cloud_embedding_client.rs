@@ -21,6 +21,7 @@ struct EmbeddingRequest<'a> {
     content: ContentWithTitle<'a>,
     #[serde(rename = "taskType")]
     task_type: &'a str,
+    model: &'a str,
 }
 
 // Content structure for embedding requests
@@ -61,6 +62,7 @@ struct SingleBatchRequestInternal<'a> {
     content: ContentWithTitle<'a>,
     #[serde(rename = "taskType")]
     task_type: &'a str,
+    model: &'a str,
 }
 
 /// Internal container for the batchEmbedContents API payload.
@@ -176,6 +178,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                 parts: vec![Part { text }],
             },
             task_type,
+            model: &self.model_name,
         };
 
         let mut retries = 0;
@@ -315,6 +318,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                     parts: vec![Part { text: req.text }],
                 },
                 task_type: req.task_type,
+                model: &self.model_name,
             })
             .collect();
 

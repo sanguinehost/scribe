@@ -220,6 +220,7 @@ async fn create_message_variant_with_raw_prompt(
         session_dek,
         Some(raw_prompt),
         None,
+        None,
     )?;
 
     diesel::insert_into(message_variants::table)
