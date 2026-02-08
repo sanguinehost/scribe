@@ -86,8 +86,8 @@ rig-lancedb = { version = "0.2.32", optional = true }
 rig-qdrant = { version = "0.1.35", optional = true }
 
 # Mistral.rs (Local Inference)
-mistralrs-core = { path = "../../mistral.rs/mistralrs-core", optional = true }
-mistralrs = { path = "../../mistral.rs/mistralrs", optional = true }
+mistralrs-core = { version = "0.7.0", optional = true }
+mistralrs = { version = "0.7.0", optional = true }
 
 reqwest = { version = "0.13.1", features = ["json", "cookies", "rustls", "multipart"], default-features = false }
 reqwest-middleware = { version = "0.4.2" }
