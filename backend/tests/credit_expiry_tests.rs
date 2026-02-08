@@ -131,7 +131,7 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: (Utc::now(-Duration::days(30)).into()),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
                     expires_at: Some(expired_date.into()),
                 })
                 .execute(conn)?;
@@ -229,7 +229,7 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: (Utc::now(-Duration::days(30)).into()),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
                     expires_at: Some(expired_date.into()),
                 })
                 .execute(conn)?;
@@ -255,7 +255,7 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Utc::now().into(),
+                    created_at: Some(Utc::now().into()),
                     expires_at: Some(future_expiry.into()),
                 })
                 .execute(conn)?;
@@ -365,7 +365,7 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: (Utc::now(-Duration::days(30)).into()),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
                     expires_at: Some(expired_date.into()),
                 })
                 .execute(conn)?;
@@ -391,7 +391,7 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: Utc::now().into(),
+                    created_at: Some(Utc::now().into()),
                     expires_at: Some(future_expiry.into()),
                 })
                 .execute(conn)?;
@@ -501,7 +501,7 @@ mod credit_expiry_tests {
                     metadata_encrypted: None,
                     metadata_nonce: None,
                     reference_id: None,
-                    created_at: (Utc::now(-Duration::days(364)).into()),
+                    created_at: Some((Utc::now() - Duration::days(30)).into()),
                     expires_at: Some(tomorrow.into()),
                 })
                 .execute(conn)?;

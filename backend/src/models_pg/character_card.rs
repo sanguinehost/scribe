@@ -1500,8 +1500,8 @@ mod tests {
         // Check that V3 specific fields are None
         assert!(new_char.nickname.is_none());
         assert!(new_char.creator_notes_multilingual.is_none());
-        assert!(new_char.source.0.is_none());
-        assert!(new_char.group_only_greetings.0.is_none());
+        assert!(new_char.source.is_empty());
+        assert!(new_char.group_only_greetings.is_empty());
         assert!(new_char.creation_date.is_none());
         assert!(new_char.modification_date.is_none());
         assert!(new_char.extensions.is_none());

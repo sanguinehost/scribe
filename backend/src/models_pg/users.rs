@@ -635,6 +635,8 @@ mod tests {
             total_completion_tokens: crate::db::DbBigInt::from(0),
             total_prompt_tokens: crate::db::DbBigInt::from(0),
             total_token_cost_cents: crate::db::DbBigInt::from(0),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         };
 
         assert_eq!(new_user.username, username);

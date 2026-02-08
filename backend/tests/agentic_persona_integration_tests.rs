@@ -209,8 +209,8 @@ fn create_lucas_roleplay_messages(
             content_nonce: Some(nonce),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(50),
-            completion_tokens: Some(200),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(50)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(200)),
             model_name: "test-model".to_string(),
             status: "completed".to_string(),
             variant_count: 1,
@@ -351,33 +351,26 @@ async fn test_persona_context_missing_in_events() {
 
     // Create a mock AI response for the workflow
     let mock_response = json!({
-        "is_significant": true,
+        "should_create_event": true,
         "summary": "Character performs magical feats and interacts with environment",
-        "event_category": "CHARACTER",
-        "event_type": "DEVELOPMENT",
-        "narrative_action": "PERFORMED",
-        "primary_agent": "User",
-        "primary_patient": "Environment",
-        "confidence": 0.8,
-        "reasoning": "User demonstrates magical abilities which should be recorded",
-        "actions": [
+        "reasoning": "Character development is significant",
+        "keywords": ["magic", "environment", "power"],
+        "facts": [
             {
-                "tool_name": "create_chronicle_event",
-                "parameters": {
-                    "event_category": "CHARACTER",
-                    "event_type": "DEVELOPMENT",
-                    "event_subtype": "POWER_GAINED",
-                    "subject": "The user",
-                    "summary": "The user demonstrated powerful magical abilities",
-                    "event_data": {
-                        "location": "Magic realm",
-                        "action": "Magical demonstration",
-                        "abilities": ["levitation", "teleportation"]
-                    }
-                },
-                "reasoning": "Document magical abilities demonstration"
+                "who": "Lucas",
+                "what": "demonstrated powerful magical abilities",
+                "where": "Magic realm",
+                "when": "current day",
+                "why": "power demonstration",
+                "fact_type": "Experience",
+                "confidence": 0.9,
+                "significance": 0.8
             }
-        ]
+        ],
+        "surprise_score": 0.4,
+        "significance_score": 0.8,
+        "opinions": [],
+        "observations": []
     });
 
     let mock_ai_client = Arc::new(
@@ -420,9 +413,8 @@ async fn test_persona_context_missing_in_events() {
         .await
         .expect("Workflow should complete");
 
-    // Check if events were created
-    if workflow_result.triage_result.is_significant && !workflow_result.execution_results.is_empty()
-    {
+    // Check if cognitive payload was created
+    if workflow_result.cognitive_payload.is_some() {
         let chronicle_service =
             ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
         let events = chronicle_service

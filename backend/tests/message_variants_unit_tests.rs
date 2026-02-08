@@ -25,8 +25,8 @@ fn test_message_response_has_variant_fields() {
         attachments: serde_json::json!([]).into(),
         created_at: chrono::Utc::now().into(),
         raw_prompt: None,
-        prompt_tokens: Some(100),
-        completion_tokens: Some(200),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(100)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(200)),
         model_name: Some("gemini-1.5-pro".to_string()),
         status: "Completed".to_string(),
         error_message: None,
@@ -53,16 +53,22 @@ fn test_message_variant_response_structure() {
         index: 1,
         content: "Variant content".to_string(),
         created_at: chrono::Utc::now().into(),
-        prompt_tokens: Some(100),
-        completion_tokens: Some(150),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(100)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(150)),
         model_name: Some("gemini-1.5-pro".to_string()),
         game_state: None,
     };
 
     assert_eq!(variant_response.index, 1);
     assert_eq!(variant_response.content, "Variant content");
-    assert_eq!(variant_response.prompt_tokens, Some(100));
-    assert_eq!(variant_response.completion_tokens, Some(150));
+    assert_eq!(
+        variant_response.prompt_tokens,
+        Some(scribe_backend::db::DbBigInt(100))
+    );
+    assert_eq!(
+        variant_response.completion_tokens,
+        Some(scribe_backend::db::DbBigInt(150))
+    );
     assert_eq!(
         variant_response.model_name,
         Some("gemini-1.5-pro".to_string())
@@ -82,6 +88,7 @@ fn test_select_variant_request_structure() {
 fn test_create_message_variant_payload_structure() {
     let create_request = CreateMessageVariantPayload {
         content: "New variant content".to_string(),
+        reasoning: None,
     };
 
     assert_eq!(create_request.content, "New variant content");
@@ -94,8 +101,8 @@ fn test_variant_json_serialization() {
         index: 0,
         content: "Original content".to_string(),
         created_at: chrono::Utc::now().into(),
-        prompt_tokens: Some(50),
-        completion_tokens: Some(75),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(50)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(75)),
         model_name: Some("gemini-1.5-pro".to_string()),
         game_state: None,
     };

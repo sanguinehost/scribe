@@ -139,6 +139,7 @@ async fn test_save_message_with_game_time() {
         charge_credits: false,
         credits_cost_override: None,
         game_time: Some(game_time.clone()),
+        reasoning_content: None,
     };
 
     let saved_message = save_message(params).await.expect("Failed to save message");

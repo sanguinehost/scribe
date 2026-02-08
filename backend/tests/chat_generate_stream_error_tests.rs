@@ -144,7 +144,7 @@ async fn generate_chat_response_streaming_ai_error() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray::empty(),
+                stop_sequences: Some(scribe_backend::db::DbStringArray::default()),
                 thinking_budget: None,
                 enable_code_execution: None,
                 system_prompt_ciphertext: None,
@@ -218,13 +218,7 @@ async fn generate_chat_response_streaming_ai_error() {
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("test-stream-err-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
-        parent_message_id: None,
-        game_master_mode_enabled: None,
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -512,6 +506,7 @@ async fn generate_chat_response_streaming_initiation_error() {
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()
@@ -762,6 +757,7 @@ async fn generate_chat_response_streaming_error_before_content() {
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()
@@ -1044,6 +1040,7 @@ async fn generate_chat_response_streaming_llm_json_error() {
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()

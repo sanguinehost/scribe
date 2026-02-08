@@ -203,8 +203,8 @@ fn create_duplicate_everest_messages(
             content_nonce: Some(nonce),
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(20),
-            completion_tokens: Some(50),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(20)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(50)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
@@ -507,16 +507,15 @@ async fn test_deduplication_failure_multiple_everest_events() {
 
     // Create a mock AI response for the workflow that marks the events as NOT significant to test deduplication
     let mock_response = json!({
-        "is_significant": false,
+        "should_create_event": false,
         "summary": "Duplicate Mount Everest cleansing event - already exists in chronicle",
-        "event_category": "WORLD",
-        "event_type": "ENVIRONMENTAL_CLEANSING",
-        "narrative_action": "CLEANSED",
-        "primary_agent": "User",
-        "primary_patient": "Mount Everest",
-        "confidence": 0.9,
         "reasoning": "This appears to be a duplicate of existing Mount Everest cleansing events already in the chronicle",
-        "actions": []
+        "keywords": ["everest", "duplicate"],
+        "facts": [],
+        "surprise_score": 0.1,
+        "significance_score": 0.5,
+        "opinions": [],
+        "observations": []
     });
 
     let mock_ai_client = Arc::new(
@@ -774,6 +773,7 @@ async fn test_ai_triage_with_existing_context() {
     // Create a mock AI response for the significance analysis
     let mock_triage_response = json!({
         "is_significant": false,
+        "significance_score": 0.5,
         "reasoning": "The conversation describes Mount Everest cleansing which is already covered by existing events in the chronicle",
         "confidence": 0.85
     });

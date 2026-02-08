@@ -349,8 +349,8 @@ async fn create_test_character_for_suggested_actions(
         depth_prompt_nonce: None,
         world_ciphertext: None,
         world_nonce: None,
-        created_at: None,
-        updated_at: None,
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
     };
 
     pool.get()

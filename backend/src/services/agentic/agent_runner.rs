@@ -409,9 +409,13 @@ RULES:
 
         Ok(NarrativeWorkflowResult {
             triage_result: TriageResult {
-                is_significant: payload.should_create_event,
+                is_significant: true,
                 summary: payload.summary.clone(),
-                event_type: "COGNITIVE.UPDATE".to_string(),
+                event_type: if payload.should_create_event {
+                    "NARRATIVE.EVENT".into()
+                } else {
+                    "COGNITIVE.UPDATE".into()
+                },
                 confidence: 1.0,
             },
             actions_taken: vec![],

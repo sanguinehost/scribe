@@ -357,7 +357,10 @@ async fn create_chat_session_with_messages(
             "gemini-2.5-pro".to_string(),
         )
         .with_role(role.to_string())
-        .with_token_counts(Some(50), Some(100))
+        .with_token_counts(
+            Some(scribe_backend::db::DbBigInt(50)),
+            Some(scribe_backend::db::DbBigInt(100)),
+        )
         .with_status(scribe_backend::models::chats::MessageStatus::Completed)
         .with_variant_count(1);
 

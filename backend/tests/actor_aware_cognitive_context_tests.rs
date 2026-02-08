@@ -116,8 +116,6 @@ async fn test_actor_aware_recall_prioritization() -> anyhow::Result<()> {
         chronicle_id: chronicle_id.into(),
         source_type: "cognitive_fact".to_string(),
         game_time: None,
-        reasoning_content: None,
-        reasoning_content_nonce: None,
         message_variant_id: None,
     };
     let fact_meta2 = CognitiveFactMetadata {
@@ -126,8 +124,6 @@ async fn test_actor_aware_recall_prioritization() -> anyhow::Result<()> {
         chronicle_id: chronicle_id.into(),
         source_type: "cognitive_fact".to_string(),
         game_time: None,
-        reasoning_content: None,
-        reasoning_content_nonce: None,
         message_variant_id: None,
     };
 

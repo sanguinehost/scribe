@@ -1,6 +1,6 @@
 [package]
 name = "scribe-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Scribe Desktop - A standalone desktop application for character-based AI conversations"
 authors = ["Sanguine Software"]
 license = "MIT"

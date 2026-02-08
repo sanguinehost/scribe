@@ -437,13 +437,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("gemini/mock-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
-        parent_message_id: None,
-        game_master_mode_enabled: None,
+        ..Default::default()
     };
 
     // Check session one last time before making chat generate request
@@ -913,6 +907,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let client = reqwest::Client::new(); // Initialize client
@@ -1336,6 +1331,7 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -1569,6 +1565,7 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -1802,6 +1799,7 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -2056,6 +2054,7 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -2289,6 +2288,7 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -2725,6 +2725,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client_b
@@ -2763,6 +2764,7 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let client = reqwest::Client::new();
@@ -2899,6 +2901,7 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         variant_of: None,
         parent_message_id: None,
         game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client

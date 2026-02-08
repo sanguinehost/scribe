@@ -79,43 +79,26 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
 
     // Configure mock AI client with combined triage and planning response
     let combined_response = json!({
-        "is_significant": true,
+        "should_create_event": true,
         "summary": "User introduces new character Alex and starts adventure",
-        "event_category": "PLOT",
-        "event_type": "DEVELOPMENT",
-        "narrative_action": "BEGAN",
-        "primary_agent": "Alex",
-        "primary_patient": "Adventure",
-        "confidence": 0.85,
         "reasoning": "New adventure beginning with character introduction should be recorded in both chronicle and lorebook",
-        "actions": [
+        "keywords": ["Alex", "wizard", "adventure", "academy"],
+        "facts": [
             {
-                "tool_name": "create_chronicle_event",
-                "parameters": {
-                    "event_category": "PLOT",
-                    "event_type": "DEVELOPMENT",
-                    "event_subtype": "QUEST_PROGRESS",
-                    "subject": "Alex",
-                    "summary": "Alex begins a new adventure at the magical academy",
-                    "event_data": {
-                        "location": "magical academy",
-                        "action": "adventure start",
-                        "character": "Alex"
-                    }
-                },
-                "reasoning": "Record the beginning of Alex's adventure"
-            },
-            {
-                "tool_name": "create_lorebook_entry",
-                "parameters": {
-                    "name": "Alex the Wizard",
-                    "content": "A young wizard starting their journey at the magical academy",
-                    "keywords": "Alex wizard young academy",
-                    "tags": ["character", "wizard", "main"]
-                },
-                "reasoning": "Create lorebook entry for the main character Alex"
+                "who": "Alex",
+                "what": "begins a new adventure at the magical academy",
+                "where": "magical academy",
+                "when": "current day",
+                "why": "to start their magical journey",
+                "fact_type": "Experience",
+                "confidence": 0.9,
+                "significance": 0.85
             }
-        ]
+        ],
+        "surprise_score": 0.5,
+        "significance_score": 0.85,
+        "opinions": [],
+        "observations": []
     });
 
     let mock_ai_client = Arc::new(MockAiClient::new_with_response(
@@ -153,11 +136,11 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                 "Hello! I want to start a new adventure where I play as a young wizard named Alex."
                     .as_bytes()
                     .to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
+            content_nonce: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(20),
-            completion_tokens: Some(0),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(20)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
@@ -176,11 +159,11 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
                 "Welcome, Alex! You find yourself at the entrance to an ancient magical academy..."
                     .as_bytes()
                     .to_vec(),
-            content_nonce: Some(vec![5, 6, 7, 8]),
+            content_nonce: Some(vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(0),
-            completion_tokens: Some(25),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(0)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(25)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
@@ -219,25 +202,17 @@ async fn test_complete_agentic_workflow_with_mock_responses() {
     );
     let workflow_result = result.unwrap();
 
-    // Verify triage and planning steps were executed
+    // Verify cognitive payload was generated
     assert!(
-        !workflow_result.execution_results.is_empty(),
-        "Should have execution results"
+        workflow_result.cognitive_payload.is_some(),
+        "Should have cognitive payload"
     );
-    assert!(
-        !workflow_result.actions_taken.is_empty(),
-        "Should have taken actions"
-    );
+    let payload = workflow_result.cognitive_payload.unwrap();
+    assert!(payload.should_create_event);
+    assert!(payload.summary.contains("Alex"));
+    assert_eq!(payload.significance_score, 0.85);
 
-    // Verify actions were planned correctly
-    let actions = &workflow_result.actions_taken;
-    // Chronicle event is auto-created by the system, so we don't expect it in planned actions
-    assert!(
-        actions
-            .iter()
-            .any(|action| action.tool_name == "create_lorebook_entry"),
-        "Should have planned lorebook entry creation"
-    );
+    println!("✓ Complete agentic workflow test passed");
 
     println!("✓ Complete agentic workflow test passed");
 }
@@ -272,13 +247,26 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
 
     // Configure mock AI client
     let triage_response = json!({
-        "is_significant": true,
+        "should_create_event": true,
         "summary": "Dialogue contains important character development",
-        "event_category": "DIALOGUE",
-        "event_type": "CHARACTER_DEVELOPMENT",
-        "narrative_action": "SPOKE",
-        "primary_agent": "Alex",
-        "confidence": 0.9
+        "reasoning": "Character development is significant",
+        "keywords": ["Alex", "expression"],
+        "facts": [
+            {
+                "who": "Alex",
+                "what": "looks around the magical academy courtyard nervously",
+                "where": "magical academy courtyard",
+                "when": "current day",
+                "why": "nervousness",
+                "fact_type": "Experience",
+                "confidence": 0.9,
+                "significance": 0.7
+            }
+        ],
+        "surprise_score": 0.3,
+        "significance_score": 0.9,
+        "opinions": [],
+        "observations": []
     });
 
     let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -316,11 +304,11 @@ async fn test_extraction_dispatcher_with_agentic_mode() {
         content: "Alex looks around the magical academy courtyard nervously."
             .as_bytes()
             .to_vec(),
-        content_nonce: Some(vec![1, 2, 3, 4]),
+        content_nonce: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
         created_at: Utc::now().into(),
         user_id: user_id.into(),
-        prompt_tokens: Some(15),
-        completion_tokens: Some(0),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(15)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-pro".to_string(),
@@ -389,12 +377,15 @@ async fn test_dual_mode_extraction_comparison() {
 
     // Configure mock AI client for agentic extraction
     let triage_response = json!({
-        "is_significant": false,
+        "should_create_event": false,
         "summary": "Just casual dialogue, no significant events",
-        "event_category": "DIALOGUE",
-        "event_type": "CASUAL_CONVERSATION",
-        "narrative_action": "SPOKE",
-        "confidence": 0.3
+        "reasoning": "Mundane conversation",
+        "keywords": ["casual", "dialogue"],
+        "facts": [],
+        "surprise_score": 0.1,
+        "significance_score": 0.2,
+        "opinions": [],
+        "observations": []
     });
 
     let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));
@@ -430,12 +421,11 @@ async fn test_dual_mode_extraction_comparison() {
             id: Uuid::new_v4().into(),
             session_id,
             message_type: MessageRole::User,
-            content: "How are you today?".as_bytes().to_vec(),
-            content_nonce: Some(vec![1, 2, 3, 4]),
+            content_nonce: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(5),
-            completion_tokens: Some(0),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(5)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
@@ -451,11 +441,11 @@ async fn test_dual_mode_extraction_comparison() {
             session_id: session_id.into(),
             message_type: MessageRole::Assistant,
             content: "I'm doing well, thank you for asking!".as_bytes().to_vec(),
-            content_nonce: Some(vec![5, 6, 7, 8]),
+            content_nonce: Some(vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]),
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(0),
-            completion_tokens: Some(10),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(0)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(10)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
@@ -553,11 +543,11 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
         session_id,
         message_type: MessageRole::User,
         content: "This should cause JSON parsing failure".as_bytes().to_vec(),
-        content_nonce: Some(vec![1, 2, 3, 4]),
+        content_nonce: Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(5),
-        completion_tokens: Some(0),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(5)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-pro".to_string(),
@@ -587,7 +577,7 @@ async fn test_agentic_workflow_with_json_parsing_failure() {
     assert!(
         error
             .to_string()
-            .contains("Failed to parse structured response"),
+            .contains("Failed to parse cognitive payload"),
         "Error should mention JSON parsing failure"
     );
 

@@ -2546,7 +2546,7 @@ impl std::fmt::Debug for GenerateResponse {
 // --- Generate Endpoint Payload Structures ---
 
 /// Represents a single message within the chat history payload.
-#[derive(Deserialize, Serialize, Clone, Validate)]
+#[derive(Deserialize, Serialize, Clone, Validate, Default)]
 pub struct ApiChatMessage {
     #[validate(length(min = 1))]
     pub role: String,
@@ -2564,7 +2564,7 @@ impl std::fmt::Debug for ApiChatMessage {
 }
 
 /// Request body for POST `/api/chat/{session_id}/generate`
-#[derive(Deserialize, Serialize, Validate)]
+#[derive(Deserialize, Serialize, Validate, Default)]
 pub struct GenerateChatRequest {
     #[validate(length(min = 1))]
     #[validate(nested)]

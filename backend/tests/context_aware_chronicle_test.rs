@@ -88,8 +88,8 @@ async fn test_chronicle_creation_refusal() {
         created_at: chrono::Utc::now().into(),
 
         user_id: DbId::new(),
-        prompt_tokens: Some(10),
-        completion_tokens: Some(10),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(10)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(10)),
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash-lite".to_string(),
@@ -239,7 +239,7 @@ async fn test_chronicle_creation_success() {
         account_status: AccountStatus::Active,
         total_prompt_tokens: scribe_backend::db::DbBigInt(0),
         total_completion_tokens: scribe_backend::db::DbBigInt(0),
-        total_token_cost_cents: 0,
+        total_token_cost_cents: scribe_backend::db::DbBigInt(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: DbTimestamp::now(),
     };
@@ -279,8 +279,8 @@ async fn test_chronicle_creation_success() {
         created_at: chrono::Utc::now().into(),
 
         user_id: DbId::new(),
-        prompt_tokens: Some(10),
-        completion_tokens: Some(10),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(10)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(10)),
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash-lite".to_string(),

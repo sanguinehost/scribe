@@ -114,8 +114,8 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid, dek: &SessionDek) -> Ve
             message_type: MessageRole::User,
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(15),
-            completion_tokens: Some(0),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(15)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
             variant_count: 1,
@@ -128,8 +128,8 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid, dek: &SessionDek) -> Ve
             message_type: MessageRole::Assistant,
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(20),
-            completion_tokens: Some(35),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(20)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(35)),
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
             variant_count: 1,
@@ -142,8 +142,8 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid, dek: &SessionDek) -> Ve
             message_type: MessageRole::User,
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(12),
-            completion_tokens: Some(0),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(12)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
             variant_count: 1,
@@ -156,8 +156,8 @@ fn create_test_messages(user_id: Uuid, session_id: Uuid, dek: &SessionDek) -> Ve
             message_type: MessageRole::Assistant,
             created_at: Utc::now().into(),
             user_id: user_id.into(),
-            prompt_tokens: Some(25),
-            completion_tokens: Some(42),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(25)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(42)),
             model_name: "gemini-2.5-pro".to_string(),
             status: "completed".to_string(),
             variant_count: 1,
@@ -241,9 +241,22 @@ mod agentic_chronicle_tests {
             "summary": "New adventure beginning with character introduction and world-building",
             "reasoning": "This is the start of a new adventure with clear characters and setting. A chronicle should be created to track the story.",
             "keywords": ["Alex", "Starfall Academy", "wizard", "adventure"],
-            "facts": [],
+            "facts": [
+                {
+                    "who": "Alex",
+                    "what": "arrived at Starfall Academy",
+                    "where": "Aethermoor",
+                    "when": "current day",
+                    "why": "start of education",
+                    "fact_type": "Experience",
+                    "confidence": 0.95,
+                    "significance": 0.9
+                }
+            ],
             "surprise_score": 0.5,
-            "significance_score": 0.9
+            "significance_score": 0.9,
+            "opinions": [],
+            "observations": []
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(
@@ -425,31 +438,24 @@ mod agentic_chronicle_tests {
         let combined_response = json!({
             "should_create_event": true,
             "summary": "Character meets important NPC and receives guidance",
-            "event_type": "CHARACTER_INTERACTION",
-            "confidence": 0.85,
             "reasoning": "Alex has met Professor Willowshade, an important NPC. This should be recorded as a character interaction event.",
-            "actions": [
+            "keywords": ["Alex", "Willowshade", "Starfall"],
+            "facts": [
                 {
-                    "tool_name": "create_chronicle_event",
-                    "parameters": {
-                        "event_category": "CHARACTER",
-                        "event_type": "CHARACTER_INTERACTION",
-                        "event_subtype": "FIRST_MEETING",
-                        "action": "Met",
-                        "subject": "Alex",
-                        "summary": "Alex meets Professor Willowshade at the academy entrance",
-                        "event_data": {
-                            "characters": ["Alex", "Professor Willowshade"],
-                            "location": "Starfall Academy entrance",
-                            "interaction_type": "first_meeting",
-                            "description": "The tall elf professor welcomes Alex to the academy"
-                        }
-                    },
-                    "reasoning": "Document the important character introduction"
+                    "who": "Alex, Professor Willowshade",
+                    "what": "met at the academy entrance",
+                    "where": "Starfall Academy entrance",
+                    "when": "current day",
+                    "why": "arrival at academy",
+                    "fact_type": "Observation",
+                    "confidence": 0.9,
+                    "significance": 0.8
                 }
             ],
+            "surprise_score": 0.3,
             "significance_score": 0.9,
-            "facts": []
+            "opinions": [],
+            "observations": []
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(

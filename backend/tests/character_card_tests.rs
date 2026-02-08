@@ -162,10 +162,10 @@ fn test_default_empty_strings() {
 // use uuid::Uuid; // Need Uuid for user_id
 
 fn create_minimal_v2_fallback(name: &str) -> ParsedCharacterCard {
-    ParsedCharacterCard::V2Fallback(CharacterCardDataV3 {
+    ParsedCharacterCard::V2Fallback(Box::new(CharacterCardDataV3 {
         name: Some(name.to_string()),
         ..Default::default()
-    })
+    }))
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn test_from_parsed_card_v2_with_collections() {
         description: "A description".to_string(),
         ..Default::default()
     };
-    let parsed_v2 = ParsedCharacterCard::V2Fallback(data_v2);
+    let parsed_v2 = ParsedCharacterCard::V2Fallback(Box::new(data_v2));
 
     let new_char = NewCharacter::from_parsed_card(&parsed_v2, user_id);
 

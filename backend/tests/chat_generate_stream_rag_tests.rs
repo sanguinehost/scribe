@@ -211,13 +211,7 @@ async fn assert_rag_response(
     ];
     let payload = GenerateChatRequest {
         history,
-        model: None,
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
-        parent_message_id: None,
-        game_master_mode_enabled: None,
+        ..Default::default()
     };
 
     let request = Request::builder()

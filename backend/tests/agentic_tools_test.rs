@@ -8,7 +8,7 @@ use std::sync::Arc;
 async fn test_analyze_text_significance_basic() {
     // Configure mock AI client to return valid JSON response
     let mock_response = json!({
-        "is_significant": true,
+        "should_create_event": true,
         "confidence": 0.8,
         "reason": "Test conversation contains greeting",
         "suggested_categories": ["lorebook_entries"]
@@ -34,7 +34,7 @@ async fn test_analyze_text_significance_basic() {
     assert!(result.is_ok());
 
     let output = result.unwrap();
-    assert!(output["is_significant"].is_boolean());
+    assert!(output["should_create_event"].is_boolean());
     assert!(output["confidence"].is_number());
 }
 
@@ -111,7 +111,7 @@ async fn test_extract_world_concepts_basic() {
 async fn test_tool_error_handling() {
     // Configure mock AI client to return valid JSON response
     let mock_response = json!({
-        "is_significant": false,
+        "should_create_event": false,
         "confidence": 0.1,
         "reason": "Test error handling",
         "suggested_categories": []
@@ -147,7 +147,7 @@ async fn test_tool_error_handling() {
     let result = tool.execute(&empty_messages_params).await;
     assert!(result.is_ok());
     let output = result.unwrap();
-    assert_eq!(output["is_significant"], false);
+    assert_eq!(output["should_create_event"], false);
     assert!(output["reason"]
         .as_str()
         .unwrap()
@@ -160,7 +160,7 @@ async fn test_workflow_simulation() {
 
     // Step 1: Triage
     let triage_response = json!({
-        "is_significant": true,
+        "should_create_event": true,
         "confidence": 0.9,
         "reason": "Temple exploration with artifact discovery is significant",
         "suggested_categories": ["chronicle_events", "lorebook_entries"]
@@ -177,7 +177,7 @@ async fn test_workflow_simulation() {
     });
 
     let triage_result = triage_tool.execute(&messages).await.unwrap();
-    let is_significant = triage_result["is_significant"].as_bool().unwrap();
+    let is_significant = triage_result["should_create_event"].as_bool().unwrap();
 
     assert!(is_significant);
 

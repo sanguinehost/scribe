@@ -22,6 +22,7 @@ async fn test_rig_client_completion_placeholder() {
         capture_reasoning_content: false,
         safety_settings: None,
         top_p: None,
+        thinking_level: None,
     };
 
     // This will fail without API key, so we expect an error or mock it
@@ -44,6 +45,7 @@ async fn test_rig_client_streaming_placeholder() {
         capture_reasoning_content: false,
         safety_settings: None,
         top_p: None,
+        thinking_level: None,
     };
 
     // Just verify it compiles and returns a future

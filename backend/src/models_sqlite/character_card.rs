@@ -453,14 +453,14 @@ use crate::schema::character_assets;
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
-#[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
+#[derive(Insertable, Default, Clone)]
 #[diesel(table_name = crate::schema::characters)]
 #[cfg_attr(
     feature = "postgres-backend",
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCharacter {

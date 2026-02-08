@@ -649,19 +649,19 @@ fn apply_payload_to_builder(
     }
     #[cfg(feature = "postgres-backend")]
     {
-        if let Some(stop_seqs) = payload.stop_sequences {
+        if let Some(ref stop_seqs) = payload.stop_sequences {
             // DbStringArray is Vec<Option<String>>
             // We need to extract the inner vector
             update_builder.stop_sequences =
-                DatabaseUpdate::SetValue(stop_seqs.0.into_iter().flatten().collect());
+                DatabaseUpdate::SetValue(stop_seqs.0.iter().flatten().cloned().collect());
         }
     }
 
     #[cfg(feature = "sqlite-backend")]
     {
-        if let Some(stop_seqs) = payload.stop_sequences {
+        if let Some(ref stop_seqs) = payload.stop_sequences {
             update_builder.stop_sequences =
-                DatabaseUpdate::SetValue(stop_seqs.0.into_iter().flatten().collect());
+                DatabaseUpdate::SetValue(stop_seqs.0.iter().flatten().cloned().collect());
         }
     }
     if let Some(hist_strat) = payload.history_management_strategy {

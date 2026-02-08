@@ -43,7 +43,7 @@ pub struct Lorebook {
     pub updated_at: DbTimestamp,
 }
 
-#[derive(Insertable, Debug, Clone)]
+#[derive(Insertable, Deserialize, Serialize, Debug, Clone, Default)]
 #[diesel(table_name = lorebooks)]
 #[cfg_attr(
     feature = "postgres-backend",

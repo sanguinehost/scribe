@@ -1776,20 +1776,22 @@ impl ChronicleService {
         }
 
         // 2. Create Chronicle Event (Episodic Memory)
-        if payload.should_create_event {
-            let event_request = CreateEventRequest {
-                event_type: "NARRATIVE.EVENT".to_string(),
-                summary: payload.summary.clone(),
-                source: EventSource::AiExtracted,
-                keywords: Some(payload.keywords.clone()),
-                timestamp_iso8601: None,
-                chat_session_id,
-                message_variant_id,
-            };
+        let event_request = CreateEventRequest {
+            event_type: if payload.should_create_event {
+                "NARRATIVE.EVENT".to_string()
+            } else {
+                "COGNITIVE.UPDATE".to_string()
+            },
+            summary: payload.summary.clone(),
+            source: EventSource::AiExtracted,
+            keywords: Some(payload.keywords.clone()),
+            timestamp_iso8601: None,
+            chat_session_id,
+            message_variant_id,
+        };
 
-            self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
-                .await?;
-        }
+        self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
+            .await?;
 
         // 3. Process Facts (Hindsight Retain)
         for extraction in payload.facts {

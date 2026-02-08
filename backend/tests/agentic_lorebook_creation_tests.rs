@@ -162,11 +162,11 @@ fn create_chat_message(
         content_nonce: Some(content_nonce),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(content.len() as i64 / 4), // Rough estimate
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(content.len() as i64 / 4)), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
-            Some(20)
+            Some(scribe_backend::db::DbBigInt(20))
         } else {
-            Some(0)
+            Some(scribe_backend::db::DbBigInt(0))
         },
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
@@ -230,14 +230,15 @@ mod lorebook_creation_tests {
 
         // Mock AI response for already-known information
         let triage_response = json!({
-            "is_significant": false,
+            "should_create_event": false,
             "summary": "Discussion of well-established lore already documented",
-            "event_category": "CONVERSATION",
-            "event_type": "CASUAL_DISCUSSION",
-            "narrative_action": "DISCUSSED",
-            "primary_agent": "Characters",
-            "primary_patient": "Known Information",
-            "confidence": 0.3
+            "reasoning": "Known information, no new events needed",
+            "keywords": ["lore", "sunset"],
+            "facts": [],
+            "surprise_score": 0.1,
+            "significance_score": 0.5,
+            "opinions": [],
+            "observations": []
         });
 
         let mock_ai_client = Arc::new(MockAiClient::new_with_response(triage_response.to_string()));

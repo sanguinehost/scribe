@@ -180,13 +180,7 @@ async fn send_chat_request(
             role: "user".to_string(),
             content: "Hello, how are you?".to_string(),
         }],
-        model: Some("test-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
-        parent_message_id: None,
-        game_master_mode_enabled: None,
+        ..Default::default()
     };
 
     let chat_request = Request::builder()

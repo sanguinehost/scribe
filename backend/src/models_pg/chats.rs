@@ -3033,7 +3033,7 @@ impl std::fmt::Debug for GenerateResponse {
 // --- Generate Endpoint Payload Structures ---
 
 /// Represents a single message within the chat history payload.
-#[derive(Deserialize, Serialize, Clone, Validate)]
+#[derive(Deserialize, Serialize, Clone, Validate, Default)]
 pub struct ApiChatMessage {
     #[validate(length(min = 1))]
     pub role: String,
@@ -3051,7 +3051,7 @@ impl std::fmt::Debug for ApiChatMessage {
 }
 
 /// Request body for POST `/api/chat/{session_id}/generate`
-#[derive(Deserialize, Serialize, Validate)]
+#[derive(Deserialize, Serialize, Validate, Default)]
 pub struct GenerateChatRequest {
     #[validate(length(min = 1))]
     #[validate(nested)]
@@ -4046,10 +4046,10 @@ mod tests {
             top_a: None,
             seed: Some(12345),
             logit_bias: None,
-            stop_sequences: Some(crate::db::unified_types::DbStringArray(Some(vec![
+            stop_sequences: Some(crate::db::unified_types::DbStringArray(vec![
                 Some("\n\n".to_string()),
                 Some("##".to_string()),
-            ]))),
+            ])),
             history_management_strategy: "none".to_string(),
             history_management_limit: 4096,
             model_name: "gemini-2.5-flash".to_string(),
@@ -4058,8 +4058,8 @@ mod tests {
             estimated_cost_cents: 0,
             prompt_template_id: "default".to_string(),
             tokens_counted_at: crate::db::DbTimestamp::now(),
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
+            total_prompt_tokens: crate::db::DbBigInt::from(0),
+            total_completion_tokens: crate::db::DbBigInt::from(0),
             total_credits_used: crate::db::DbDecimal::from(0i64),
             visibility: Some("private".to_string()),
             active_custom_persona_id: None,

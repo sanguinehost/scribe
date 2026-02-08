@@ -35,8 +35,8 @@ fn test_alternate_greetings_v3_conversion() {
     let new_character = NewCharacter::from_parsed_card(&parsed_card, user_id.into());
 
     // Check that alternate_greetings are properly converted
-    assert!(new_character.alternate_greetings.0.is_some());
-    let db_greetings = new_character.alternate_greetings.0.as_ref().unwrap();
+    assert!(!new_character.alternate_greetings.0.is_empty());
+    let db_greetings = &new_character.alternate_greetings.0;
 
     // Should be Option<Vec<Option<String>>> format for database
     assert_eq!(db_greetings.len(), 3);
@@ -67,8 +67,8 @@ fn test_alternate_greetings_v2_fallback_conversion() {
     let new_character = NewCharacter::from_parsed_card(&parsed_card, user_id.into());
 
     // Check that alternate_greetings are properly converted
-    assert!(new_character.alternate_greetings.0.is_some());
-    let db_greetings = new_character.alternate_greetings.0.as_ref().unwrap();
+    assert!(!new_character.alternate_greetings.0.is_empty());
+    let db_greetings = &new_character.alternate_greetings.0;
 
     // Should be Option<Vec<Option<String>>> format for database
     assert_eq!(db_greetings.len(), 2);
@@ -103,7 +103,7 @@ fn test_empty_alternate_greetings_conversion() {
     let new_character = NewCharacter::from_parsed_card(&parsed_card, user_id.into());
 
     // Check that empty alternate_greetings results in empty Vec
-    assert!(new_character.alternate_greetings.0.is_none());
+    assert!(new_character.alternate_greetings.0.is_empty());
 
     println!("✓ Empty alternate greetings correctly converted to None");
 }
