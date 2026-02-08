@@ -2068,7 +2068,7 @@ async fn process_transaction_completed(
 
     let user_id = match user_id {
         Ok(id) => {
-            tracing::debug!("Step 2 complete: Found user_id: {}", id);
+            tracing::debug!("Step 2 complete: Found user_id: {}", loggable_user_id(id));
             id
         }
         Err(e) => {
@@ -2082,7 +2082,10 @@ async fn process_transaction_completed(
     };
 
     // Get the full user record
-    tracing::debug!("Step 3: Fetching full user record for user_id: {}", user_id);
+    tracing::debug!(
+        "Step 3: Fetching full user record for user_id: {}",
+        loggable_user_id(user_id)
+    );
     let user = match conn
         .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await
@@ -3033,7 +3036,7 @@ async fn process_subscription_created(
 
     let user_id = match user_id {
         Ok(id) => {
-            tracing::debug!("Step 8 complete: Found user_id: {}", id);
+            tracing::debug!("Step 8 complete: Found user_id: {}", loggable_user_id(id));
             id
         }
         Err(e) => {
@@ -3047,7 +3050,10 @@ async fn process_subscription_created(
     };
 
     // Get the full user record
-    tracing::debug!("Step 9: Fetching full user record for user_id: {}", user_id);
+    tracing::debug!(
+        "Step 9: Fetching full user record for user_id: {}",
+        loggable_user_id(user_id)
+    );
     let user = match conn
         .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await

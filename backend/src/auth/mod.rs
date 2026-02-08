@@ -2,6 +2,7 @@
 
 pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
 use crate::models::users::{AccountStatus, NewUser, User, UserDbQuery};
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::users;
 use bcrypt::BcryptError;
 #[cfg(feature = "postgres-backend")]
@@ -210,12 +211,12 @@ pub async fn create_user_with_verification(
         .send_verification_email(&user.email, &user.username, &verification_token)
         .await
     {
-        error!(user_id = %user.id, error = ?e, "Failed to send verification email");
+        error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to send verification email");
         // Continue despite email failure - user is created but won't get email
         warn!("User created but verification email failed to send");
     }
 
-    info!(user_id = %user.id, "User created with verification token");
+    info!(user_id = %loggable_user_id(user.id), "User created with verification token");
     Ok(user)
 }
 
@@ -377,7 +378,7 @@ pub fn create_user_sync(
                                                       // Add the recovery phrase to the returned user
             user.recovery_phrase
                 .clone_from(&credentials.recovery_phrase);
-            info!(user_id = %user.id, "User created successfully in DB.");
+            info!(user_id = %loggable_user_id(user.id), "User created successfully in DB.");
             Ok(user)
         }
         Err(e) => {
@@ -483,9 +484,9 @@ pub fn verify_credentials(
     let user = User::from(user_db_query); // Clone user_db_query if needed for User::from, or ensure User::from takes a ref
 
     // Perform bcrypt verification synchronously within the function
-    debug!(user_id = %user.id, "Verifying password hash..."); // Removed PII: identifier, username, email
+    debug!(user_id = %loggable_user_id(user.id), "Verifying password hash..."); // Removed PII: identifier, username, email
     let is_valid = bcrypt::verify(password.expose_secret(), &user.password_hash).map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Bcrypt verification failed"); // Removed PII: identifier, username, email
+        error!(user_id = %loggable_user_id(user.id), error = ?e, "Bcrypt verification failed"); // Removed PII: identifier, username, email
         AuthError::HashingError
     })?;
 
@@ -493,17 +494,17 @@ pub fn verify_credentials(
         // Check account status
         match user.account_status.as_deref() {
             Some("locked") => {
-                warn!(user_id = %user.id, "Login attempt for locked account.");
+                warn!(user_id = %loggable_user_id(user.id), "Login attempt for locked account.");
                 return Err(AuthError::AccountLocked);
             }
             Some("pending") => {
-                warn!(user_id = %user.id, "Login attempt for pending account.");
+                warn!(user_id = %loggable_user_id(user.id), "Login attempt for pending account.");
                 return Err(AuthError::AccountPendingVerification);
             }
             _ => {} // Active or other statuses are allowed
         }
 
-        debug!(user_id = %user.id, "Password verification successful. Attempting DEK decryption..."); // Removed PII: identifier, username, email
+        debug!(user_id = %loggable_user_id(user.id), "Password verification successful. Attempting DEK decryption..."); // Removed PII: identifier, username, email
 
         // a. kek_salt, encrypted_dek, and dek_nonce are already part of the `user` object,
         //    assuming they were loaded correctly from UserDbQuery into User.
@@ -514,12 +515,12 @@ pub fn verify_credentials(
         // b. Derive the Key Encryption Key (KEK)
         let kek = crypto::derive_kek(&password, &user.kek_salt) // user.kek_salt should be a &str
             .map_err(|e| {
-                error!(user_id = %user.id, error = ?e, "Failed to derive KEK during login"); // Removed PII: username
+                error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to derive KEK during login"); // Removed PII: username
                 AuthError::CryptoOperationFailed(e)
             })?;
 
         info!(
-            user_id = %user.id,
+            user_id = %loggable_user_id(user.id),
             encrypted_dek_len = user.encrypted_dek.len(),
             dek_nonce_len = user.dek_nonce.len(),
             "DEK decryption attempt details" // Removed PII: username
@@ -533,11 +534,11 @@ pub fn verify_credentials(
             &kek, // Pass &kek directly, decrypt_gcm expects &SecretBox<Vec<u8>>
         )
         .map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Failed to decrypt DEK during login. Check if KEK/DEK/Nonce are correct."); // Removed PII: username
+            error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to decrypt DEK during login. Check if KEK/DEK/Nonce are correct."); // Removed PII: username
             AuthError::CryptoOperationFailed(e)
         })?;
 
-        info!(user_id = %user.id, "DEK decryption successful."); // Removed PII: username
+        info!(user_id = %loggable_user_id(user.id), "DEK decryption successful."); // Removed PII: username
 
         Ok((user, Some(decrypted_dek_secret_box))) // Return the decrypted DEK directly
     } else {
@@ -708,23 +709,23 @@ pub async fn recover_user_password_with_phrase(
     .map_err(AuthError::from)?;
 
     let user = User::from(user_db_query);
-    info!(user_id = %user.id, "User found for password recovery."); // Removed PII: username
+    info!(user_id = %loggable_user_id(user.id), "User found for password recovery."); // Removed PII: username
 
     // 2. Check if recovery is set up
-    debug!(user_id = %user.id, "Checking if recovery is set up for user...");
+    debug!(user_id = %loggable_user_id(user.id), "Checking if recovery is set up for user...");
     let Some(recovery_kek_salt) = &user.recovery_kek_salt else {
-        warn!(user_id = %user.id, "Recovery KEK salt not found. Recovery not set up.");
+        warn!(user_id = %loggable_user_id(user.id), "Recovery KEK salt not found. Recovery not set up.");
         return Err(AuthError::RecoveryNotSetup);
     };
     let Some(encrypted_dek_by_recovery) = &user.encrypted_dek_by_recovery else {
-        warn!(user_id = %user.id, "Encrypted DEK by recovery not found. Recovery not set up.");
+        warn!(user_id = %loggable_user_id(user.id), "Encrypted DEK by recovery not found. Recovery not set up.");
         return Err(AuthError::RecoveryNotSetup);
     };
     debug!("Recovery appears to be set up. Proceeding with RKEK derivation.");
 
     // 3. Derive RKEK from recovery_phrase and recovery_kek_salt
     let rkek = crypto::derive_kek(&recovery_phrase_payload, recovery_kek_salt).map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to derive RKEK from recovery phrase");
+        error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to derive RKEK from recovery phrase");
         // Distinguish between crypto error and potentially invalid phrase
         // For now, map to InvalidRecoveryPhrase if KDF fails, assuming it's due to bad input.
         // A more specific error from derive_kek might be useful.
@@ -736,7 +737,7 @@ pub async fn recover_user_password_with_phrase(
     debug!("Decrypting DEK using RKEK...");
     // Use the dedicated recovery_dek_nonce field
     let Some(recovery_dek_nonce_bytes) = &user.recovery_dek_nonce else {
-        error!(user_id = %user.id, "Recovery DEK nonce not found, but encrypted_dek_by_recovery exists. Inconsistent state.");
+        error!(user_id = %loggable_user_id(user.id), "Recovery DEK nonce not found, but encrypted_dek_by_recovery exists. Inconsistent state.");
         return Err(AuthError::CryptoOperationFailed(
             CryptoError::DecryptionFailed,
         )); // Or a more specific error
@@ -744,7 +745,7 @@ pub async fn recover_user_password_with_phrase(
     let plaintext_dek_secret =
         crypto::decrypt_gcm(encrypted_dek_by_recovery, recovery_dek_nonce_bytes, &rkek)
             .map_err(|e| {
-                error!(user_id = %user.id, error = ?e, "Failed to decrypt DEK with RKEK using dedicated nonce. Likely invalid recovery phrase.");
+                error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to decrypt DEK with RKEK using dedicated nonce. Likely invalid recovery phrase.");
                 AuthError::InvalidRecoveryPhrase // If decryption fails, it's highly likely the phrase was wrong.
             })?;
     debug!("DEK decrypted successfully using RKEK.");
@@ -756,7 +757,7 @@ pub async fn recover_user_password_with_phrase(
     // 6. Derive new KEK from new_password and new_kek_salt
     debug!("Deriving new KEK from new password...");
     let new_kek = crypto::derive_kek(&new_password_payload, &new_kek_salt_str).map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to derive new KEK from new password");
+        error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to derive new KEK from new password");
         AuthError::CryptoOperationFailed(e)
     })?;
 
@@ -764,7 +765,7 @@ pub async fn recover_user_password_with_phrase(
     debug!("Re-encrypting DEK with new KEK...");
     let (new_ciphertext_dek_bytes, new_nonce_dek_bytes) =
         crypto::encrypt_gcm(plaintext_dek_secret.expose_secret(), &new_kek).map_err(|e| {
-            error!(user_id = %user.id, error = ?e, "Failed to re-encrypt DEK with new KEK");
+            error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to re-encrypt DEK with new KEK");
             AuthError::CryptoOperationFailed(e)
         })?;
     debug!("DEK re-encrypted successfully with new KEK.");
@@ -791,7 +792,7 @@ pub async fn recover_user_password_with_phrase(
         )
         .await?;
 
-    info!(user_id = %user.id, "Password recovered and updated successfully.");
+    info!(user_id = %loggable_user_id(user.id), "Password recovered and updated successfully.");
     Ok(user.id)
 }
 

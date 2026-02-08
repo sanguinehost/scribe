@@ -284,7 +284,7 @@ pub async fn create_chat_handler(
     ))));
 
     info!(
-        %user.id,
+        user_id = %loggable_user_id(user.id),
         character_id=%payload.character_id,
         lorebook_ids=?payload.lorebook_ids,
         has_title = payload.title.is_some(),
@@ -305,7 +305,7 @@ pub async fn create_chat_handler(
     .await
     .map_err(|e| {
         error!(
-            user_id = %user.id,
+            user_id = %loggable_user_id(user.id),
             character_id = %payload.character_id,
             error = ?e,
             error_msg = %e,
@@ -2473,7 +2473,7 @@ pub async fn get_chat_settings_handler(
     )
     .await?;
 
-    info!(session_id = %id, user_id = %user.id,
+    info!(session_id = %id, user_id = %loggable_user_id(user.id),
           response_system_prompt_is_some = chat_settings_response.system_prompt.is_some(),
           response_system_prompt_len = chat_settings_response.system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
           "get_chat_settings_handler: Returning response to client");

@@ -108,7 +108,7 @@ impl AuthnBackend for Backend {
                 let mut cache = self.dek_cache.write().await; // Use .await
                 cache.insert(user.id, dek_to_cache.clone());
                 // More verbose logging
-                warn!(target: "dek_cache_debug", user_id = %user.id, cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache.len(), "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", user.id);
+                warn!(target: "dek_cache_debug", user_id = %loggable_user_id(user.id), cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache.len(), "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", loggable_user_id(user.id));
 
                 // CRITICAL: Set the user's DEK to None before returning
                 // This prevents axum-login from serializing the DEK into the session
@@ -116,12 +116,12 @@ impl AuthnBackend for Backend {
                 Ok(Some(user))
             }
             (user, None) => {
-                warn!(user_id = %user.id, "User authenticated but DEK was not available/decryptable during login.");
+                warn!(user_id = %loggable_user_id(user.id), "User authenticated but DEK was not available/decryptable during login.");
                 // Clear any potentially stale DEK from cache for this user if login proceeds without DEK
                 {
                     let mut cache = self.dek_cache.write().await; // Use .await
                     if cache.remove(&user.id).is_some() {
-                        warn!(target: "dek_cache_debug", user_id = %user.id, "AuthBackend::authenticate - STALE DEK REMOVED from cache (key: {})", user.id);
+                        warn!(target: "dek_cache_debug", user_id = %loggable_user_id(user.id), "AuthBackend::authenticate - STALE DEK REMOVED from cache (key: {})", loggable_user_id(user.id));
                     }
                 } // cache lock is dropped here
                 Ok(Some(user))

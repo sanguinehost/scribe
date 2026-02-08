@@ -511,7 +511,7 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
                     if is_over_limit {
                         // Add warning header but continue (soft limit, not hard limit)
                         warn!(
-                            user_id = %user.id,
+                            user_id = %crate::privacy::logging::loggable_user_id(user.id),
                             usage_percentage = usage_percentage,
                             "User exceeded daily soft limit"
                         );

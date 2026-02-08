@@ -4,6 +4,7 @@ use super::*;
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
+use crate::privacy::logging::loggable_user_id;
 use qdrant_client::qdrant::{
     condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
 };
@@ -1239,7 +1240,7 @@ AppError::InternalServerErrorGeneric(format!(
             error!(
                 error = %e,
                 entry_id = %entry_id,
-                user_id = %user.id,
+                user_id = %loggable_user_id(user.id),
                 "Failed to delete vector embeddings for lorebook entry via filter, but database deletion succeeded"
             );
         } else {

@@ -2601,7 +2601,7 @@ pub async fn stream_ai_response_and_save_message(
                 }
                 Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
                     if !reasoning.is_empty() {
-                        tracing::info!("🔥 BACKEND (SSE): Yielding Thinking block (len: {}) - content: \"{}\"", reasoning.len(), reasoning.chars().take(50).collect::<String>());
+                        tracing::debug!("Yielding Thinking block (len: {})", reasoning.len());
                         accumulated_reasoning.push_str(&reasoning);
                         yield Ok(ScribeSseEvent::Thinking(reasoning));
                     }

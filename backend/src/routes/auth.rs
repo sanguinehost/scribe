@@ -217,7 +217,7 @@ pub async fn register_handler(
     match user_result {
         Ok(user) => {
             debug!("User creation with email verification completed.");
-            info!(user_id = %user.id, "User registration successful.");
+            info!(user_id = %loggable_user_id(user.id), "User registration successful.");
             // Use AuthResponse for success
             // The created user has the recovery phrase that was used
             let response = AuthResponse {
@@ -370,7 +370,7 @@ pub async fn login_handler(
             // Get session ID and expiry from tower_sessions::Session
             let session_id_str = session.id().map_or_else(
                 || {
-                    error!(user_id = %user.id, "Failed to get session ID after login for response");
+                    error!(user_id = %loggable_user_id(user.id), "Failed to get session ID after login for response");
                     // Fallback or handle error appropriately, though this should ideally not happen
                     // For now, let's use a placeholder or consider this a critical error.
                     // However, axum-login should have ensured a session exists.
@@ -382,7 +382,7 @@ pub async fn login_handler(
             );
 
             let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
-                error!(user_id = %user.id, session_id = %session_id_str, "Failed to convert session expiry to UTC for login response");
+                error!(user_id = %loggable_user_id(user.id), session_id = %session_id_str, "Failed to convert session expiry to UTC for login response");
                 AppError::InternalServerErrorGeneric("Failed to process session expiry for login response.".to_string())
             })?;
 
@@ -615,7 +615,7 @@ pub async fn invalidate_session_handler(
 pub async fn me_handler(auth: UnifiedAuth) -> Result<Response, AppError> {
     info!("Me handler entered.");
     if let Some(user) = auth.user().cloned() {
-        info!(user_id = %user.id, "Returning current user data for /me endpoint.");
+        info!(user_id = %loggable_user_id(user.id), "Returning current user data for /me endpoint.");
         // Use AuthResponse for consistency
         let response = AuthResponse {
             user_id: user.id,
@@ -1380,7 +1380,7 @@ pub async fn desktop_auto_login_handler(
         }
     };
 
-    debug!(user_id = %user.id, "Using default user for auto-login");
+    debug!(user_id = %loggable_user_id(user.id), "Using default user for auto-login");
 
     // For desktop mode, generate JWT tokens directly (no session-based auth needed)
     // Get the token service
@@ -1391,7 +1391,7 @@ pub async fn desktop_auto_login_handler(
 
     // Generate token pair for the user
     let token_pair = token_service.generate_token_pair(user.id).map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to generate token pair for auto-login");
+        error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to generate token pair for auto-login");
         AppError::InternalServerErrorGeneric("Token generation failed".to_string())
     })?;
 
@@ -1399,14 +1399,14 @@ pub async fn desktop_auto_login_handler(
     // IMPORTANT: DEK must be persisted to decrypt data across sessions
     let dek_b64 = match crate::desktop::get_quick_start_dek()? {
         Some(existing_dek) => {
-            info!(user_id = %user.id, "Using existing persisted DEK for Quick Start mode");
+            info!(user_id = %loggable_user_id(user.id), "Using existing persisted DEK for Quick Start mode");
             existing_dek
         }
         None => {
-            info!(user_id = %user.id, "No persisted DEK found, generating new one");
+            info!(user_id = %loggable_user_id(user.id), "No persisted DEK found, generating new one");
             // Generate new DEK
             let dek_secret = crate::crypto::generate_dek().map_err(|e| {
-                error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
+                error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to generate DEK for Quick Start mode");
                 AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
             })?;
 
@@ -1416,7 +1416,7 @@ pub async fn desktop_auto_login_handler(
 
             // Persist the DEK for future auto-logins
             crate::desktop::set_quick_start_dek(new_dek_b64.clone())?;
-            info!(user_id = %user.id, "Generated and persisted new DEK for Quick Start mode");
+            info!(user_id = %loggable_user_id(user.id), "Generated and persisted new DEK for Quick Start mode");
 
             new_dek_b64
         }
@@ -1438,7 +1438,7 @@ pub async fn desktop_auto_login_handler(
         dek: Some(dek_b64),
     };
 
-    info!(user_id = %user.id, "Auto-login JWT tokens generated successfully with DEK");
+    info!(user_id = %loggable_user_id(user.id), "Auto-login JWT tokens generated successfully with DEK");
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
