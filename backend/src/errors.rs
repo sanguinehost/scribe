@@ -781,7 +781,7 @@ impl AppError {
             ),
             Self::AiError(e) => (
                 StatusCode::BAD_GATEWAY,
-                format!("Gemini API error: {e}"),
+                format!("AI API error: {e}"),
                 "AI service request failed".to_string(),
             ),
             _ => unreachable!("Non-gateway error passed to handle_gateway_error"),
@@ -878,7 +878,13 @@ impl AppError {
     }
 
     const fn is_ai_service_error(error: &Self) -> bool {
-        matches!(error, Self::LlmClientError(_) | Self::AiServiceError(_))
+        matches!(
+            error,
+            Self::LlmClientError(_)
+                | Self::AiServiceError(_)
+                | Self::LlmApiError(_)
+                | Self::AiError(_)
+        )
     }
 
     const fn is_communication_error(error: &Self) -> bool {

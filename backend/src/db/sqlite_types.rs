@@ -102,7 +102,7 @@ impl FromSql<Text, Sqlite> for SqliteUuid {
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
         let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes).map_err(|e| {
-            tracing::error!("DEBUG: SqliteUuid (String) failed to deserialize: {}", e);
+            tracing::debug!("SqliteUuid (String) failed to deserialize: {}", e);
             e
         })?;
         let db_id =
@@ -128,7 +128,7 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteUuid {
                 bytes,
             )?;
         let text = text.ok_or_else(|| {
-            tracing::error!("DEBUG: SqliteUuid encountered NULL in a Nullable<Text> column");
+            tracing::debug!("SqliteUuid encountered NULL in a Nullable<Text> column");
             "Unexpected NULL for SqliteUuid column"
         })?;
         let db_id =
@@ -609,7 +609,7 @@ impl FromSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
     ) -> deserialize::Result<Self> {
         let value =
             <i32 as FromSql<diesel::sql_types::Integer, Sqlite>>::from_sql(bytes).map_err(|e| {
-                tracing::error!("DEBUG: SqliteBigDecimal (i32) failed to deserialize: {}", e);
+                tracing::debug!("SqliteBigDecimal (i32) failed to deserialize: {}", e);
                 e
             })?;
         let decimal = bigdecimal::BigDecimal::from(value);
@@ -627,9 +627,7 @@ impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Integer>, Sqlite> fo
             Sqlite,
         >>::from_sql(bytes)?;
         let value = value.ok_or_else(|| {
-            tracing::error!(
-                "DEBUG: SqliteBigDecimal encountered NULL in a Nullable<Integer> column"
-            );
+            tracing::debug!("SqliteBigDecimal encountered NULL in a Nullable<Integer> column");
             "Unexpected NULL value for non-optional SqliteBigDecimal (Integer)"
         })?;
         let decimal = bigdecimal::BigDecimal::from(value);
