@@ -57,8 +57,8 @@ importers:
         specifier: ^3.8.2
         version: 3.10.1
       '@lucide/svelte':
-        specifier: ^0.548.0
-        version: 0.548.0(svelte@5.47.0)
+        specifier: ^0.563.1
+        version: 0.563.1(svelte@5.47.0)
       '@oslojs/crypto':
         specifier: ^1.0.1
         version: 1.0.1
@@ -165,8 +165,8 @@ importers:
         specifier: ^3.4.1
         version: 3.4.1(prettier@3.8.0)(svelte@5.47.0)
       prettier-plugin-tailwindcss:
-        specifier: ^0.6.14
-        version: 0.6.14(prettier-plugin-svelte@3.4.1(prettier@3.8.0)(svelte@5.47.0))(prettier@3.8.0)
+        specifier: ^0.7.2
+        version: 0.7.2(prettier-plugin-svelte@3.4.1(prettier@3.8.0)(svelte@5.47.0))(prettier@3.8.0)
       shadcn-svelte:
         specifier: 1.1.1
         version: 1.1.1
@@ -186,8 +186,8 @@ importers:
         specifier: ^3.4.0
         version: 3.4.0
       tailwind-variants:
-        specifier: ^0.3.1
-        version: 0.3.1(tailwindcss@3.4.19)
+        specifier: ^3.2.2
+        version: 3.2.2(tailwind-merge@3.4.0)(tailwindcss@3.4.19)
       tailwindcss:
         specifier: ^3.4.19
         version: 3.4.19
@@ -966,10 +966,10 @@ packages:
         integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==
       }
 
-  '@lucide/svelte@0.548.0':
+  '@lucide/svelte@0.563.1':
     resolution:
       {
-        integrity: sha512-Iwh5GXK8+tE1lBjYoBPfOhBiWv6/K/XinZ/Bjx/2Qys86ufZ/CbjHKacYyZeGnyWQSsjcr7P3xavkmCMhv/1RA==
+        integrity: sha512-Kt+MbnE5D9RsuI/csmf7M+HWxALe57x3A0DhQ8pPnnUpneh7zuldrYjlT+veWtk+tVnp5doQtaAAxLujzIlhBw==
       }
     peerDependencies:
       svelte: ^5
@@ -3552,12 +3552,12 @@ packages:
       prettier: ^3.0.0
       svelte: ^3.2.0 || ^4.0.0-next.0 || ^5.0.0-next.0
 
-  prettier-plugin-tailwindcss@0.6.14:
+  prettier-plugin-tailwindcss@0.7.2:
     resolution:
       {
-        integrity: sha512-pi2e/+ZygeIqntN+vC573BcW5Cve8zUB0SSAGxqpB4f96boZF4M3phPVoOFCeypwkpRYdi7+jQ5YJJUwrkGUAg==
+        integrity: sha512-LkphyK3Fw+q2HdMOoiEHWf93fNtYJwfamoKPl7UwtjFQdei/iIBoX11G6j706FzN3ymX9mPVi97qIY8328vdnA==
       }
-    engines: { node: '>=14.21.3' }
+    engines: { node: '>=20.19' }
     peerDependencies:
       '@ianvs/prettier-plugin-sort-imports': '*'
       '@prettier/plugin-hermes': '*'
@@ -3569,14 +3569,12 @@ packages:
       prettier: ^3.0
       prettier-plugin-astro: '*'
       prettier-plugin-css-order: '*'
-      prettier-plugin-import-sort: '*'
       prettier-plugin-jsdoc: '*'
       prettier-plugin-marko: '*'
       prettier-plugin-multiline-arrays: '*'
       prettier-plugin-organize-attributes: '*'
       prettier-plugin-organize-imports: '*'
       prettier-plugin-sort-imports: '*'
-      prettier-plugin-style-order: '*'
       prettier-plugin-svelte: '*'
     peerDependenciesMeta:
       '@ianvs/prettier-plugin-sort-imports':
@@ -3597,8 +3595,6 @@ packages:
         optional: true
       prettier-plugin-css-order:
         optional: true
-      prettier-plugin-import-sort:
-        optional: true
       prettier-plugin-jsdoc:
         optional: true
       prettier-plugin-marko:
@@ -3610,8 +3606,6 @@ packages:
       prettier-plugin-organize-imports:
         optional: true
       prettier-plugin-sort-imports:
-        optional: true
-      prettier-plugin-style-order:
         optional: true
       prettier-plugin-svelte:
         optional: true
@@ -4023,26 +4017,24 @@ packages:
         integrity: sha512-Cat63mxsVJlzYvN51JmVXIgNoUokrIaT2zLclCXjRd8boZ0004U4KCs/sToJ75C6sdlByWxpYnb5Boif1VSFew==
       }
 
-  tailwind-merge@2.5.4:
-    resolution:
-      {
-        integrity: sha512-0q8cfZHMu9nuYP/b5Shb7Y7Sh1B7Nnl5GqNr1U+n2p6+mybvRtayrQ+0042Z5byvTA8ihjlP8Odo8/VnHbZu4Q==
-      }
-
   tailwind-merge@3.4.0:
     resolution:
       {
         integrity: sha512-uSaO4gnW+b3Y2aWoWfFpX62vn2sR3skfhbjsEnaBI81WD1wBLlHZe5sWf0AqjksNdYTbGBEd0UasQMT3SNV15g==
       }
 
-  tailwind-variants@0.3.1:
+  tailwind-variants@3.2.2:
     resolution:
       {
-        integrity: sha512-krn67M3FpPwElg4FsZrOQd0U26o7UDH/QOkK8RNaiCCrr052f6YJPBUfNKnPo/s/xRzNPtv1Mldlxsg8Tb46BQ==
+        integrity: sha512-Mi4kHeMTLvKlM98XPnK+7HoBPmf4gygdFmqQPaDivc3DpYS6aIY6KiG/PgThrGvii5YZJqRsPz0aPyhoFzmZgg==
       }
     engines: { node: '>=16.x', pnpm: '>=7.x' }
     peerDependencies:
+      tailwind-merge: '>=3.0.0'
       tailwindcss: '*'
+    peerDependenciesMeta:
+      tailwind-merge:
+        optional: true
 
   tailwindcss-animate@1.0.7:
     resolution:
@@ -4896,7 +4888,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lucide/svelte@0.548.0(svelte@5.47.0)':
+  '@lucide/svelte@0.563.1(svelte@5.47.0)':
     dependencies:
       svelte: 5.47.0
 
@@ -6550,7 +6542,7 @@ snapshots:
       prettier: 3.8.0
       svelte: 5.47.0
 
-  prettier-plugin-tailwindcss@0.6.14(prettier-plugin-svelte@3.4.1(prettier@3.8.0)(svelte@5.47.0))(prettier@3.8.0):
+  prettier-plugin-tailwindcss@0.7.2(prettier-plugin-svelte@3.4.1(prettier@3.8.0)(svelte@5.47.0))(prettier@3.8.0):
     dependencies:
       prettier: 3.8.0
     optionalDependencies:
@@ -6840,14 +6832,13 @@ snapshots:
 
   tabbable@6.2.0: {}
 
-  tailwind-merge@2.5.4: {}
-
   tailwind-merge@3.4.0: {}
 
-  tailwind-variants@0.3.1(tailwindcss@3.4.19):
+  tailwind-variants@3.2.2(tailwind-merge@3.4.0)(tailwindcss@3.4.19):
     dependencies:
-      tailwind-merge: 2.5.4
       tailwindcss: 3.4.19
+    optionalDependencies:
+      tailwind-merge: 3.4.0
 
   tailwindcss-animate@1.0.7(tailwindcss@3.4.19):
     dependencies:
