@@ -327,6 +327,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     let ai_client = scribe_backend::llm::rig_client::RigClient::new(
         config.gemini_api_key.clone(),
         mistralrs_service,
+        None,
     );
     let ai_client_arc = Arc::new(ai_client);
 

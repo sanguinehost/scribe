@@ -95,7 +95,7 @@ async fn main() -> Result<()> {
         .gemini_api_key
         .as_ref()
         .context("GEMINI_API_KEY is required")?;
-    let ai_client = Arc::new(RigClient::new(Some(api_key.clone()), None));
+    let ai_client = Arc::new(RigClient::new(Some(api_key.clone()), None, None));
     let embedding_client = Arc::new(build_cloud_embedding_client(config.clone())?);
     let embedding_model =
         scribe_backend::llm::UnifiedEmbeddingModel::Cloud((*embedding_client).clone());

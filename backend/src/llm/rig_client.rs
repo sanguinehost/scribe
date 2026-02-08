@@ -96,14 +96,20 @@ pub struct RigClient {
     api_key: Option<String>,
     mistralrs: Option<Arc<MistralRsService>>,
     default_provider: String,
+    model: Option<String>,
 }
 
 impl RigClient {
-    pub fn new(api_key: Option<String>, mistralrs: Option<Arc<MistralRsService>>) -> Self {
+    pub fn new(
+        api_key: Option<String>,
+        mistralrs: Option<Arc<MistralRsService>>,
+        model: Option<String>,
+    ) -> Self {
         Self {
             api_key,
             mistralrs,
             default_provider: "gemini".to_string(),
+            model,
         }
     }
 
@@ -221,31 +227,33 @@ impl RigClient {
                     thinking_config
                         .insert("thinkingLevel".to_string(), serde_json::json!("MEDIUM"));
                 }
+                // Also set a representative budget for Rig's internal logic
+                thinking_config.insert("thinkingBudget".to_string(), serde_json::json!(16384));
             } else if is_gemini_25 {
-                // Gemini 2.5: Only supports thinkingBudget (max 24576)
-                // Map thinking levels to budgets:
-                // - low: 1024
-                // - medium: 8192
-                // - high: 24576
+                // Gemini 2.5: Only supports thinkingBudget (up to 32k in some versions, but 24k is safe)
                 let budget = if let Some(level) = &req.thinking_level {
                     match level.to_lowercase().as_str() {
-                        "low" => 1024,
-                        "medium" => 8192,
-                        "high" => 24576,
-                        _ => req.reasoning_budget.unwrap_or(8192).min(24576),
+                        "low" => 4096,
+                        "medium" => 16384,
+                        "high" => 32768,
+                        _ => req.reasoning_budget.unwrap_or(16384).min(32768),
                     }
                 } else {
-                    req.reasoning_budget.unwrap_or(8192).min(24576)
+                    req.reasoning_budget.unwrap_or(16384).min(32768)
                 };
-                let effective_budget = if budget <= 0 { 8192 } else { budget.min(24576) };
+                let effective_budget = if budget <= 0 {
+                    16384
+                } else {
+                    budget.min(32768)
+                };
                 thinking_config.insert(
                     "thinkingBudget".to_string(),
                     serde_json::json!(effective_budget),
                 );
             } else {
                 // Unknown model: default to thinkingBudget approach
-                let budget = req.reasoning_budget.unwrap_or(8192);
-                let effective_budget = if budget <= 0 { 8192 } else { budget };
+                let budget = req.reasoning_budget.unwrap_or(16384);
+                let effective_budget = if budget <= 0 { 16384 } else { budget };
                 thinking_config.insert(
                     "thinkingBudget".to_string(),
                     serde_json::json!(effective_budget),
@@ -377,7 +385,13 @@ impl RigClient {
                     gemini::Client::from_env()
                 };
 
-                let model = client.completion_model(&req.model_name);
+                let model_name = if req.model_name.is_empty() {
+                    self.model.as_deref().unwrap_or("gemini-1.5-pro")
+                } else {
+                    &req.model_name
+                };
+
+                let model = client.completion_model(model_name);
 
                 // Construct the prompt message
                 let prompt_msg = rig::message::Message::User {
@@ -602,7 +616,13 @@ impl RigClient {
                     gemini::Client::from_env()
                 };
 
-                let model = client.completion_model(&req.model_name);
+                let model_name = if req.model_name.is_empty() {
+                    self.model.as_deref().unwrap_or("gemini-1.5-pro")
+                } else {
+                    &req.model_name
+                };
+
+                let model = client.completion_model(model_name);
 
                 // Combine history and optional prompt
                 // (generation.rs uses prompt: "" with messages in history, so we skip appending empty prompts)

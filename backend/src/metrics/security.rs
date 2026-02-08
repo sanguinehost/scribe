@@ -229,13 +229,10 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let webhook_metric = metric_families
             .iter()
-            .find(|m| m.get_name() == "webhook_signature_failures_total")
+            .find(|m| m.name.as_deref().unwrap_or("") == "webhook_signature_failures_total")
             .expect("Webhook metric should exist");
 
-        assert_eq!(
-            webhook_metric.get_metric()[0].get_counter().get_value(),
-            2.0
-        );
+        assert_eq!(webhook_metric.metric[0].counter.value, Some(2.0));
     }
 
     #[test]
@@ -248,11 +245,11 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let auth_metric = metric_families
             .iter()
-            .find(|m| m.get_name() == "auth_failures_total")
+            .find(|m| m.name.as_deref().unwrap_or("") == "auth_failures_total")
             .expect("Auth failure metric should exist");
 
         // Should have 2 distinct label combinations
-        assert_eq!(auth_metric.get_metric().len(), 2);
+        assert_eq!(auth_metric.metric.len(), 2);
     }
 
     #[test]
@@ -265,11 +262,11 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let credit_metric = metric_families
             .iter()
-            .find(|m| m.get_name() == "credit_operations_amount")
+            .find(|m| m.name.as_deref().unwrap_or("") == "credit_operations_amount")
             .expect("Credit operation metric should exist");
 
         // Should have 2 distinct label combinations (add, deduct)
-        assert_eq!(credit_metric.get_metric().len(), 2);
+        assert_eq!(credit_metric.metric.len(), 2);
     }
 
     #[test]
@@ -282,16 +279,23 @@ mod tests {
         let metric_families = metrics.registry().gather();
         let auth_metric = metric_families
             .iter()
-            .find(|m| m.get_name() == "auth_failures_total")
+            .find(|m| m.name.as_deref().unwrap_or("") == "auth_failures_total")
             .unwrap();
 
-        let labels = &auth_metric.get_metric()[0].get_label();
-        let user_hash_label = labels.iter().find(|l| l.get_name() == "user_hash").unwrap();
+        let labels = &auth_metric.metric[0].label;
+        let user_hash_label = labels
+            .iter()
+            .find(|l| l.name.as_deref().unwrap_or("") == "user_hash")
+            .unwrap();
 
         // Should start with "user#" prefix (hashed ID format)
-        assert!(user_hash_label.get_value().starts_with("user#"));
+        assert!(user_hash_label
+            .value
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("user#"));
 
         // Should NOT be a valid UUID (raw PII)
-        assert!(!user_hash_label.get_value().contains('-')); // UUIDs have hyphens
+        assert!(!user_hash_label.value.as_deref().unwrap_or("").contains('-')); // UUIDs have hyphens
     }
 }

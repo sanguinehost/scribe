@@ -18,8 +18,7 @@ use tracing::{debug, error, instrument, warn}; // Added debug, warn
 // --- Single Embedding Request Structs ---
 #[derive(Serialize)]
 struct EmbeddingRequest<'a> {
-    model: &'a str,
-    content: ContentWithTitle<'a>, // Changed
+    content: ContentWithTitle<'a>,
     #[serde(rename = "taskType")]
     task_type: &'a str,
 }
@@ -59,7 +58,6 @@ pub struct BatchEmbeddingContentRequest<'a> {
 /// Internal struct for a single request within the batchEmbedContents API payload.
 #[derive(Serialize)]
 struct SingleBatchRequestInternal<'a> {
-    model: &'a str,
     content: ContentWithTitle<'a>,
     #[serde(rename = "taskType")]
     task_type: &'a str,
@@ -174,7 +172,6 @@ impl EmbeddingClient for CloudEmbeddingClient {
         debug!("Embedding request URL: {}", url);
 
         let request_body = EmbeddingRequest {
-            model: &self.model_name,
             content: ContentWithTitle {
                 parts: vec![Part { text }],
             },
@@ -314,7 +311,6 @@ impl EmbeddingClient for CloudEmbeddingClient {
         let internal_requests: Vec<SingleBatchRequestInternal> = requests
             .iter()
             .map(|req| SingleBatchRequestInternal {
-                model: &self.model_name,
                 content: ContentWithTitle {
                     parts: vec![Part { text: req.text }],
                 },
