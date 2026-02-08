@@ -1198,6 +1198,12 @@ mod get_session_data_for_generation_tests {
             .unwrap();
         }
 
+        // Configure mock expectations for RAG
+        setup.mock_embeddings.set_retrieve_responses_sequence(vec![
+            Ok(Vec::new()), // Lorebooks
+            Ok(Vec::new()), // Older history
+        ]);
+
         // Act
         let result = get_session_data_for_generation(
             setup.app_state.clone(),
@@ -2246,14 +2252,14 @@ mod get_session_data_for_generation_tests {
         pub creator_notes: Option<Vec<u8>>,
         pub system_prompt: Option<Vec<u8>>,
         pub post_history_instructions: Option<Vec<u8>>,
-        pub tags: OptionalStringArray,
+        pub tags: Option<OptionalStringArray>,
         pub creator: Option<String>,
         pub character_version: Option<String>,
-        pub alternate_greetings: OptionalStringArray,
+        pub alternate_greetings: Option<OptionalStringArray>,
         pub nickname: Option<String>,
         pub creator_notes_multilingual: Option<scribe_backend::db::DbJson>,
-        pub source: OptionalStringArray,
-        pub group_only_greetings: OptionalStringArray,
+        pub source: Option<OptionalStringArray>,
+        pub group_only_greetings: Option<OptionalStringArray>,
         pub creation_date: Option<scribe_backend::db::DbTimestamp>,
         pub modification_date: Option<scribe_backend::db::DbTimestamp>,
         pub created_at: scribe_backend::db::DbTimestamp,
@@ -2286,7 +2292,7 @@ mod get_session_data_for_generation_tests {
         pub sharing_visibility: Option<String>,
         pub status: Option<String>,
         pub system_prompt_visibility: Option<String>,
-        pub system_tags: OptionalStringArray,
+        pub system_tags: Option<OptionalStringArray>,
         pub token_budget: Option<scribe_backend::db::DbInt>,
         pub usage_hints: Option<scribe_backend::db::DbJson>,
         pub user_persona: Option<Vec<u8>>,
