@@ -256,10 +256,11 @@ impl SoftLimitService {
         }
 
         // Same day, check if we've crossed the reset hour
-        if now.date_naive() == last.date_naive() {
-            if last.time().hour() < reset_hour && now.time().hour() >= reset_hour {
-                return true;
-            }
+        if now.date_naive() == last.date_naive()
+            && last.time().hour() < reset_hour
+            && now.time().hour() >= reset_hour
+        {
+            return true;
         }
 
         false

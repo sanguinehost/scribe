@@ -1,4 +1,3 @@
-use crate::db::DbJson; // Using DbJson for flexibility in extensions and mixed types like id
 use crate::db::DbTimestamp;
 use crate::models::characters::Character;
 use crate::models::lorebook_dtos::UploadedLorebookEntry; // For SillyTavern entries
@@ -448,12 +447,12 @@ mod tests;
 
 use crate::schema::character_assets;
 // use crate::models::users::User; // Unused import
+use crate::db::DbStringArray;
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
 #[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
 #[diesel(table_name = crate::schema::characters)]
-#[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewCharacter {
     pub id: Option<crate::db::DbId>,
     pub user_id: crate::db::DbId,
@@ -476,17 +475,17 @@ pub struct NewCharacter {
     pub system_prompt_nonce: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
     pub post_history_instructions_nonce: Option<Vec<u8>>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: DbStringArray,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: crate::models::OptionalStringArray,
+    pub alternate_greetings: DbStringArray,
     pub nickname: Option<String>,
-    pub creator_notes_multilingual: Option<DbJson>,
-    pub source: crate::models::OptionalStringArray,
-    pub group_only_greetings: crate::models::OptionalStringArray,
-    pub creation_date: Option<DbTimestamp>,
-    pub modification_date: Option<DbTimestamp>,
-    pub extensions: Option<DbJson>, // Added extensions field
+    pub creator_notes_multilingual: Option<crate::db::DbJson>,
+    pub source: DbStringArray,
+    pub group_only_greetings: DbStringArray,
+    pub creation_date: Option<crate::db::DbTimestamp>,
+    pub modification_date: Option<crate::db::DbTimestamp>,
+    pub extensions: Option<crate::db::DbJson>, // Reverted to DbJson
     // Fields from Character struct that are also in NewCharacter based on schema.rs and common use
     pub persona: Option<Vec<u8>>,
     pub persona_nonce: Option<Vec<u8>>,
@@ -521,9 +520,9 @@ pub struct NewCharacter {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: crate::models::OptionalStringArray,
+    pub system_tags: DbStringArray,
     pub token_budget: Option<i32>, // Int4 in PostgreSQL
-    pub usage_hints: Option<DbJson>,
+    pub usage_hints: Option<crate::db::DbJson>,
     pub user_persona: Option<Vec<u8>>,
     pub user_persona_nonce: Option<Vec<u8>>,
     pub user_persona_visibility: Option<String>,
@@ -543,8 +542,8 @@ pub struct NewCharacter {
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DbTimestamp>,
+    pub created_at: DbTimestamp, // Consistent with schema and Character struct
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -645,22 +644,14 @@ impl NewCharacter {
         let data = data_v3_card.data.clone(); // Clone the inner data
 
         // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
-        let tags = if data.tags.is_empty() {
-            None
-        } else {
-            Some(data.tags.into_iter().map(Some).collect())
-        };
-        let alternate_greetings = if data.alternate_greetings.is_empty() {
-            None
-        } else {
-            Some(data.alternate_greetings.into_iter().map(Some).collect())
-        };
-        let source = data.source.map(|v| v.into_iter().map(Some).collect());
-        let group_only_greetings = if data.group_only_greetings.is_empty() {
-            None
-        } else {
-            Some(data.group_only_greetings.into_iter().map(Some).collect())
-        };
+        let tags = DbStringArray::from_strings(data.tags.clone());
+        let alternate_greetings = DbStringArray::from_strings(data.alternate_greetings.clone());
+        let source = data
+            .source
+            .clone()
+            .map(DbStringArray::from_strings)
+            .unwrap_or_default();
+        let group_only_greetings = DbStringArray::from_strings(data.group_only_greetings.clone());
 
         // Convert timestamps
         let creation_date_ts = data
@@ -683,7 +674,6 @@ impl NewCharacter {
             .extensions // data.extensions is HashMap<String, serde_json::Value>
             .clone()
             .into_iter()
-            .map(|(k, v)| (k, v.into()))
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let extensions_option_json = if extensions_json.is_empty() {
             None
@@ -796,17 +786,17 @@ impl NewCharacter {
             creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             // Use converted vecs
-            alternate_greetings: alternate_greetings.into(),
-            tags: tags.into(),
+            alternate_greetings,
+            tags,
             spec,         // Use extracted spec
             spec_version, // Use extracted spec_version
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json.map(crate::db::Json), // Assign the wrapped value
-            source: source.into(), // Already converted to Option<Vec<Option<String>>>>
-            group_only_greetings: group_only_greetings.into(), // Already Option<Vec<Option<String>>>
-            creation_date: creation_date_ts,                   // Already Option<DbTimestamp>
-            modification_date: modification_date_ts,           // Already Option<DbTimestamp>
+            source,
+            group_only_greetings, // Already Option<Vec<Option<String>>>
+            creation_date: creation_date_ts, // Already Option<DbTimestamp>
+            modification_date: modification_date_ts, // Already Option<DbTimestamp>
             extensions: extensions_option_json.map(crate::db::Json), // Assign the calculated extensions
             persona: None,
             persona_nonce: None,
@@ -833,7 +823,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None.into(),
+            system_tags: crate::db::unified_types::DbStringArray::default(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -846,15 +836,15 @@ impl NewCharacter {
             creator_comment: None, // Not in extensions, could be mapped from creator_notes
             creator_comment_nonce: None,
             depth_prompt: depth_prompt_data,
-            depth_prompt_depth: depth_prompt_depth.map(|v| v as i32),
+            depth_prompt_depth,
             depth_prompt_role,
             talkativeness,
             depth_prompt_ciphertext: depth_prompt_json,
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption
-            created_at: None,
-            updated_at: None,
+            created_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
+            updated_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
         }
     }
 
@@ -912,24 +902,8 @@ impl NewCharacter {
             creator_notes,
             system_prompt,
             post_history_instructions,
-            tags: (if data.tags.is_empty() {
-                None
-            } else {
-                Some(data.tags.clone().into_iter().map(Some).collect())
-            })
-            .into(),
-            alternate_greetings: (if data.alternate_greetings.is_empty() {
-                None
-            } else {
-                Some(
-                    data.alternate_greetings
-                        .clone()
-                        .into_iter()
-                        .map(Some)
-                        .collect(),
-                )
-            })
-            .into(),
+            tags: DbStringArray::from_strings(data.tags.clone()),
+            alternate_greetings: DbStringArray::from_strings(data.alternate_greetings.clone()),
             extensions: if data.extensions.is_empty() {
                 None
             } else {
@@ -951,10 +925,10 @@ impl NewCharacter {
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             nickname: None, // V2 doesn't have nickname
             // V2 specific fields, map to V3 equivalents or default
-            source: None.into(), // V2 doesn't have a direct source field
-            group_only_greetings: None.into(), // V2 doesn't have this
-            creation_date: None, // V2 doesn't have this
-            modification_date: None, // V2 doesn't have this
+            source: DbStringArray::empty(), // V2 doesn't have a direct source field
+            group_only_greetings: DbStringArray::empty(), // V2 doesn't have this
+            creation_date: None,            // V2 doesn't have this
+            modification_date: None,        // V2 doesn't have this
             creator_notes_multilingual: None, // V2 doesn't have this
             persona: None,
             persona_nonce: None,
@@ -981,7 +955,7 @@ impl NewCharacter {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: None.into(),
+            system_tags: crate::db::unified_types::DbStringArray::default(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -1001,8 +975,8 @@ impl NewCharacter {
             depth_prompt_nonce: None,
             world_ciphertext: None,
             world_nonce: None,
-            created_at: None,
-            updated_at: None,
+            created_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
+            updated_at: crate::db::DbTimestamp::from(chrono::Utc::now()),
         }
     }
 
@@ -1435,7 +1409,8 @@ mod tests {
         };
         // Box the card data as expected by ParsedCharacterCard::V3
         // Pass the card directly, not boxed
-        let parsed = ParsedCharacterCard::V3(card_v3);
+        // Box the card data as expected by ParsedCharacterCard::V3
+        let parsed = ParsedCharacterCard::V3(Box::new(card_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 
@@ -1502,8 +1477,8 @@ mod tests {
         };
         // Populate other fields as needed if the V2Fallback variant expects them
 
-        // Pass the V3 struct directly, not boxed
-        let parsed = ParsedCharacterCard::V2Fallback(data_v2_as_v3);
+        // Pass the V3 struct directly, boxed as expected
+        let parsed = ParsedCharacterCard::V2Fallback(Box::new(data_v2_as_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 
@@ -1525,8 +1500,8 @@ mod tests {
         // Check that V3 specific fields are None
         assert!(new_char.nickname.is_none());
         assert!(new_char.creator_notes_multilingual.is_none());
-        assert!(new_char.source.0.is_none());
-        assert!(new_char.group_only_greetings.0.is_none());
+        assert!(new_char.source.is_empty());
+        assert!(new_char.group_only_greetings.is_empty());
         assert!(new_char.creation_date.is_none());
         assert!(new_char.modification_date.is_none());
         assert!(new_char.extensions.is_none());

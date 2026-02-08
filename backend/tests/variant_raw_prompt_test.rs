@@ -24,10 +24,13 @@ use diesel::RunQueryDsl;
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHasher};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use scribe_backend::db::SqliteInteractExt;
+// use scribe_backend::db::SqliteInteractExt;
+#[cfg(feature = "sqlite-backend")]
+use scribe_backend::db::{SqliteInteractExt, SqlitePoolExt};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
+    db::{self},
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -38,6 +41,7 @@ use scribe_backend::{
     test_helpers,
 };
 use secrecy::{ExposeSecret, SecretBox, SecretString};
+use test_context::futures::TryFutureExt;
 
 // --- Helpers (copied and adapted) ---
 
@@ -46,10 +50,17 @@ async fn create_test_user_with_dek(
     username: String,
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
+    #[cfg(feature = "postgres-backend")]
     let mut conn = test_app
         .db_pool
         .get()
         .await
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let mut conn = test_app
+        .db_pool
+        .get()
         .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?;
 
     let password_hash =
@@ -66,10 +77,12 @@ async fn create_test_user_with_dek(
     // kek_salt is already a Base64 string from generate_salt()
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: scribe_backend::db::DbId::new(),
         username,
         password_hash,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -85,6 +98,7 @@ async fn create_test_user_with_dek(
         token_usage_updated_at: chrono::Utc::now().into(),
     };
 
+    #[cfg(feature = "postgres-backend")]
     let user_db: UserDbQuery = conn
         .interact(move |conn| {
             diesel::insert_into(users::table)
@@ -97,7 +111,24 @@ async fn create_test_user_with_dek(
                 .first(conn)
         })
         .await
-        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))??;
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let user_db: UserDbQuery = conn
+        .interact(move |conn| {
+            diesel::insert_into(users::table)
+                .values(&new_user)
+                .execute(conn)?;
+
+            users::table
+                .filter(users::id.eq(new_user.id))
+                .select(UserDbQuery::as_select())
+                .first(conn)
+        })
+        .await
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?
+        .map_err(|e| anyhow::anyhow!("DB interaction failed: {}", e))?;
 
     let session_dek = SessionDek(SecretBox::new(Box::new(dek.expose_secret().to_vec())));
     Ok((*user_db.id, session_dek))
@@ -115,11 +146,19 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Char".to_string(),
         visibility: Some("private".to_string()),
+        #[cfg(feature = "postgres-backend")]
         created_at: Utc::now().into(),
+        #[cfg(feature = "postgres-backend")]
+        updated_at: Utc::now().into(),
+        #[cfg(feature = "sqlite-backend")]
+        created_at: Utc::now().into(),
+        #[cfg(feature = "sqlite-backend")]
         updated_at: Utc::now().into(),
         ..Default::default()
     };
 
+    #[cfg(feature = "postgres-backend")]
+    #[cfg(feature = "postgres-backend")]
     let character: DbCharacter = test_app
         .db_pool
         .get()
@@ -136,7 +175,27 @@ async fn create_test_chat_session(
                 .first(conn)
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Interact error"))??;
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let character: DbCharacter = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            diesel::insert_into(characters::table)
+                .values(&new_character)
+                .execute(conn)?;
+
+            characters::table
+                .filter(characters::id.eq(new_character.id.unwrap()))
+                .select(DbCharacter::as_select())
+                .first(conn)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
 
     let create_session_payload = json!({
         "character_id": character.id,
@@ -166,6 +225,8 @@ async fn create_test_chat_session(
     let session_response: Value = serde_json::from_slice(&response_body)?;
     let session_id = session_response["id"].as_str().unwrap().parse::<Uuid>()?;
 
+    #[cfg(feature = "postgres-backend")]
+    #[cfg(feature = "postgres-backend")]
     let chat_session: Chat = test_app
         .db_pool
         .get()
@@ -178,7 +239,23 @@ async fn create_test_chat_session(
                 .first::<Chat>(conn)
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Interact error"))??;
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let chat_session: Chat = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(scribe_backend::db::DbId::from(session_id)))
+                .select(Chat::as_select())
+                .first::<Chat>(conn)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
 
     Ok((character, chat_session, auth_cookie.to_string()))
 }
@@ -194,35 +271,19 @@ async fn create_test_message(
     let (encrypted_content, content_nonce) =
         crypto::encrypt_gcm(content.as_bytes(), &session_dek.0)?;
 
-    let new_message = NewChatMessage {
-        id: scribe_backend::db::DbId::new(),
+    let new_message = scribe_backend::models::chats::DbInsertableChatMessage::new(
         session_id,
         user_id,
-        message_type: role.clone(),
-        content: encrypted_content,
-        content_nonce: Some(content_nonce),
-        role: Some(role.to_string()),
-        parts: None,
-        attachments: None,
-        created_at: chrono::Utc::now().into(),
-        updated_at: chrono::Utc::now().into(),
-        prompt_tokens: None,
-        completion_tokens: None,
-        raw_prompt_ciphertext: None, // Original message has no raw prompt in this test
-        raw_prompt_nonce: None,
-        model_name: "gemini-1.5-pro".to_string(),
-        status: "completed".to_string(),
-        variant_count: 0,
-        current_variant_index: 0,
-        credits_charged: 0,
-        credits_cost: 0.into(),
-        actual_cost: 0.into(),
-        modified_cost: 0.into(),
-        credit_cost: 0,
-        actual_charge: 0.into(),
-        game_time: None,
-    };
+        role.clone(),
+        encrypted_content,
+        Some(content_nonce),
+        "gemini-1.5-pro".to_string(),
+    )
+    .with_role(role.to_string())
+    .with_status(scribe_backend::models::chats::MessageStatus::Completed);
 
+    #[cfg(feature = "postgres-backend")]
+    #[cfg(feature = "postgres-backend")]
     let message: DbChatMessage = test_app
         .db_pool
         .get()
@@ -238,7 +299,26 @@ async fn create_test_message(
                 .first::<DbChatMessage>(conn)
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Interact error"))??;
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let message: DbChatMessage = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            diesel::insert_into(chat_messages::table)
+                .values(&new_message)
+                .execute(conn)?;
+
+            chat_messages::table
+                .order(chat_messages::created_at.desc())
+                .first::<DbChatMessage>(conn)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
 
     Ok(message)
 }
@@ -251,6 +331,8 @@ async fn create_message_variant_with_raw_prompt(
     raw_prompt: &str,
     session_dek: &SecretBox<Vec<u8>>,
 ) -> anyhow::Result<()> {
+    #[cfg(feature = "postgres-backend")]
+    #[cfg(feature = "postgres-backend")]
     let next_index = test_app
         .db_pool
         .get()
@@ -265,7 +347,42 @@ async fn create_message_variant_with_raw_prompt(
             Ok::<i32, anyhow::Error>(if count == 0 { 1 } else { (count + 1) as i32 })
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Interact error"))??;
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let next_index = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            let count: i64 = message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .count()
+                .get_result(conn)
+                .map_err(|e| anyhow::anyhow!("Failed to count variants: {}", e))?;
+            Ok::<i32, anyhow::Error>(if count == 0 { 1 } else { (count + 1) as i32 })
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    let next_index = test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            let count: i64 = message_variants::table
+                .filter(message_variants::parent_message_id.eq(message_id))
+                .count()
+                .get_result(conn)
+                .map_err(|e| anyhow::anyhow!("Failed to count variants: {}", e))?;
+            Ok::<i32, anyhow::Error>(if count == 0 { 1 } else { (count + 1) as i32 })
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
 
     let new_variant = NewMessageVariant::new(
         message_id,
@@ -273,13 +390,15 @@ async fn create_message_variant_with_raw_prompt(
         variant_content,
         user_id,
         session_dek,
-        None,
-        None,
-        Some("gemini-1.5-pro".to_string()),
         Some(raw_prompt),
-        None,
-    )?;
+        None, // game_state
+        None, // model_name
+    )?
+    .with_token_counts(None, None)
+    .with_model_name("gemini-1.5-pro".to_string());
 
+    #[cfg(feature = "postgres-backend")]
+    #[cfg(feature = "postgres-backend")]
     test_app
         .db_pool
         .get()
@@ -291,8 +410,25 @@ async fn create_message_variant_with_raw_prompt(
                 .execute(conn)
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Interact error"))??;
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
 
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            diesel::insert_into(message_variants::table)
+                .values(&new_variant)
+                .execute(conn)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(feature = "postgres-backend")]
+    #[cfg(feature = "postgres-backend")]
     test_app
         .db_pool
         .get()
@@ -304,7 +440,22 @@ async fn create_message_variant_with_raw_prompt(
                 .execute(conn)
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Interact error"))??;
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
+
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+    test_app
+        .db_pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {:?}", e))?
+        .interact(move |conn| {
+            diesel::update(chat_messages::table.filter(chat_messages::id.eq(message_id)))
+                .set(chat_messages::variant_count.eq(next_index + 1))
+                .execute(conn)
+        })
+        .await
+        .map_err(|_| anyhow::anyhow!("Interact error"))?
+        .map_err(|_| anyhow::anyhow!("Interact error"))?;
 
     Ok(())
 }

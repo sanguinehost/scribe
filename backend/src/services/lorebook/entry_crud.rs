@@ -1,9 +1,13 @@
-use super::get_user_from_session;
 use super::*;
+#[cfg(feature = "sqlite-backend")]
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::{DbId, DbTimestamp};
 use crate::models::lorebook_dtos::CreateLorebookEntryPayload;
+use crate::privacy::logging::loggable_user_id;
+use qdrant_client::qdrant::{
+    condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,
+};
 
 impl LorebookService {
     #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
@@ -99,7 +103,7 @@ AppError::InternalServerErrorGeneric(format!(
         let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id.into(),
+            id: new_entry_id,
             lorebook_id,
             user_id: user.id,
             original_sillytavern_uid: None,
@@ -118,8 +122,8 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated in favor of encrypted title
-            created_at: Some(current_time.into()),
-            updated_at: Some(current_time.into()),
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
         };
 
         // 3. Save to DB
@@ -1198,7 +1202,7 @@ AppError::InternalServerErrorGeneric(format!(
             "Cleaning up vector embeddings for lorebook entry [REDACTED_UUID] for user [REDACTED_UUID]"
         );
 
-        let vector_filter = Filter {
+        let filter = Filter {
             must: vec![
                 Condition {
                     condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -1231,16 +1235,12 @@ AppError::InternalServerErrorGeneric(format!(
             ..Default::default()
         };
 
-        if let Err(e) = self
-            .qdrant_service
-            .delete_points_by_filter(vector_filter)
-            .await
-        {
+        if let Err(e) = self.qdrant_service.delete_by_filter(filter).await {
             // Log the error but don't fail the entire operation since DB deletion succeeded
             error!(
                 error = %e,
                 entry_id = %entry_id,
-                user_id = %user.id,
+                user_id = %loggable_user_id(user.id),
                 "Failed to delete vector embeddings for lorebook entry via filter, but database deletion succeeded"
             );
         } else {
@@ -1253,10 +1253,11 @@ AppError::InternalServerErrorGeneric(format!(
         // Fallback: Also try deleting by ID directly.
         // For lorebook entries, the point ID is typically the same as the entry ID.
         // This is more robust for LanceDB/Desktop environments.
-        let point_id = PointId {
-            point_id_options: Some(PointIdOptions::Uuid(entry_id.to_string())),
-        };
-        if let Err(e) = self.qdrant_service.delete_points(vec![point_id]).await {
+        if let Err(e) = self
+            .qdrant_service
+            .delete_by_id(&entry_id.to_string())
+            .await
+        {
             debug!(
                 error = %e,
                 entry_id = %entry_id,
@@ -1356,7 +1357,7 @@ AppError::InternalServerErrorGeneric(format!(
         let new_entry_id = DbId::new();
 
         let new_entry_db = NewLorebookEntry {
-            id: new_entry_id.into(),
+            id: new_entry_id,
             lorebook_id: target_lorebook_id,
             user_id,
             original_sillytavern_uid: None,
@@ -1375,8 +1376,8 @@ AppError::InternalServerErrorGeneric(format!(
             sillytavern_metadata_ciphertext: None,
             sillytavern_metadata_nonce: None,
             name: None, // Deprecated
-            created_at: Some(current_time.into()),
-            updated_at: Some(current_time.into()),
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
         };
 
         // 3. Save to database
@@ -1562,14 +1563,14 @@ AppError::InternalServerErrorGeneric(format!(
         let current_time = DbTimestamp::now();
 
         let new_lorebook = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id,
             name: ai_lorebook_name.to_string(),
             description: Some("Automatically generated lorebook entries from AI narrative intelligence. This contains world-building information extracted from your roleplay conversations.".to_string()),
             source_format: "scribe_ai_v1".to_string(),
             is_public: false,
-            created_at: Some(current_time.into()),
-            updated_at: Some(current_time.into()),
+            created_at: Some(current_time),
+            updated_at: Some(current_time),
         };
 
         let created_lorebook = conn

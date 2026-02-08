@@ -39,6 +39,7 @@ pub mod lorebook_dtos;
 pub mod lorebooks;
 #[cfg(feature = "payment")]
 pub mod payment;
+#[cfg(feature = "postgres-backend")]
 pub mod sql_types;
 pub mod template_preferences;
 pub mod usage;

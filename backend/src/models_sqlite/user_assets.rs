@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[diesel(table_name = crate::schema::user_assets)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct UserAsset {
-    pub id: DbId,
+    pub id: i32,
     pub user_id: DbId,
     pub persona_id: Option<DbId>,
     pub asset_type: String,

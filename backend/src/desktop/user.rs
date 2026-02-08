@@ -9,6 +9,7 @@ use crate::desktop::config::{get_default_user_id, set_default_user_id};
 use crate::errors::AppError;
 use crate::models::auth::RegisterPayload;
 use crate::models::users::User;
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::users;
 use diesel::prelude::*;
 use secrecy::SecretString;
@@ -63,7 +64,7 @@ pub async fn ensure_default_user_exists(conn: &mut crate::db::DbConn) -> Result<
 
             if let Some(user) = recovered_user {
                 info!(
-                    user_id = %user.id,
+                    user_id = %loggable_user_id(user.id),
                     "Recovered from NIL user ID by switching to existing user"
                 );
                 // Update config with the valid user ID
@@ -144,8 +145,7 @@ pub async fn ensure_default_user_exists(conn: &mut crate::db::DbConn) -> Result<
     set_default_user_id(user.id)?;
 
     info!(
-        user_id = %user.id,
-        username = %user.username,
+        user_id = %loggable_user_id(user.id),
         "Default user created and activated successfully"
     );
 

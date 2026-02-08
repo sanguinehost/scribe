@@ -35,7 +35,9 @@
 			model_name: msg.model_name || undefined,
 			backend_id: msg.backend_id,
 			status: msg.status,
-			contentVersion: msg.contentVersion ?? 0 // Preserve from source message for reactivity tracking
+			contentVersion: msg.contentVersion ?? 0, // Preserve from source message for reactivity tracking
+			reasoningContent: msg.reasoning_content || undefined,
+			isThinking: msg.is_thinking || (msg.loading && !msg.content)
 		};
 	}
 
@@ -316,6 +318,34 @@
 							}
 						)}
 					>
+						{#if message.reasoning_content}
+							<div class="mb-4 rounded-md border border-border/50 bg-background/50">
+								<details class="group/reasoning">
+									<summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+										<div class="flex items-center gap-2">
+											{#if (message.loading || message.isThinking || message.is_thinking) && !message.content}
+												<span class="relative flex h-2 w-2">
+													<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-purple-500 opacity-75"></span>
+													<span class="relative inline-flex h-2 w-2 rounded-full bg-purple-500"></span>
+												</span>
+												<span class="text-purple-600 dark:text-purple-400">Thinking...</span>
+											{:else}
+												<svg class="h-3 w-3 transition-transform group-open/reasoning:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+												</svg>
+												<span>Thought Process</span>
+											{/if}
+										</div>
+									</summary>
+									<div class="border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+										<div class="prose prose-sm prose-invert max-w-none dark:prose-invert">
+											<p class="whitespace-pre-wrap text-xs leading-relaxed">{message.reasoning_content}</p>
+										</div>
+									</div>
+								</details>
+							</div>
+						{/if}
+
 						{#if message.error}
 							<!-- Error state display -->
 							<div class="mb-3 flex items-start gap-3">

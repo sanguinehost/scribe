@@ -3,7 +3,7 @@ use crate::errors::AppError;
 use serde::{Deserialize, Serialize};
 
 /// Structured output schemas for different generation types
-/// These will be used with rust-genai structured output capabilities
+/// These will be used with Rig structured output capabilities
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterFieldOutput {

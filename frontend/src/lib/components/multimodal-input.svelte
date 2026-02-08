@@ -10,6 +10,8 @@
 	import StopIcon from './icons/stop.svelte';
 	import ImpersonateWidget from './impersonate-widget.svelte';
 	import ContextEnrichmentButton from './context-enrichment-button.svelte';
+	import ThinkingLevelSelector from './thinking-level-selector.svelte';
+	import type { ScribeChatSession } from '$lib/types';
 	// import { replaceState } from '$app/navigation'; // Unused? Let's remove for cleanup.
 
 	// Define attachment interface
@@ -29,6 +31,8 @@
 		onImpersonate?: (response: string) => void; // Callback for impersonate results
 		agentMode?: 'disabled' | 'pre_processing' | 'post_processing'; // Context enrichment mode
 		onAgentModeChange?: (mode: 'disabled' | 'pre_processing' | 'post_processing') => void; // Callback for mode changes
+		chat?: ScribeChatSession; // Add full chat object for thinking level
+		supportsReasoning?: boolean; // Flag for reasoning support
 		placeholder?: string; // Custom placeholder text
 		class?: string;
 	};
@@ -42,6 +46,8 @@
 		onImpersonate,
 		agentMode = 'disabled',
 		onAgentModeChange,
+		chat,
+		supportsReasoning = false,
 		placeholder = 'Send a message...', // Default placeholder
 		class: c
 	}: Props = $props();
@@ -196,6 +202,9 @@
 					onImpersonate={handleImpersonateResults}
 					disabled={isLoading}
 				/>
+			{/if}
+			{#if chat && supportsReasoning}
+				<ThinkingLevelSelector {chat} disabled={isLoading} />
 			{/if}
 			{#if isLoading}
 				{@render stopButton()}

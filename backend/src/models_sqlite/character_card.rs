@@ -447,19 +447,20 @@ mod tests;
 
 // --- Diesel Database Models ---
 
+use crate::models::OptionalStringArray;
 use crate::schema::character_assets;
 // use crate::models::users::User; // Unused import
 
 // Note: For Insertable, we might need a separate struct `NewCharacter`
 // if some fields (like id, created_at, updated_at) are not set manually during insertion.
-#[derive(Insertable, Default, Clone)] // Added Default and Clone, Removed Debug
+#[derive(Insertable, Default, Clone)]
 #[diesel(table_name = crate::schema::characters)]
 #[cfg_attr(
     feature = "postgres-backend",
     diesel(check_for_backend(diesel::pg::Pg))
 )]
 #[cfg_attr(
-    feature = "sqlite-backend",
+    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
     diesel(check_for_backend(diesel::sqlite::Sqlite))
 )]
 pub struct NewCharacter {
@@ -652,23 +653,13 @@ impl NewCharacter {
         let spec_version = data_v3_card.spec_version.clone();
         let data = data_v3_card.data.clone(); // Clone the inner data
 
-        // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
-        let tags = if data.tags.is_empty() {
-            None
-        } else {
-            Some(data.tags.into_iter().map(Some).collect())
-        };
-        let alternate_greetings = if data.alternate_greetings.is_empty() {
-            None
-        } else {
-            Some(data.alternate_greetings.into_iter().map(Some).collect())
-        };
-        let source = data.source.map(|v| v.into_iter().map(Some).collect());
-        let group_only_greetings = if data.group_only_greetings.is_empty() {
-            None
-        } else {
-            Some(data.group_only_greetings.into_iter().map(Some).collect())
-        };
+        // Convert V3 Vec<String> to DB Vec<Option<String>>
+        let tags = OptionalStringArray::from_strings(data.tags.clone());
+        let alternate_greetings =
+            OptionalStringArray::from_strings(data.alternate_greetings.clone());
+        let source = OptionalStringArray::from_strings(data.source.clone().unwrap_or_default());
+        let group_only_greetings =
+            OptionalStringArray::from_strings(data.group_only_greetings.clone());
 
         // Convert timestamps
         let creation_date_ts = data
@@ -805,19 +796,15 @@ impl NewCharacter {
             creator: Some(data.creator.clone()).filter(|s| !s.is_empty()),
             character_version: Some(data.character_version.clone()).filter(|s| !s.is_empty()),
             // Use converted vecs
-            alternate_greetings: alternate_greetings.into(),
-            tags: tags.into(),
+            alternate_greetings,
+            tags,
             spec,         // Use extracted spec
             spec_version, // Use extracted spec_version
             // character_book: data.character_book.clone(), // DB has separate table, handle later if needed
             nickname: data.nickname, // Changed from .clone()
             creator_notes_multilingual: creator_notes_multilingual_json, // Assign the wrapped value
-            source: source
-                .map(DbStringArray::from_vec)
-                .unwrap_or_else(DbStringArray::empty),
-            group_only_greetings: group_only_greetings
-                .map(DbStringArray::from_vec)
-                .unwrap_or_else(DbStringArray::empty),
+            source,
+            group_only_greetings,
             creation_date: creation_date_ts, // Already Option<DbTimestamp>
             modification_date: modification_date_ts, // Already Option<DbTimestamp>
             extensions: extensions_option_json, // Assign the calculated extensions
@@ -925,24 +912,10 @@ impl NewCharacter {
             creator_notes,
             system_prompt,
             post_history_instructions,
-            tags: (if data.tags.is_empty() {
-                None
-            } else {
-                Some(data.tags.clone().into_iter().map(Some).collect())
-            })
-            .into(),
-            alternate_greetings: (if data.alternate_greetings.is_empty() {
-                None
-            } else {
-                Some(
-                    data.alternate_greetings
-                        .clone()
-                        .into_iter()
-                        .map(Some)
-                        .collect(),
-                )
-            })
-            .into(),
+            tags: OptionalStringArray::from_strings(data.tags.clone()),
+            alternate_greetings: OptionalStringArray::from_strings(
+                data.alternate_greetings.clone(),
+            ),
             extensions: if data.extensions.is_empty() {
                 None
             } else {
@@ -1472,7 +1445,8 @@ mod tests {
         };
         // Box the card data as expected by ParsedCharacterCard::V3
         // Pass the card directly, not boxed
-        let parsed = ParsedCharacterCard::V3(card_v3);
+        // Box the card data as expected by ParsedCharacterCard::V3
+        let parsed = ParsedCharacterCard::V3(Box::new(card_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 
@@ -1531,8 +1505,8 @@ mod tests {
         };
         // Populate other fields as needed if the V2Fallback variant expects them
 
-        // Pass the V3 struct directly, not boxed
-        let parsed = ParsedCharacterCard::V2Fallback(data_v2_as_v3);
+        // Pass the V3 struct directly, boxed as expected
+        let parsed = ParsedCharacterCard::V2Fallback(Box::new(data_v2_as_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 

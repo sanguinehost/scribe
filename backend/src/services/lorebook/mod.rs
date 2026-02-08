@@ -1,4 +1,5 @@
 #[cfg(feature = "sqlite-backend")]
+#[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
 
@@ -21,10 +22,7 @@ use crate::{
     },
     schema::{lorebook_entries, lorebooks},
     services::{embeddings::LorebookEntryParams, EncryptionService},
-    vector_db::qdrant_client::{
-        Condition, ConditionOneOf, FieldCondition, Filter, Match, MatchValue, PointId,
-        PointIdOptions, QdrantClientServiceTrait,
-    },
+    vector_db::VectorService,
     AppState,
 };
 use axum_login::AuthSession;
@@ -66,7 +64,7 @@ pub struct LorebookService {
     pool: DbPool,
     // TODO: Remove once encryption is implemented for lorebooks
     encryption_service: Arc<EncryptionService>, // Store as Arc
-    qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Added for vector cleanup
+    qdrant_service: Arc<VectorService>,         // Added for vector cleanup
 }
 
 // Module declarations
@@ -86,7 +84,7 @@ impl LorebookService {
     pub fn new(
         pool: DbPool,
         encryption_service: Arc<EncryptionService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<VectorService>,
     ) -> Self {
         // Accept Arc
         Self {
@@ -208,7 +206,7 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id,
             name: payload.name.clone(),
             description: payload.description.clone(),
@@ -364,7 +362,7 @@ impl LorebookService {
         let new_entry_id = DbId::new();
 
         let new_entry_db = crate::models::NewLorebookEntry {
-            id: new_entry_id.into(),
+            id: new_entry_id,
             lorebook_id,
             user_id,
             original_sillytavern_uid: None,

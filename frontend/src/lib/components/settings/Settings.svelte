@@ -66,7 +66,7 @@
 
 		// Gemini-Specific
 		gemini_thinking_budget: null as number | null,
-		gemini_thinking_level: null as string | null,
+		thinking_level: null as string | null,
 
 		context_total_token_limit: 200000,
 		context_recent_history_budget: 150000,
@@ -111,9 +111,9 @@
 				default_seed: settings.seed ?? null,
 
 				// Gemini-Specific Settings
-				default_gemini_thinking_budget: settings.gemini_thinking_budget || null,
-				default_gemini_thinking_level: settings.gemini_thinking_level || null,
-				default_gemini_enable_code_execution: null, // Not exposed in this UI yet
+				default_thinking_budget: settings.gemini_thinking_budget || null,
+				default_thinking_level: settings.thinking_level || null,
+				default_enable_code_execution: null, // Not exposed in this UI yet
 
 				// Context Management Settings
 				default_context_total_token_limit: settings.context_total_token_limit || null,
@@ -174,8 +174,8 @@
 					seed: userSettings.default_seed || null,
 
 					// Gemini-Specific
-					gemini_thinking_budget: userSettings.default_gemini_thinking_budget || null,
-					gemini_thinking_level: userSettings.default_gemini_thinking_level || null,
+					gemini_thinking_budget: userSettings.default_thinking_budget || null,
+					thinking_level: userSettings.default_thinking_level || null,
 
 					// Context Management
 					context_total_token_limit: userSettings.default_context_total_token_limit || 200000,
@@ -219,7 +219,7 @@
 			presence_penalty: 0.0,
 			seed: null,
 			gemini_thinking_budget: null,
-			gemini_thinking_level: null,
+			thinking_level: null,
 			context_total_token_limit: 200000,
 			context_recent_history_budget: 150000,
 			context_rag_budget: 50000, // Updated to match backend default
@@ -524,7 +524,7 @@
 										<select
 											id="thinking-level"
 											class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-											bind:value={settings.gemini_thinking_level}
+											bind:value={settings.thinking_level}
 										>
 											<option value={null}>Default</option>
 											<option value="Disabled">Disabled</option>

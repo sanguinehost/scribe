@@ -56,10 +56,12 @@ fn insert_test_user_with_password(
         .expect("Failed to encrypt DEK for test user");
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username: username.to_string(),
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -236,12 +238,12 @@ async fn test_create_character_minimal_fields() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         created_char.tags,
-        scribe_backend::db::DbStringArray(Some(vec![])),
+        Some(scribe_backend::db::unified_types::DbStringArray::empty()),
         "Tags should default to Some(vec![])"
     );
     assert_eq!(
         created_char.alternate_greetings,
-        Some(vec![]),
+        Some(scribe_backend::db::unified_types::DbStringArray::empty()),
         "AlternateGreetings should default to Some(vec![])"
     );
 
@@ -429,7 +431,7 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
 
     assert_eq!(
         created_char.tags,
-        scribe_backend::models::OptionalStringArray(Some(vec![
+        Some(scribe_backend::models::OptionalStringArray::from_vec(vec![
             Some("test".to_string()),
             Some("api".to_string()),
             Some("manual_creation".to_string())
@@ -439,10 +441,9 @@ async fn test_create_character_all_fields() -> Result<(), anyhow::Error> {
     assert_eq!(created_char.character_version.as_deref(), Some("1.0.0"));
     assert_eq!(
         created_char.alternate_greetings,
-        Some(vec![
-            "Hey there!".to_string(),
-            "Greetings, tester!".to_string()
-        ])
+        Some(scribe_backend::models::OptionalStringArray::from_strings(
+            vec!["Hey there!".to_string(), "Greetings, tester!".to_string()]
+        ))
     );
 
     assert_eq!(created_char.spec, "chara_card_v3");

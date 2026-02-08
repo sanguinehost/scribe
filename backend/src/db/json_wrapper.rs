@@ -21,7 +21,7 @@ use diesel::sql_types::Text;
 #[derive(Clone, PartialEq, Eq, Default)]
 #[cfg_attr(
     feature = "postgres-backend",
-    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
 )]
 #[cfg_attr(feature = "postgres-backend", diesel(sql_type = Jsonb))]
 #[cfg_attr(
@@ -114,6 +114,7 @@ mod pg_impl {
         pg::{Pg, PgValue},
         serialize::{self, IsNull, Output, ToSql},
         sql_types::Text,
+        // NullableExpressionMethods,
     };
     use std::io::Write;
 
@@ -184,18 +185,6 @@ mod sqlite_impl {
     };
 
     impl<T> FromSql<Text, Sqlite> for Json<T>
-    where
-        T: DeserializeOwned,
-    {
-        fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-            let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-            let value = serde_json::from_str(&text)
-                .map_err(|e| format!("Failed to parse JSON from TEXT: {}", e))?;
-            Ok(Json(value))
-        }
-    }
-
-    impl<T> FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for Json<T>
     where
         T: DeserializeOwned,
     {

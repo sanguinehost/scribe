@@ -171,7 +171,10 @@ fn start_backend_process(
         .env("DATABASE_URL", &database_url)
         .env("COOKIE_SIGNING_KEY", &cookie_signing_key)
         .env("PORT", "38080")
-        .env("RUST_LOG", "info")
+        .env(
+            "RUST_LOG",
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
+        )
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to spawn sidecar: {}", e))?;
 

@@ -17,11 +17,11 @@ use scribe_backend::{
         cognitive::RecallPipeline,
         embeddings::EmbeddingPipelineServiceTrait, // Added
         encryption_service::EncryptionService,     // Added
-        gemini_token_client::GeminiTokenClient,    // Added
         hybrid_token_counter::HybridTokenCounter,  // Added
         lorebook::LorebookService,                 // Added
-        tokenizer_service::TokenizerService,       // Added
-        user_persona_service::UserPersonaService,  // Added
+        token_client::TokenClient,
+        tokenizer_service::TokenizerService,      // Added
+        user_persona_service::UserPersonaService, // Added
         UserSettingsService,
     },
     state::{AppState, AppStateServices}, // Added AppStateServices
@@ -115,9 +115,9 @@ async fn test_chat_session_uses_user_default_model() {
         default_top_p: None,
         default_top_k: None,
         default_seed: None,
-        default_gemini_thinking_budget: None,
-        default_gemini_thinking_level: None,
-        default_gemini_enable_code_execution: None,
+        default_thinking_budget: None,
+        default_thinking_level: None,
+        default_enable_code_execution: None,
         default_context_total_token_limit: None,
         default_context_recent_history_budget: None,
         default_context_rag_budget: None,
@@ -186,7 +186,7 @@ async fn test_chat_session_uses_user_default_model() {
     let gemini_token_client = config.gemini_api_key.as_ref().map(|api_key_secret_string| {
         // Assuming api_key_secret_string is SecretString
         // GeminiTokenClient::new expects SecretString
-        GeminiTokenClient::new(api_key_secret_string.clone())
+        TokenClient::new(api_key_secret_string.clone())
     });
 
     let token_counter = Arc::new(HybridTokenCounter::new(
@@ -210,6 +210,12 @@ async fn test_chat_session_uses_user_default_model() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let app_services = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         recall_pipeline: Arc::new(RecallPipeline::new(db_pool.clone())),
         token_service: Some(Arc::new(TokenService::new("test_secret"))),
         ai_client,

@@ -43,10 +43,12 @@ async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username,
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -284,11 +286,12 @@ async fn test_variant_handling_updates_event() {
             user_id.into(),
             session_id.into(),
             Some(chronicle_id.into()),
+            None, // message_variant_id
             &[message1.clone()],
             &session_dek,
-            None,
-            None,
-            None,
+            None, // persona_context
+            None, // game_state
+            None, // character_context
         )
         .await
         .expect("First workflow failed");
@@ -369,11 +372,12 @@ async fn test_variant_handling_updates_event() {
             user_id.into(),
             session_id.into(),
             Some(chronicle_id.into()),
+            None, // message_variant_id
             &[message2.clone()],
             &session_dek,
-            None,
-            None,
-            None,
+            None, // persona_context
+            None, // game_state
+            None, // character_context
         )
         .await
         .expect("Variant workflow failed");

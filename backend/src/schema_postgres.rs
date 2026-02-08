@@ -88,6 +88,27 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    character_opinions (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        chronicle_id -> Uuid,
+        perspective_hash -> Text,
+        perspective_encrypted -> Bytea,
+        perspective_nonce -> Bytea,
+        opinion_encrypted -> Bytea,
+        opinion_nonce -> Bytea,
+        confidence -> Float4,
+        significance -> Float4,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        message_variant_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     characters (id) {
         id -> Uuid,
         user_id -> Uuid,
@@ -251,8 +272,8 @@ diesel::table! {
         role -> Nullable<Varchar>,
         parts -> Nullable<Jsonb>,
         attachments -> Nullable<Jsonb>,
-        prompt_tokens -> Nullable<Int4>,
-        completion_tokens -> Nullable<Int4>,
+        prompt_tokens -> Nullable<Int8>,
+        completion_tokens -> Nullable<Int8>,
         raw_prompt_ciphertext -> Nullable<Bytea>,
         raw_prompt_nonce -> Nullable<Bytea>,
         #[max_length = 255]
@@ -269,6 +290,7 @@ diesel::table! {
         modified_cost -> Numeric,
         credit_cost -> Int4,
         actual_charge -> Numeric,
+        game_time -> Nullable<Jsonb>,
     }
 }
 
@@ -310,8 +332,8 @@ diesel::table! {
         history_management_limit -> Int4,
         #[max_length = 100]
         model_name -> Varchar,
-        gemini_thinking_budget -> Nullable<Int4>,
-        gemini_enable_code_execution -> Nullable<Bool>,
+        thinking_budget -> Nullable<Int4>,
+        enable_code_execution -> Nullable<Bool>,
         #[max_length = 50]
         visibility -> Nullable<Varchar>,
         active_custom_persona_id -> Nullable<Uuid>,
@@ -327,8 +349,8 @@ diesel::table! {
         agent_mode -> Nullable<Varchar>,
         #[max_length = 50]
         model_provider -> Nullable<Varchar>,
-        total_prompt_tokens -> Int4,
-        total_completion_tokens -> Int4,
+        total_prompt_tokens -> Int8,
+        total_completion_tokens -> Int8,
         estimated_cost_cents -> Int4,
         tokens_counted_at -> Timestamptz,
         #[max_length = 50]
@@ -340,9 +362,9 @@ diesel::table! {
         total_actual_charge -> Numeric,
         narrative_style_override_ciphertext -> Nullable<Bytea>,
         narrative_style_override_nonce -> Nullable<Bytea>,
-        game_state -> Nullable<Text>,
+        game_state -> Nullable<Jsonb>,
         game_master_mode_enabled -> Bool,
-        gemini_thinking_level -> Nullable<Text>,
+        thinking_level -> Nullable<Text>,
         rag_chronicles_limit -> Nullable<Int4>,
         rag_lorebooks_limit -> Nullable<Int4>,
         rag_older_chat_limit -> Nullable<Int4>,
@@ -363,7 +385,6 @@ diesel::table! {
         summary -> Text,
         #[max_length = 50]
         source -> Varchar,
-        event_data -> Nullable<Jsonb>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         summary_encrypted -> Nullable<Bytea>,
@@ -373,6 +394,47 @@ diesel::table! {
         keywords_encrypted -> Nullable<Bytea>,
         keywords_nonce -> Nullable<Bytea>,
         chat_session_id -> Nullable<Uuid>,
+        message_variant_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    cognitive_core_memory (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        chronicle_id -> Uuid,
+        memory_state_encrypted -> Bytea,
+        memory_state_nonce -> Bytea,
+        version -> Int4,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    cognitive_facts (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        chronicle_id -> Uuid,
+        who_encrypted -> Bytea,
+        who_nonce -> Bytea,
+        what_encrypted -> Bytea,
+        what_nonce -> Bytea,
+        where_encrypted -> Bytea,
+        where_nonce -> Bytea,
+        when_encrypted -> Bytea,
+        when_nonce -> Bytea,
+        why_encrypted -> Bytea,
+        why_nonce -> Bytea,
+        fact_type -> Text,
+        confidence -> Float4,
+        significance -> Float4,
+        created_at -> Timestamptz,
         message_variant_id -> Nullable<Uuid>,
     }
 }
@@ -455,6 +517,27 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    entity_observations (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        chronicle_id -> Uuid,
+        entity_name_hash -> Text,
+        entity_name_encrypted -> Bytea,
+        entity_name_nonce -> Bytea,
+        observation_encrypted -> Bytea,
+        observation_nonce -> Bytea,
+        confidence -> Float4,
+        significance -> Float4,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        message_variant_id -> Nullable<Uuid>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     lorebook_entries (id) {
         is_enabled -> Bool,
         insertion_order -> Int4,
@@ -516,6 +599,9 @@ diesel::table! {
         raw_prompt_ciphertext -> Nullable<Bytea>,
         raw_prompt_nonce -> Nullable<Bytea>,
         game_state -> Nullable<Jsonb>,
+        prompt_tokens -> Nullable<Int8>,
+        completion_tokens -> Nullable<Int8>,
+        model_name -> Nullable<Text>,
     }
 }
 
@@ -892,8 +978,8 @@ diesel::table! {
         default_top_p -> Nullable<Numeric>,
         default_top_k -> Nullable<Int4>,
         default_seed -> Nullable<Int4>,
-        default_gemini_thinking_budget -> Nullable<Int4>,
-        default_gemini_enable_code_execution -> Nullable<Bool>,
+        default_thinking_budget -> Nullable<Int4>,
+        default_enable_code_execution -> Nullable<Bool>,
         default_context_total_token_limit -> Nullable<Int4>,
         default_context_recent_history_budget -> Nullable<Int4>,
         default_context_rag_budget -> Nullable<Int4>,
@@ -908,7 +994,7 @@ diesel::table! {
         preferred_local_model -> Nullable<Varchar>,
         local_llm_enabled -> Nullable<Bool>,
         local_model_preferences -> Nullable<Jsonb>,
-        default_gemini_thinking_level -> Nullable<Text>,
+        default_thinking_level -> Nullable<Text>,
         default_rag_chronicles_limit -> Nullable<Int4>,
         default_rag_lorebooks_limit -> Nullable<Int4>,
         default_rag_older_chat_limit -> Nullable<Int4>,
@@ -978,6 +1064,7 @@ diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(character_lorebooks -> users (user_id));
+diesel::joinable!(character_opinions -> message_variants (message_variant_id));
 diesel::joinable!(characters -> users (user_id));
 diesel::joinable!(chat_character_lorebook_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_character_lorebook_overrides -> lorebooks (lorebook_id));
@@ -996,9 +1083,11 @@ diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
 diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
 diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(cognitive_facts -> message_variants (message_variant_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
+diesel::joinable!(entity_observations -> message_variants (message_variant_id));
 diesel::joinable!(lorebook_entries -> lorebooks (lorebook_id));
 diesel::joinable!(lorebook_entries -> users (user_id));
 diesel::joinable!(lorebooks -> users (user_id));
@@ -1028,6 +1117,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     agent_context_analysis,
     character_assets,
     character_lorebooks,
+    character_opinions,
     characters,
     chat_character_lorebook_overrides,
     chat_character_overrides,
@@ -1035,10 +1125,13 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    cognitive_core_memory,
+    cognitive_facts,
     credit_packages,
     credit_transactions,
     daily_usage_tracking,
     email_verification_tokens,
+    entity_observations,
     lorebook_entries,
     lorebooks,
     message_variants,

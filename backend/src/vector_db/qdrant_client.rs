@@ -9,7 +9,7 @@ pub use qdrant_client::qdrant::{
     Condition, CreateCollection, CreateFieldIndexCollection, Distance, FieldCondition, FieldType,
     Filter, HnswConfigDiff, Match, OptimizersConfigDiff, PayloadIncludeSelector, PointId,
     PointStruct, ReadConsistency, ReadConsistencyType, ScoredPoint, UpdateCollection, Value,
-    VectorParams, VectorsConfig, WalConfigDiff, WithPayloadSelector,
+    VectorParams, Vectors, VectorsConfig, WalConfigDiff, WithPayloadSelector,
 };
 use qdrant_client::Qdrant;
 use std::collections::HashMap;
@@ -29,73 +29,7 @@ pub struct QdrantClientService {
     on_disk: Option<bool>,     // Added from config
 }
 
-#[async_trait]
-pub trait QdrantClientServiceTrait: Send + Sync {
-    async fn ensure_collection_exists(&self) -> Result<(), AppError>;
-    async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError>;
-    async fn store_points_to_collection(
-        &self,
-        collection_name: &str,
-        points: Vec<PointStruct>,
-    ) -> Result<(), AppError>;
-    async fn search_points(
-        &self,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn search_points_in_collection(
-        &self,
-        collection_name: &str,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn search_points_with_threshold(
-        &self,
-        vector: Vec<f32>,
-        limit: u64,
-        filter: Option<Filter>,
-        score_threshold: Option<f32>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn hybrid_search(
-        &self,
-        vector: Option<Vec<f32>>,
-        text_query: Option<String>,
-        text_fields: Vec<String>,
-        limit: u64,
-        filter: Option<Filter>,
-        score_threshold: Option<f32>,
-    ) -> Result<Vec<ScoredPoint>, AppError>;
-    async fn retrieve_points(
-        &self,
-        filter: Option<Filter>,
-        limit: u64,
-        offset: Option<u64>,
-    ) -> Result<Vec<ScoredPoint>, AppError>; // Added Retrieve Method
-    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError>;
-    async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError>;
-    async fn delete_points_from_collection(
-        &self,
-        collection_name: &str,
-        points: Vec<PointId>,
-    ) -> Result<(), AppError>;
-    async fn delete_points_by_filter_from_collection(
-        &self,
-        collection_name: &str,
-        filter: Filter,
-    ) -> Result<(), AppError>;
-    async fn update_collection_settings(&self) -> Result<(), AppError>; // Added Update Settings Method
-    async fn get_point_by_id(
-        &self,
-        point_id: PointId,
-    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError>;
-    /// Check if Qdrant service is healthy
-    async fn health_check(&self) -> Result<(), AppError>;
-    /// Optimize the collection (e.g., compaction, vacuuming)
-    async fn optimize_collection(&self) -> Result<(), AppError>;
-    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError>;
-}
+use super::QdrantClientServiceTrait;
 
 impl QdrantClientService {
     #[instrument(skip(config), name = "qdrant_service_new")]
@@ -267,7 +201,7 @@ impl QdrantClientService {
                             config: Some(QdrantVectorsConfig::Params(VectorParams {
                                 size: self.embedding_dimension,
                                 distance: self.distance_metric.into(), // Use configured distance
-                                hnsw_config: Some(target_hnsw_config.clone()),
+                                hnsw_config: Some(target_hnsw_config),
                                 quantization_config: None,
                                 on_disk: self.on_disk, // Use configured on_disk setting
                                 datatype: None,
@@ -452,6 +386,7 @@ impl QdrantClientService {
                 points,
                 ordering: None, // Default ordering
                 shard_key_selector: None,
+                ..Default::default()
             })
             .await
             .map_err(|e| {
@@ -673,7 +608,7 @@ impl QdrantClientService {
         fields(limit),
         name = "qdrant_retrieve_points_scroll"
     )]
-    pub async fn retrieve_points(
+    pub async fn retrieve_points_internal(
         &self,
         filter: Option<Filter>,
         limit: u64,
@@ -780,14 +715,7 @@ pub fn create_qdrant_point(
     // Convert UUID to string for PointId
     let point_id_str = id.to_string();
 
-    let vectors = qdrant_client::qdrant::Vectors {
-        vectors_options: Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(
-            qdrant_client::qdrant::Vector {
-                data: vector,
-                ..Default::default()
-            },
-        )),
-    };
+    let vectors = Vectors::from(vector);
 
     let point = PointStruct {
         id: Some(point_id_str.into()), // Convert String to Qdrant PointId
@@ -796,23 +724,10 @@ pub fn create_qdrant_point(
     };
 
     // Final sanity check before returning
-    if let Some(v) = &point.vectors {
-        if let Some(qdrant_client::qdrant::vectors::VectorsOptions::Vector(vec_data)) =
-            &v.vectors_options
-        {
-            if vec_data.data.is_empty() {
-                error!(
-                    "CRITICAL: PointStruct created with EMPTY vector! ID: {}",
-                    id
-                );
-            } else {
-                info!(
-                    "PointStruct created successfully with vector length: {} for ID: {}",
-                    vec_data.data.len(),
-                    id
-                );
-            }
-        }
+    if point.vectors.is_none() {
+        error!("CRITICAL: PointStruct created with NO vectors! ID: {}", id);
+    } else {
+        info!("PointStruct created successfully for ID: {}", id);
     }
 
     Ok(point)
@@ -891,6 +806,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
         .await
     }
 
+    // This is the trait method that will now call the internal implementation and convert to ScoredPoint
     async fn retrieve_points(
         &self,
         filter: Option<Filter>,
@@ -898,7 +814,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
         offset: Option<u64>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // Call the implementation method which returns RetrievedPoint
-        let retrieved_points = self.retrieve_points(filter, limit, offset).await?;
+        let retrieved_points = self.retrieve_points_internal(filter, limit, offset).await?;
 
         // Convert RetrievedPoint to ScoredPoint
         let scored_points = retrieved_points
@@ -1133,6 +1049,13 @@ impl QdrantClientServiceTrait for QdrantClientService {
             })?;
 
         Ok(response.result)
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(id.to_string())),
+        };
+        self.delete_points(vec![point_id]).await
     }
 
     async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
@@ -1759,13 +1682,19 @@ impl QdrantClientServiceTrait for NoOpQdrantService {
         Ok(None)
     }
 
-    async fn health_check(&self) -> Result<(), AppError> {
-        tracing::debug!("NoOpQdrantService: health_check (no-op)");
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_by_id (no-op)");
         Ok(())
     }
 
     async fn optimize_collection(&self) -> Result<(), AppError> {
         tracing::debug!("NoOpQdrantService: optimize_collection (no-op)");
+        // Qdrant handles optimization automatically
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: health_check (no-op)");
         Ok(())
     }
 
@@ -1792,5 +1721,148 @@ impl QdrantClientServiceTrait for NoOpQdrantService {
     async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
         tracing::debug!("NoOpQdrantService: ensure_collection_exists_named (no-op)");
         Ok(())
+    }
+}
+
+// Implement the unified VectorServiceTrait for QdrantClientService
+#[async_trait]
+impl super::VectorServiceTrait for QdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::ensure_collection_exists(self).await
+    }
+
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        QdrantClientServiceTrait::ensure_collection_exists_named(self, collection_name).await
+    }
+
+    async fn add_document(&self, _document: serde_json::Value) -> Result<(), AppError> {
+        tracing::warn!(
+            "add_document called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(())
+    }
+
+    async fn add_documents(&self, _documents: Vec<serde_json::Value>) -> Result<(), AppError> {
+        tracing::warn!(
+            "add_documents called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(())
+    }
+
+    async fn add_document_to_collection(
+        &self,
+        _collection_name: &str,
+        _document: serde_json::Value,
+    ) -> Result<(), AppError> {
+        // This would need embedding generation - for now just log a warning
+        tracing::warn!("add_document_to_collection called on QdrantClientService directly - use RigQdrantService instead");
+        Ok(())
+    }
+
+    async fn search_values(
+        &self,
+        _query: &str,
+        _limit: usize,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        // This would need embedding generation - for now return empty
+        tracing::warn!(
+            "search_values called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(vec![])
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        self.search_points_with_threshold(vector, limit, filter, score_threshold)
+            .await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        self.hybrid_search(
+            vector,
+            text_query,
+            text_fields,
+            limit,
+            filter,
+            score_threshold,
+        )
+        .await
+    }
+
+    async fn retrieve_points(
+        &self,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        limit: u64,
+        offset: Option<u64>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        // Note: score_threshold is ignored by inherent retrieve_points_internal
+        let results = self.retrieve_points_internal(filter, limit, offset).await?;
+        Ok(results
+            .into_iter()
+            .map(|p| qdrant_client::qdrant::ScoredPoint {
+                id: p.id,
+                version: 0,
+                score: 1.0,
+                payload: p.payload,
+                vectors: p.vectors,
+                shard_key: p.shard_key,
+                order_value: p.order_value,
+            })
+            .collect())
+    }
+
+    async fn delete_points(
+        &self,
+        ids: Vec<qdrant_client::qdrant::PointId>,
+    ) -> Result<(), AppError> {
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: self.collection_name.clone(),
+                points: Some(ids.into()),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!("Failed to delete points from Qdrant: {}", e))
+            })?;
+        Ok(())
+    }
+
+    async fn delete_by_filter(
+        &self,
+        filter: qdrant_client::qdrant::Filter,
+    ) -> Result<(), AppError> {
+        self.delete_points_by_filter(filter).await
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        // Use the existing delete_points method
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(id.to_string())),
+        };
+        QdrantClientServiceTrait::delete_points(self, vec![point_id]).await
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::health_check(self).await
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::optimize_collection(self).await
     }
 }

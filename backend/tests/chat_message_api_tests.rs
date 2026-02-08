@@ -58,8 +58,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         spec_version: "1.0".to_string(),
         name: "Character A for Chat Message Integ Test (Owned by User A)".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now().into()),
-        updated_at: Some(chrono::Utc::now().into()),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         ..Default::default()
     };
     let char_a: DbCharacter = test_app
@@ -99,14 +99,14 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: scribe_backend::models::OptionalStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        stop_sequences: Some(scribe_backend::db::unified_types::DbStringArray::empty()),
+        thinking_budget: None,
+        enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
         estimated_cost_cents: 0,
         tokens_counted_at: chrono::Utc::now().into(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -138,6 +138,7 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         message_type: MessageRole::User,
         content: dummy_message_content.as_bytes().to_vec().into(),
         content_nonce: None, // Plaintext for this test message
+        rag_embedding_id: None,
         role: Some("user".to_string()),
         parts: None,
         attachments: None,
@@ -158,6 +159,8 @@ async fn get_chat_messages_success_integration() -> anyhow::Result<()> {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        reasoning_content: None,
+        reasoning_content_nonce: None,
     };
 
     test_app

@@ -74,6 +74,8 @@ class DesktopStreamingService {
 			completion_tokens?: number;
 			model_name?: string;
 			backend_id?: string;
+			reasoningContent: string; // Buffer for reasoning content
+			isThinking: boolean; // Tracking reasoning state
 			isComplete: boolean;
 		}
 	>();
@@ -116,6 +118,7 @@ class DesktopStreamingService {
 		guidance?: string;
 		targetMessageId?: string;
 		variantOf?: string;
+		thinking_level?: string;
 	}): Promise<void> {
 		if (this.connectionStatus === 'connecting' || this.connectionStatus === 'open') {
 			logger.warn('desktop-streaming', 'Connection already active. Disconnect first.');
@@ -226,6 +229,8 @@ class DesktopStreamingService {
 		this.messageBuffers.set(assistantMessageId, {
 			content: '',
 			chunks: {},
+			reasoningContent: '',
+			isThinking: false,
 			isComplete: false
 		});
 
@@ -240,7 +245,8 @@ class DesktopStreamingService {
 					analysisMode: params.analysisMode,
 					guidance: params.guidance,
 					variantOf: params.variantOf,
-					isRegeneration: params.isRegeneration
+					isRegeneration: params.isRegeneration,
+					thinking_level: params.thinking_level
 				},
 				assistantMessageId
 			);
@@ -263,6 +269,7 @@ class DesktopStreamingService {
 			guidance?: string;
 			variantOf?: string;
 			isRegeneration?: boolean;
+			thinking_level?: string;
 		},
 		assistantMessageId: string
 	): Promise<void> {
@@ -324,6 +331,7 @@ class DesktopStreamingService {
 				guidance: params.guidance || null,
 				variantOf: params.variantOf || null,
 				isRegeneration: params.isRegeneration || false,
+				thinkingLevel: params.thinking_level || null,
 				channel
 			});
 
@@ -403,6 +411,11 @@ class DesktopStreamingService {
 				break;
 
 			case 'thinking':
+				console.log('🧠 [DesktopStreamingService] RECEIVED "thinking" event!', {
+					assistantMessageId,
+					textLen: event.data.text?.length,
+					textPreview: event.data.text?.slice(0, 50)
+				});
 				this.handleThinkingEvent(event.data.text, assistantMessageId);
 				break;
 
@@ -538,7 +551,8 @@ class DesktopStreamingService {
 					displayedContent: buffer.content,
 					contentVersion: (msg.contentVersion || 0) + 1,
 					isAnimating: false,
-					isRegenerating: false
+					isRegenerating: false,
+					isThinking: false
 				};
 			}
 			return msg;
@@ -546,13 +560,54 @@ class DesktopStreamingService {
 	}
 
 	/**
+	 * Append reasoning content to buffer and update message
+	 */
+	private appendReasoningContent(messageId: string, content: string): void {
+		const buffer = this.messageBuffers.get(messageId);
+		if (!buffer) {
+			logger.warn('desktop-streaming', 'No buffer found for reasoning content', { messageId });
+			return;
+		}
+
+		buffer.reasoningContent = (buffer.reasoningContent || '') + content;
+		buffer.isThinking = true;
+
+		// Update message using atomic .map() pattern
+		this.messages = this.messages.map((msg) => {
+			if (msg.id === messageId || msg.backend_id === messageId) {
+				console.log('✨ [DesktopStreamingService] UPDATING message with reasoning', {
+					id: msg.id,
+					reasoningLen: buffer.reasoningContent.length,
+					isThinking: true
+				});
+				return {
+					...msg,
+					reasoningContent: buffer.reasoningContent,
+					isThinking: true,
+					// Increment content version for reactivity in Svelte 5
+					contentVersion: (msg.contentVersion || 0) + 1
+				};
+			}
+			return msg;
+		});
+
+		logger.debug('desktop-streaming', 'Appended reasoning content', {
+			messageId,
+			totalLen: buffer.reasoningContent.length
+		});
+	}
+
+	/**
 	 * Handle thinking event
 	 */
-	private handleThinkingEvent(text: string, _assistantMessageId: string): void {
+	private handleThinkingEvent(text: string, assistantMessageId: string): void {
 		logger.debug('desktop-streaming', 'Thinking text received', {
-			textPrefix: text.substring(0, 50)
+			assistantMessageId,
+			textPrefix: text?.substring(0, 50)
 		});
-		// TODO: Implement thinking display if needed
+
+		const messageId = this.currentAssistantMessageId || assistantMessageId;
+		this.appendReasoningContent(messageId, text);
 	}
 
 	/**

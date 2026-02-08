@@ -2,6 +2,7 @@ use crate::auth::session_dek::SessionDek;
 use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::middleware::{rate_limit_logger, security_headers, template_rate_limit_middleware};
+use crate::privacy::logging::loggable_user_id;
 use crate::prompt_templates::{TemplateInfo, TEMPLATE_MANAGER};
 use axum::{
     extract::Path,
@@ -14,8 +15,6 @@ use regex::Regex;
 use serde::Serialize;
 use std::sync::LazyLock;
 use tracing::{info, warn};
-
-/// Shorthand for auth session
 
 /// Regex for validating template IDs - alphanumeric and underscore only
 static TEMPLATE_ID_REGEX: LazyLock<Regex> =
@@ -65,7 +64,7 @@ pub async fn list_templates_handler(
         .cloned()
         .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
 
-    info!(user_id = %user.id, "Listing available templates");
+    info!(user_id = %loggable_user_id(user.id), "Listing available templates");
 
     let templates = TEMPLATE_MANAGER.read().unwrap().list_templates();
 
@@ -91,7 +90,7 @@ pub async fn get_template_info_handler(
     // Validate template ID format for security
     validate_template_id(&template_id)?;
 
-    info!(user_id = %user.id, template_id = %template_id, "Getting template info");
+    info!(user_id = %loggable_user_id(user.id), template_id = %template_id, "Getting template info");
 
     match TEMPLATE_MANAGER
         .read()
@@ -122,11 +121,11 @@ pub async fn reload_templates_handler(auth: UnifiedAuth) -> Result<impl IntoResp
 
     // Check for admin role
     if user.role != crate::models::users::UserRole::Administrator {
-        warn!(user_id = %user.id, "Unauthorized attempt to reload templates");
+        warn!(user_id = %loggable_user_id(user.id), "Unauthorized attempt to reload templates");
         return Err(AppError::Forbidden("Admin privileges required".to_string()));
     }
 
-    info!(user_id = %user.id, "Reloading prompt templates");
+    info!(user_id = %loggable_user_id(user.id), "Reloading prompt templates");
 
     TEMPLATE_MANAGER.write().unwrap().reload();
 

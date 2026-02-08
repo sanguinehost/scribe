@@ -8,7 +8,7 @@ use axum::{
 use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::prelude::*;
-use genai::chat::{ChatStreamEvent, StreamChunk};
+use scribe_backend::llm::RigStreamEvent;
 use secrecy::ExposeSecret;
 use std::time::Duration;
 use tower::ServiceExt;
@@ -31,7 +31,6 @@ use scribe_backend::{
 };
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_streaming_ai_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
@@ -104,8 +103,8 @@ async fn generate_chat_response_streaming_ai_error() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()), // Add created_at
-                updated_at: Some(Utc::now().into()), // Add updated_at
+                created_at: Utc::now().into(), // Add created_at
+                updated_at: Utc::now().into(), // Add updated_at
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -145,14 +144,14 @@ async fn generate_chat_response_streaming_ai_error() {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray(None),
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                stop_sequences: Some(scribe_backend::db::DbStringArray::default()),
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
+                total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+                total_completion_tokens: scribe_backend::db::DbBigInt(0),
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now().into(),
                 total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -161,11 +160,15 @@ async fn generate_chat_response_streaming_ai_error() {
                 narrative_style_override_nonce: None,
                 game_master_mode_enabled: false,
                 game_state: None,
+                total_actual_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_modified_cost: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
+                total_credit_cost: 0,
+                total_actual_charge: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
                 ..Default::default()
             };
             diesel::insert_into(chat_sessions_dsl::chat_sessions)
                 .values(&new_chat_session)
-                .returning(ChatSession::as_returning()) // or .select(ChatSession::as_select())
+                .returning(ChatSession::as_returning())
                 .get_result::<ChatSession>(conn_sync)
         })
         .await
@@ -175,13 +178,9 @@ async fn generate_chat_response_streaming_ai_error() {
     // Mock the AI client to return an error in the stream
     let mock_error_message = "Mock AI error during streaming".to_string();
     let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Partial ".to_string(), // Add trailing whitespace to match expected events
-        })),
-        Err(AppError::GeminiError(mock_error_message.clone())),
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Should not be sent".to_string(),
-        })),
+        Ok(RigStreamEvent::Content("Partial ".to_string())),
+        Err(AppError::AiError(mock_error_message.clone())),
+        Ok(RigStreamEvent::Content("Should not be sent".to_string())),
     ];
 
     // Extract expected events before moving mock_stream_items
@@ -198,7 +197,7 @@ async fn generate_chat_response_streaming_ai_error() {
         },
         ParsedSseEvent {
             event: Some("error".to_string()),
-            data: format!("LLM API error: {mock_error_message}"),
+            data: format!("LLM API error: AI API error: {mock_error_message}"),
         },
     ];
 
@@ -219,11 +218,7 @@ async fn generate_chat_response_streaming_ai_error() {
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("test-stream-err-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -360,7 +355,6 @@ async fn generate_chat_response_streaming_ai_error() {
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB and real AI are guaranteed
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_streaming_initiation_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await;
@@ -438,8 +432,8 @@ async fn generate_chat_response_streaming_initiation_error() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -510,6 +504,9 @@ async fn generate_chat_response_streaming_initiation_error() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()
@@ -593,7 +590,6 @@ async fn generate_chat_response_streaming_initiation_error() {
 }
 
 #[tokio::test]
-#[ignore] // Ignore for CI unless DB is guaranteed
 #[allow(clippy::too_many_lines)]
 async fn generate_chat_response_streaming_error_before_content() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
@@ -671,8 +667,8 @@ async fn generate_chat_response_streaming_error_before_content() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -720,8 +716,8 @@ async fn generate_chat_response_streaming_error_before_content() {
     // Mock the AI client stream: Start -> Error
     let error_message = "Mock AI error before content".to_string();
     let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Start),
-        Err(AppError::GeminiError(
+        // Ok(RigStreamEvent::Content("Start".to_string())), // Removed to simulate error before ANY content
+        Err(AppError::AiError(
             // Or another appropriate AppError variant
             error_message.clone(),
         )),
@@ -732,7 +728,7 @@ async fn generate_chat_response_streaming_error_before_content() {
         // No thinking event because X-Request-Thinking is false by default
         ParsedSseEvent {
             event: Some("error".to_string()),
-            data: format!("LLM API error: {error_message}"),
+            data: format!("LLM API error: AI API error: {error_message}"),
         },
     ];
 
@@ -759,6 +755,9 @@ async fn generate_chat_response_streaming_error_before_content() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()
@@ -843,9 +842,8 @@ async fn generate_chat_response_streaming_error_before_content() {
 }
 
 #[tokio::test]
-#[ignore] // Added ignore for CI
 #[allow(clippy::too_many_lines)]
-async fn generate_chat_response_streaming_genai_json_error() {
+async fn generate_chat_response_streaming_llm_json_error() {
     let test_app = test_helpers::spawn_app(false, false, false).await; // Corrected: Added third arg
 
     if std::env::var("RUN_INTEGRATION_TESTS").is_ok() {
@@ -915,8 +913,8 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -993,10 +991,9 @@ async fn generate_chat_response_streaming_genai_json_error() {
     let mock_error_message =
         "JsonValueExt(PropertyNotFound(\"/candidates/0/content/parts/0\"))".to_string();
     let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Start),
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Some initial content. ".to_string(), // Add trailing whitespace to match expected events
-        })),
+        Ok(RigStreamEvent::Content(
+            "Some initial content. ".to_string(),
+        )),
         Err(AppError::GenerationError(mock_error_message.clone())),
     ];
 
@@ -1041,6 +1038,9 @@ async fn generate_chat_response_streaming_genai_json_error() {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()
@@ -1149,7 +1149,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 nonce,
                 dek_for_assertion,
             )
-            .expect("Failed to decrypt initial user message content for genai_json_error test");
+            .expect("Failed to decrypt initial user message content for llm_json_error test");
             String::from_utf8(decrypted_bytes.expose_secret().clone())
                 .expect("Failed to convert decrypted initial user message to string")
         },
@@ -1172,7 +1172,7 @@ async fn generate_chat_response_streaming_genai_json_error() {
                 nonce,
                 dek_for_assertion,
             )
-            .expect("Failed to decrypt payload user message content for genai_json_error test");
+            .expect("Failed to decrypt payload user message content for llm_json_error test");
             String::from_utf8(decrypted_bytes.expose_secret().clone())
                 .expect("Failed to convert decrypted payload user message to string")
         },
@@ -1187,12 +1187,12 @@ async fn generate_chat_response_streaming_genai_json_error() {
         ai_msg_db
             .content_nonce
             .as_ref()
-            .expect("AI message nonce missing for genai_json_error test"),
+            .expect("AI message nonce missing for llm_json_error test"),
         dek_for_assertion,
     )
-    .expect("Failed to decrypt AI message content for genai_json_error test");
+    .expect("Failed to decrypt AI message content for llm_json_error test");
     let decrypted_ai_content_str =
         String::from_utf8(decrypted_ai_content_bytes.expose_secret().clone())
-            .expect("Failed to convert decrypted AI message to string for genai_json_error test");
+            .expect("Failed to convert decrypted AI message to string for llm_json_error test");
     assert_eq!(decrypted_ai_content_str, "Some initial content. ");
 }

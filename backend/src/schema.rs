@@ -1,7 +1,7 @@
 // @generated automatically by Diesel CLI.
 
 pub mod sql_types {
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "account_status"))]
     pub struct AccountStatus;
 
@@ -9,26 +9,9 @@ pub mod sql_types {
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "user_role"))]
     pub struct UserRole;
-}
-
-/// Unified type aliases for backend-agnostic SQL operations.
-/// This module provides type aliases that work across both PostgreSQL and SQLite backends.
-pub mod sql_types_unified {
-    pub use diesel::sql_types::Bytea as DbBlobType;
-    pub use diesel::sql_types::Bytea as DbBinaryType;
-    pub use diesel::sql_types::Integer as DbCreditType;
-    pub use diesel::sql_types::Jsonb as DbJsonType;
-    pub use diesel::sql_types::Numeric as DbNumericType;
-    pub use diesel::sql_types::Uuid as DbIdType;
-    pub type DbStringArrayType =
-        diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>;
-    pub use diesel::sql_types::Text as DbTextType;
-    pub use diesel::sql_types::Timestamptz as DbTimestampType;
-
-    pub use super::sql_types::MessageType as DbMessageType;
 }
 
 diesel::table! {
@@ -289,8 +272,8 @@ diesel::table! {
         role -> Nullable<Varchar>,
         parts -> Nullable<Jsonb>,
         attachments -> Nullable<Jsonb>,
-        prompt_tokens -> Nullable<Int4>,
-        completion_tokens -> Nullable<Int4>,
+        prompt_tokens -> Nullable<Int8>,
+        completion_tokens -> Nullable<Int8>,
         raw_prompt_ciphertext -> Nullable<Bytea>,
         raw_prompt_nonce -> Nullable<Bytea>,
         #[max_length = 255]
@@ -308,6 +291,8 @@ diesel::table! {
         credit_cost -> Int4,
         actual_charge -> Numeric,
         game_time -> Nullable<Jsonb>,
+        reasoning_content -> Nullable<Bytea>,
+        reasoning_content_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -349,8 +334,8 @@ diesel::table! {
         history_management_limit -> Int4,
         #[max_length = 100]
         model_name -> Varchar,
-        gemini_thinking_budget -> Nullable<Int4>,
-        gemini_enable_code_execution -> Nullable<Bool>,
+        thinking_budget -> Nullable<Int4>,
+        enable_code_execution -> Nullable<Bool>,
         #[max_length = 50]
         visibility -> Nullable<Varchar>,
         active_custom_persona_id -> Nullable<Uuid>,
@@ -366,8 +351,8 @@ diesel::table! {
         agent_mode -> Nullable<Varchar>,
         #[max_length = 50]
         model_provider -> Nullable<Varchar>,
-        total_prompt_tokens -> Int4,
-        total_completion_tokens -> Int4,
+        total_prompt_tokens -> Int8,
+        total_completion_tokens -> Int8,
         estimated_cost_cents -> Int4,
         tokens_counted_at -> Timestamptz,
         #[max_length = 50]
@@ -381,7 +366,7 @@ diesel::table! {
         narrative_style_override_nonce -> Nullable<Bytea>,
         game_state -> Nullable<Jsonb>,
         game_master_mode_enabled -> Bool,
-        gemini_thinking_level -> Nullable<Text>,
+        thinking_level -> Nullable<Text>,
         rag_chronicles_limit -> Nullable<Int4>,
         rag_lorebooks_limit -> Nullable<Int4>,
         rag_older_chat_limit -> Nullable<Int4>,
@@ -402,7 +387,6 @@ diesel::table! {
         summary -> Text,
         #[max_length = 50]
         source -> Varchar,
-        event_data -> Nullable<Jsonb>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         summary_encrypted -> Nullable<Bytea>,
@@ -617,6 +601,11 @@ diesel::table! {
         raw_prompt_ciphertext -> Nullable<Bytea>,
         raw_prompt_nonce -> Nullable<Bytea>,
         game_state -> Nullable<Jsonb>,
+        prompt_tokens -> Nullable<Int8>,
+        completion_tokens -> Nullable<Int8>,
+        model_name -> Nullable<Text>,
+        reasoning_content -> Nullable<Bytea>,
+        reasoning_content_nonce -> Nullable<Bytea>,
     }
 }
 
@@ -993,8 +982,8 @@ diesel::table! {
         default_top_p -> Nullable<Numeric>,
         default_top_k -> Nullable<Int4>,
         default_seed -> Nullable<Int4>,
-        default_gemini_thinking_budget -> Nullable<Int4>,
-        default_gemini_enable_code_execution -> Nullable<Bool>,
+        default_thinking_budget -> Nullable<Int4>,
+        default_enable_code_execution -> Nullable<Bool>,
         default_context_total_token_limit -> Nullable<Int4>,
         default_context_recent_history_budget -> Nullable<Int4>,
         default_context_rag_budget -> Nullable<Int4>,
@@ -1009,7 +998,7 @@ diesel::table! {
         preferred_local_model -> Nullable<Varchar>,
         local_llm_enabled -> Nullable<Bool>,
         local_model_preferences -> Nullable<Jsonb>,
-        default_gemini_thinking_level -> Nullable<Text>,
+        default_thinking_level -> Nullable<Text>,
         default_rag_chronicles_limit -> Nullable<Int4>,
         default_rag_lorebooks_limit -> Nullable<Int4>,
         default_rag_older_chat_limit -> Nullable<Int4>,

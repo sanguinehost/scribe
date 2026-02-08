@@ -552,8 +552,8 @@ pub struct NewCharacter {
     pub world_ciphertext: Option<Vec<u8>>,
     pub world_nonce: Option<Vec<u8>>,
     // created_at and updated_at are typically handled by DB or set directly in handler
-    pub created_at: Option<DbTimestamp>, // Make consistent with schema and Character struct
-    pub updated_at: Option<DbTimestamp>,
+    pub created_at: DbTimestamp, // Consistent with schema and Character struct
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewCharacter {
@@ -653,23 +653,13 @@ impl NewCharacter {
         let spec_version = data_v3_card.spec_version.clone();
         let data = data_v3_card.data.clone(); // Clone the inner data
 
-        // Convert V3 Vec<String> to DB Option<Vec<Option<String>>>
-        let tags = if data.tags.is_empty() {
-            None
-        } else {
-            Some(data.tags.into_iter().map(Some).collect())
-        };
-        let alternate_greetings = if data.alternate_greetings.is_empty() {
-            None
-        } else {
-            Some(data.alternate_greetings.into_iter().map(Some).collect())
-        };
-        let source = data.source.map(|v| v.into_iter().map(Some).collect());
-        let group_only_greetings = if data.group_only_greetings.is_empty() {
-            None
-        } else {
-            Some(data.group_only_greetings.into_iter().map(Some).collect())
-        };
+        // Convert V3 Vec<String> to DB DbStringArray
+        let tags = crate::models::OptionalStringArray::from_strings(data.tags);
+        let alternate_greetings =
+            crate::models::OptionalStringArray::from_strings(data.alternate_greetings);
+        let source = crate::models::OptionalStringArray::from_strings(data.source.unwrap_or_default());
+        let group_only_greetings =
+            crate::models::OptionalStringArray::from_strings(data.group_only_greetings);
 
         // Convert timestamps
         let creation_date_ts = data
@@ -862,8 +852,8 @@ impl NewCharacter {
             depth_prompt_nonce: None, // Will be set during encryption
             world_ciphertext: None,   // Will be encrypted from world field
             world_nonce: None,        // Will be set during encryption
-            created_at: None,
-            updated_at: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         }
     }
 
@@ -1461,9 +1451,8 @@ mod tests {
             data: data_v3,
             ..Default::default()
         };
-        // Box the card data as expected by ParsedCharacterCard::V3
         // Pass the card directly, not boxed
-        let parsed = ParsedCharacterCard::V3(card_v3);
+        let parsed = ParsedCharacterCard::V3(Box::new(card_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 
@@ -1523,7 +1512,7 @@ mod tests {
         // Populate other fields as needed if the V2Fallback variant expects them
 
         // Pass the V3 struct directly, not boxed
-        let parsed = ParsedCharacterCard::V2Fallback(data_v2_as_v3);
+        let parsed = ParsedCharacterCard::V2Fallback(Box::new(data_v2_as_v3));
 
         let new_char = NewCharacter::from_parsed_card(&parsed, user_id);
 

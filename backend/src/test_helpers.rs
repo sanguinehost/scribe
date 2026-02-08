@@ -7,24 +7,25 @@ pub mod payment_test_helpers;
 
 use crate::db::DbId;
 #[cfg(feature = "sqlite-backend")]
-#[cfg(feature = "sqlite-backend")]
 use crate::db::SqliteInteractExt;
 use std::fmt;
 use std::net::SocketAddr;
 
 // Make sure all necessary imports from the main crate and external crates are included.
 use crate::errors::AppError;
-use crate::llm::{AiClient, BatchEmbeddingContentRequest, ChatStream, EmbeddingClient}; // Add EmbeddingClient and BatchEmbeddingContentRequest
+use crate::llm::{
+    AiClient, BatchEmbeddingContentRequest, EmbeddingClient, RigChatResponse, RigCompletionRequest,
+    RigStreamEvent, UnifiedEmbeddingModel,
+};
 use crate::services::embeddings::{
     metadata::{CognitiveFactMetadata, EntityMetadata, OpinionMetadata},
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait, LorebookEntryParams, RetrievedChunk,
 }; // Added EmbeddingPipelineService
 use crate::text_processing::chunking::ChunkConfig;
-use genai::chat::Usage; // Added ChunkConfig
-                        // Unused ChunkConfig, ChunkingMetric were previously noted as removed.
+// Unused ChunkConfig, ChunkingMetric were previously noted as removed.
 use crate::models::users::User as DbUser;
 use crate::models::users::{SerializableSecretDek, User}; // Added SerializableSecretDek
-use crate::vector_db::qdrant_client::{PointStruct, QdrantClientServiceTrait};
+use crate::vector_db::QdrantClientServiceTrait;
 use crate::{
     auth::{session_store::DieselSessionStore, user_store::Backend as AuthBackend}, // Use crate::auth and alias Backend, Added RegisterPayload
     config::Config,
@@ -50,14 +51,20 @@ use crate::{
     services::chat_override_service::ChatOverrideService, // <<< ENSURED IMPORT
     services::chronicle_service::ChronicleService,        // <<< ADDED THIS IMPORT
     services::encryption_service::EncryptionService,      // <<< ENSURED IMPORT
-    services::gemini_token_client::GeminiTokenClient,
     services::hybrid_token_counter::HybridTokenCounter,
     services::narrative_intelligence_service::NarrativeIntelligenceService, // <<< ADDED THIS IMPORT
+    services::token_client::TokenClient,
     services::tokenizer_service::TokenizerService,
     services::user_persona_service::UserPersonaService, // <<< ADDED THIS IMPORT
     state::{AppState, AppStateServices},
-    vector_db::qdrant_client::QdrantClientService, // Import constants module alias
+    vector_db::VectorServiceTrait, // Import constants module alias
 };
+use qdrant_client::qdrant::PointStruct;
+
+#[cfg(feature = "embedded-vector")]
+pub use crate::vector_db::LanceDbClient;
+#[cfg(feature = "remote-vector")]
+pub use crate::vector_db::QdrantClientService;
 
 // Conditionally import documents module (PostgreSQL only)
 #[cfg(feature = "postgres-backend")]
@@ -83,11 +90,7 @@ use diesel::RunQueryDsl;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations};
 // Removed var
 use futures::TryStreamExt;
-use genai::adapter::AdapterKind; // Ensure AdapterKind is in scope
-use genai::chat::ChatStreamEvent; // Add import for chatstream types
-use genai::chat::{ChatOptions, ChatRequest, ChatResponse, StreamEnd, ToolCall};
-use genai::ModelIden; // Import ModelIden directly
-                      // use http_body_util::BodyExt; // Removed unused import
+// use http_body_util::BodyExt; // Removed unused import
 use mime; // Added for mime::APPLICATION_JSON
 use qdrant_client::qdrant::{Filter, PointId, ScoredPoint};
 use secrecy::{ExposeSecret, SecretBox, SecretString};
@@ -127,51 +130,34 @@ type EmbeddingResponseSequence = Arc<Mutex<VecDeque<Result<Vec<f32>, AppError>>>
 type BatchEmbeddingResponse = Arc<Mutex<Option<Result<Vec<Vec<f32>>, AppError>>>>;
 type EmbeddingCalls = Arc<Mutex<Vec<(String, String, Option<String>)>>>;
 type BatchEmbeddingCalls = Arc<Mutex<Vec<Vec<(String, String, Option<String>)>>>>;
-type SearchParams = Arc<Mutex<Option<(Vec<f32>, u64, Option<Filter>)>>>;
+type SearchParamsType = Option<(Vec<f32>, u64, Option<Filter>)>;
+type SearchParams = Arc<Mutex<SearchParamsType>>;
 type SearchResponseQueue = Arc<Mutex<VecDeque<Result<Vec<ScoredPoint>, AppError>>>>;
 type ChatEventStream =
-    std::sync::Arc<std::sync::Mutex<Option<Vec<Result<ChatStreamEvent, AppError>>>>>;
+    std::sync::Arc<std::sync::Mutex<Option<Vec<Result<RigStreamEvent, AppError>>>>>;
 type RetrievalResponseQueue = Arc<Mutex<VecDeque<Result<Vec<RetrievedChunk>, AppError>>>>;
 type FactResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, CognitiveFactMetadata)>, AppError>>>>;
 type OpinionResponseQueue = Arc<Mutex<VecDeque<Result<Vec<(f32, OpinionMetadata)>, AppError>>>>;
 
 #[derive(Clone)]
 pub struct MockAiClient {
-    // Add fields to store mock state, similar to previous mock impl
-    // These need Arc<Mutex<...>> for thread safety if mock is shared across awaits
-    last_request: std::sync::Arc<std::sync::Mutex<Option<ChatRequest>>>,
-    last_options: std::sync::Arc<std::sync::Mutex<Option<ChatOptions>>>,
-    response_to_return: std::sync::Arc<std::sync::Mutex<Result<ChatResponse, AppError>>>,
+    last_request: std::sync::Arc<std::sync::Mutex<Option<RigCompletionRequest>>>,
+    response_to_return: std::sync::Arc<std::sync::Mutex<Result<RigChatResponse, AppError>>>,
     stream_to_return: ChatEventStream,
-    // Field to capture the messages sent to the stream_chat method
-    last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<genai::chat::ChatMessage>>>>,
-    // model_name: String, // Removed unused
-    // provider_model_name: String, // Removed unused
-    // embedding_response: Arc<Mutex<Result<Vec<f32>, AppError>>>, // Removed unused
-    // text_gen_response: Arc<Mutex<Result<String, AppError>>>, // Removed unused
+    last_received_messages: std::sync::Arc<std::sync::Mutex<Option<Vec<rig::message::Message>>>>,
 }
 
 impl MockAiClient {
     #[must_use]
     pub fn new() -> Self {
-        // Initialize fields with default values, using realistic token usage for testing
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            // Default to a simple OK response with realistic token counts
-            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
-                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from("Mock AI response"),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(RigChatResponse {
+                content: "Mock AI response".to_string(),
+                prompt_tokens: Some(20),
+                completion_tokens: Some(10),
+                total_tokens: Some(30),
                 reasoning_content: None,
-                usage: Usage {
-                    prompt_tokens: Some(20),     // Simulate ~20 tokens for prompt
-                    completion_tokens: Some(10), // Simulate ~10 tokens for completion
-                    total_tokens: Some(30),      // Total of prompt + completion
-                    prompt_tokens_details: None,
-                    completion_tokens_details: None,
-                },
-                captured_raw_body: None,
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -181,26 +167,17 @@ impl MockAiClient {
     /// Create a new MockAiClient with a specific response text
     #[must_use]
     pub fn new_with_response(response_text: String) -> Self {
-        // Estimate token count based on response text length (rough approximation: 1 token per 4 characters)
-        let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as i32).max(1);
-        let prompt_tokens = 15; // Default prompt token count
+        let completion_tokens = ((response_text.len() as f64 / 4.0).ceil() as u64).max(1);
+        let prompt_tokens = 15;
 
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(ChatResponse {
-                model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini/mock-model"),
-                content: genai::chat::MessageContent::from(response_text),
+            response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Ok(RigChatResponse {
+                content: response_text,
+                prompt_tokens: Some(prompt_tokens),
+                completion_tokens: Some(completion_tokens),
+                total_tokens: Some(prompt_tokens + completion_tokens),
                 reasoning_content: None,
-                usage: Usage {
-                    prompt_tokens: Some(prompt_tokens),
-                    completion_tokens: Some(completion_tokens),
-                    total_tokens: Some(prompt_tokens + completion_tokens),
-                    prompt_tokens_details: None,
-                    completion_tokens_details: None,
-                },
-                captured_raw_body: None,
             }))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -212,7 +189,6 @@ impl MockAiClient {
     pub fn new_with_error(error: AppError) -> Self {
         Self {
             last_request: std::sync::Arc::new(std::sync::Mutex::new(None)),
-            last_options: std::sync::Arc::new(std::sync::Mutex::new(None)),
             response_to_return: std::sync::Arc::new(std::sync::Mutex::new(Err(error))),
             stream_to_return: std::sync::Arc::new(std::sync::Mutex::new(None)),
             last_received_messages: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -226,30 +202,13 @@ impl MockAiClient {
     ///
     /// Panics if the mutex is poisoned
     #[must_use]
-    pub fn get_last_request(&self) -> Option<ChatRequest> {
-        // TODO: Implement mock logic
+    pub fn get_last_request(&self) -> Option<RigCompletionRequest> {
         self.last_request.lock().unwrap().clone()
     }
 
-    /// Gets the last options sent to the mock client
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned
-    #[must_use]
-    pub fn get_last_options(&self) -> Option<ChatOptions> {
-        // TODO: Implement mock logic
-        self.last_options.lock().unwrap().clone()
-    }
-
     // Method to retrieve the captured messages
-    /// Gets the last received messages from the mock client
-    ///
-    /// # Panics
-    ///
-    /// Panics if the mutex is poisoned
     #[must_use]
-    pub fn get_last_received_messages(&self) -> Option<Vec<genai::chat::ChatMessage>> {
+    pub fn get_last_received_messages(&self) -> Option<Vec<rig::message::Message>> {
         self.last_received_messages.lock().unwrap().clone()
     }
 
@@ -258,8 +217,7 @@ impl MockAiClient {
     /// # Panics
     ///
     /// Panics if the mutex lock is poisoned
-    pub fn set_response(&self, response: Result<ChatResponse, AppError>) {
-        // TODO: Implement mock logic
+    pub fn set_response(&self, response: Result<RigChatResponse, AppError>) {
         *self.response_to_return.lock().unwrap() = response;
     }
 
@@ -268,8 +226,7 @@ impl MockAiClient {
     /// # Panics
     ///
     /// Panics if the mutex lock is poisoned
-    pub fn set_stream_response(&self, stream_items: Vec<Result<ChatStreamEvent, AppError>>) {
-        // TODO: Implement mock logic
+    pub fn set_stream_response(&self, stream_items: Vec<Result<RigStreamEvent, AppError>>) {
         *self.stream_to_return.lock().unwrap() = Some(stream_items);
     }
 }
@@ -283,84 +240,60 @@ impl Default for MockAiClient {
 // Basic trait implementation to satisfy AppState::new
 #[async_trait]
 impl AiClient for MockAiClient {
-    async fn exec_chat(
+    async fn completion(
         &self,
-        _model_name: &str,
-        request: ChatRequest,
-        config_override: Option<ChatOptions>,
-    ) -> Result<ChatResponse, AppError> {
-        *self.last_request.lock().unwrap() = Some(request.clone()); // Clone request
-        *self.last_options.lock().unwrap() = config_override;
-        // Capture messages for exec_chat as well, if needed, though stream_chat is primary for this task
-        *self.last_received_messages.lock().unwrap() = Some(request.messages);
-        // TODO: Implement proper mock logic using stored response
-        self.response_to_return.lock().unwrap().clone()
-        // unimplemented!("MockAiClient exec_chat not implemented")
-    }
-    async fn stream_chat(
-        &self,
-        _model_name: &str,
-        request: ChatRequest,
-        config_override: Option<ChatOptions>,
-    ) -> Result<ChatStream, AppError> {
-        *self.last_request.lock().unwrap() = Some(request.clone()); // Clone request before moving messages
-        *self.last_options.lock().unwrap() = config_override;
-        // Capture the incoming messages
-        *self.last_received_messages.lock().unwrap() = Some(request.messages);
+        req: RigCompletionRequest,
+    ) -> Result<RigChatResponse, anyhow::Error> {
+        *self.last_request.lock().unwrap() = Some(req.clone());
 
-        // Manually reconstruct the stream items because ChatStreamEvent is not Clone
+        // Capture history including the current prompt
+        let mut full_history = req.history.clone();
+        full_history.push(rig::message::Message::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                req.prompt.clone(),
+            )),
+        });
+        *self.last_received_messages.lock().unwrap() = Some(full_history);
+
+        self.response_to_return
+            .lock()
+            .unwrap()
+            .clone()
+            .map_err(|e| anyhow::anyhow!(e))
+    }
+
+    async fn completion_stream(
+        &self,
+        req: RigCompletionRequest,
+    ) -> Result<
+        std::pin::Pin<
+            Box<dyn futures::Stream<Item = Result<RigStreamEvent, anyhow::Error>> + Send>,
+        >,
+        anyhow::Error,
+    > {
+        *self.last_request.lock().unwrap() = Some(req.clone());
+
+        // Capture history including the current prompt
+        let mut full_history = req.history.clone();
+        full_history.push(rig::message::Message::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                req.prompt.clone(),
+            )),
+        });
+        *self.last_received_messages.lock().unwrap() = Some(full_history);
+
         let items = {
             let guard = self.stream_to_return.lock().unwrap();
             (*guard).as_ref().map_or_else(Vec::new, |item_results| {
-                let mut new_items = Vec::with_capacity(item_results.len());
-                for item_result in item_results {
-                    match item_result {
-                        Ok(event) => {
-                            // Rebuild the event based on its type
-                            let new_event = match event {
-                                ChatStreamEvent::Chunk(chunk) => {
-                                    ChatStreamEvent::Chunk(genai::chat::StreamChunk {
-                                        content: chunk.content.clone(),
-                                    })
-                                }
-                                ChatStreamEvent::Start => ChatStreamEvent::Start,
-                                ChatStreamEvent::ReasoningChunk(chunk) => {
-                                    ChatStreamEvent::ReasoningChunk(genai::chat::StreamChunk {
-                                        content: chunk.content.clone(),
-                                    })
-                                }
-                                ChatStreamEvent::ToolCallChunk(tool_chunk) => {
-                                    // ToolCall now has thought_signature field
-                                    ChatStreamEvent::ToolCallChunk(genai::chat::ToolChunk {
-                                        tool_call: ToolCall {
-                                            call_id: tool_chunk.tool_call.call_id.clone(),
-                                            fn_name: tool_chunk.tool_call.fn_name.clone(),
-                                            fn_arguments: tool_chunk.tool_call.fn_arguments.clone(),
-                                            thought_signature: tool_chunk
-                                                .tool_call
-                                                .thought_signature
-                                                .clone(),
-                                        },
-                                    })
-                                }
-                                ChatStreamEvent::End(_) => {
-                                    ChatStreamEvent::End(StreamEnd::default())
-                                } // StreamEnd is not Clone, use Default
-                            };
-                            new_items.push(Ok(new_event));
-                        }
-                        Err(err) => {
-                            // Clone the error (assuming AppError is Clone)
-                            new_items.push(Err(err.clone()));
-                        }
-                    }
-                }
-                new_items
+                item_results
+                    .iter()
+                    .map(|res| res.clone().map_err(|e| anyhow::anyhow!(e)))
+                    .collect()
             })
-        }; // Mutex guard is dropped here
+        };
 
         let stream = futures::stream::iter(items);
-        Ok(Box::pin(stream) as ChatStream)
+        Ok(Box::pin(stream))
     }
 }
 
@@ -1044,7 +977,9 @@ pub struct MockQdrantClientService {
     search_call_count: Arc<Mutex<usize>>,
     last_upsert_points: Arc<Mutex<Option<Vec<qdrant_client::qdrant::PointStruct>>>>,
     last_search_params: SearchParams,
+    pub search_params_history: Arc<Mutex<Vec<SearchParamsType>>>, // New field
     calls_delete_points_by_filter: Arc<Mutex<Vec<Filter>>>, // New field to track delete_points_by_filter calls
+    pub last_added_documents: Arc<Mutex<Vec<serde_json::Value>>>,
 }
 
 impl Default for MockQdrantClientService {
@@ -1063,7 +998,9 @@ impl MockQdrantClientService {
             search_call_count: Arc::new(Mutex::new(0)),
             last_upsert_points: Arc::new(Mutex::new(None)),
             last_search_params: Arc::new(Mutex::new(None)),
+            search_params_history: Arc::new(Mutex::new(Vec::new())),
             calls_delete_points_by_filter: Arc::new(Mutex::new(Vec::new())), // Initialize
+            last_added_documents: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -1281,7 +1218,7 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         _text_query: Option<String>,
         _text_fields: Vec<String>,
         limit: u64,
-        filter: Option<Filter>,
+        filter: Option<qdrant_client::qdrant::Filter>,
         _score_threshold: Option<f32>,
     ) -> Result<Vec<ScoredPoint>, AppError> {
         // For mock, just use vector search if vector is provided, otherwise return empty
@@ -1378,7 +1315,204 @@ impl QdrantClientServiceTrait for MockQdrantClientService {
         Ok(())
     }
 
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+
     async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+}
+
+// Implement the VectorServiceTrait for MockQdrantClientService
+#[async_trait]
+impl VectorServiceTrait for MockQdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn add_document(&self, document: serde_json::Value) -> Result<(), AppError> {
+        *self.upsert_call_count.lock().unwrap() += 1;
+        self.last_added_documents.lock().unwrap().push(document);
+        let mut response = self.upsert_response.lock().unwrap();
+        if let Some(res) = response.take() {
+            res
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn add_documents(&self, documents: Vec<serde_json::Value>) -> Result<(), AppError> {
+        *self.upsert_call_count.lock().unwrap() += 1;
+        self.last_added_documents.lock().unwrap().extend(documents);
+        let mut response = self.upsert_response.lock().unwrap();
+        if let Some(res) = response.take() {
+            res
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn add_document_to_collection(
+        &self,
+        _collection_name: &str,
+        document: serde_json::Value,
+    ) -> Result<(), AppError> {
+        *self.upsert_call_count.lock().unwrap() += 1;
+        self.last_added_documents.lock().unwrap().push(document);
+        let mut response = self.upsert_response.lock().unwrap();
+        if let Some(res) = response.take() {
+            res
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn search_values(
+        &self,
+        _query: &str,
+        limit: usize,
+        filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        // Track call (using dummy vector for tracking)
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vec![0.0; 1536], limit as u64, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        if let Some(points_result) = queue.pop_front() {
+            match points_result {
+                Ok(points) => {
+                    let results = points
+                        .into_iter()
+                        .take(limit)
+                        .map(|p| {
+                            let score = p.score;
+                            let payload =
+                                serde_json::to_value(p.payload).unwrap_or(serde_json::Value::Null);
+                            (score, payload)
+                        })
+                        .collect();
+                    Ok(results)
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    async fn delete_by_filter(
+        &self,
+        filter: qdrant_client::qdrant::Filter,
+    ) -> Result<(), AppError> {
+        // Record the call
+        self.calls_delete_points_by_filter
+            .lock()
+            .unwrap()
+            .push(filter);
+        Ok(())
+    }
+
+    async fn retrieve_points(
+        &self,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        limit: u64,
+        _offset: Option<u64>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vec![0.0; 1536], limit, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        queue
+            .pop_front()
+            .map(|res| res.map(|points| points.into_iter().take(limit as usize).collect()))
+            .unwrap_or(Ok(vec![]))
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vector, limit, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        queue
+            .pop_front()
+            .map(|res| res.map(|points| points.into_iter().take(limit as usize).collect()))
+            .unwrap_or(Ok(vec![]))
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Track call
+        {
+            *self.search_call_count.lock().unwrap() += 1;
+            let mut last_params = self.last_search_params.lock().unwrap();
+            let params = Some((vector.unwrap_or_else(|| vec![0.0; 1536]), limit, filter));
+            *last_params = params.clone();
+            self.search_params_history.lock().unwrap().push(params);
+        }
+
+        // Return response from queue
+        let mut queue = self.search_response.lock().unwrap();
+        queue
+            .pop_front()
+            .map(|res| res.map(|points| points.into_iter().take(limit as usize).collect()))
+            .unwrap_or(Ok(vec![]))
+    }
+
+    async fn delete_points(
+        &self,
+        _ids: Vec<qdrant_client::qdrant::PointId>,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
         Ok(())
     }
 }
@@ -1390,7 +1524,7 @@ pub struct TestAppStateBuilder {
     config: Arc<Config>,
     ai_client: Arc<dyn AiClient + Send + Sync>,
     embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
-    qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+    qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>,
     embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
@@ -1408,7 +1542,7 @@ impl TestAppStateBuilder {
         config: Arc<Config>,
         ai_client: Arc<dyn AiClient + Send + Sync>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>,
         auth_backend: Arc<AuthBackend>,
     ) -> Self {
         Self {
@@ -1478,6 +1612,7 @@ impl TestAppStateBuilder {
     ///
     /// Panics if the tokenizer model cannot be loaded from the expected path
     #[must_use]
+    #[allow(clippy::double_must_use)]
     pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let encryption_service = Arc::new(EncryptionService::new());
 
@@ -1511,7 +1646,7 @@ impl TestAppStateBuilder {
                 .config
                 .gemini_api_key
                 .as_ref()
-                .map(|api_key| GeminiTokenClient::new(api_key.clone()));
+                .map(|api_key| TokenClient::new(api_key.clone()));
 
             let default_model = self.config.token_counter_default_model.clone();
 
@@ -1680,7 +1815,7 @@ pub struct TestApp {
     pub mock_ai_client: Option<Arc<MockAiClient>>,
     pub mock_embedding_client: Arc<MockEmbeddingClient>,
     pub mock_embedding_pipeline_service: Arc<MockEmbeddingPipelineService>,
-    pub qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>, // Use trait object
+    pub qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>, // Use trait object
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
     // user_persona_service field removed as per plan
@@ -1913,7 +2048,7 @@ pub async fn spawn_app_with_options(
     )
 )]
 pub async fn spawn_app_with_rate_limiting_options(
-    multi_thread: bool,
+    _multi_thread: bool,
     use_real_ai: bool,
     use_real_qdrant: bool,
     use_real_embedding_pipeline: bool,
@@ -1942,7 +2077,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     // PostgreSQL: Create unique test database per test (if multi-threaded)
     #[cfg(feature = "postgres-backend")]
     let (pool, test_db_name) = {
-        let test_db_name_suffix = if multi_thread {
+        let test_db_name_suffix = if _multi_thread {
             Some(DbId::new().to_string()) // Ensure it's String for suffix
         } else {
             None
@@ -1956,15 +2091,10 @@ pub async fn spawn_app_with_rate_limiting_options(
         use diesel::r2d2::{ConnectionManager, Pool};
         use diesel_migrations::MigrationHarness;
 
-        let database_url = if multi_thread {
-            // Each test gets a unique in-memory database with shared cache to allow multiple connections
-            format!(
-                "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
-                DbId::new()
-            )
-        } else {
-            "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
-        };
+        let database_url = format!(
+            "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+            DbId::new()
+        );
 
         // Customizer to set busy_timeout
         #[derive(Debug)]
@@ -2030,9 +2160,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     ) = if use_real_ai {
         let api_key =
             std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-api-key".to_string());
-        let base_url = "https://generativelanguage.googleapis.com";
-        let real_ai_client = crate::llm::gemini_client::build_gemini_client(&api_key, base_url)
-            .expect("Failed to build real AI client for test");
+        let real_ai_client = crate::llm::rig_client::RigClient::new(Some(api_key), None, None);
         (Arc::new(real_ai_client), None)
     } else {
         let mock_client = Arc::new(MockAiClient::new());
@@ -2050,21 +2178,24 @@ pub async fn spawn_app_with_rate_limiting_options(
         Arc::new(MockEmbeddingPipelineService::new());
 
     let (qdrant_service_for_state, mock_qdrant_service_for_test_app): (
-        Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        Arc<dyn crate::vector_db::VectorServiceTrait>,
         Option<Arc<MockQdrantClientService>>,
     ) = if use_real_qdrant {
         // This flag now also controls embedding components
-        let real_qdrant_service = QdrantClientService::new(config_arc.clone())
-            .await
-            .expect("Failed to create real Qdrant client for test");
-        (
-            Arc::new(real_qdrant_service) as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
-            None,
-        )
+        let real_embedding_client =
+            crate::llm::cloud_embedding_client::build_cloud_embedding_client(config_arc.clone())
+                .expect("Failed to build real Cloud embedding client for test");
+        let embedding_model = UnifiedEmbeddingModel::Cloud(real_embedding_client);
+
+        let real_vector_service =
+            crate::vector_db::create_vector_service(config_arc.clone(), embedding_model)
+                .await
+                .expect("Failed to create real vector service for test");
+        (real_vector_service, None)
     } else {
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         (
-            mock_qdrant.clone() as Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+            mock_qdrant.clone() as Arc<dyn crate::vector_db::VectorServiceTrait>,
             Some(mock_qdrant),
         )
     };
@@ -2079,8 +2210,8 @@ pub async fn spawn_app_with_rate_limiting_options(
     if use_real_qdrant {
         // If true, use real embedding client and pipeline for AppState
         let real_embedding_client =
-            crate::llm::gemini_embedding_client::build_gemini_embedding_client(config_arc.clone())
-                .expect("Failed to build real Gemini embedding client for test");
+            crate::llm::cloud_embedding_client::build_cloud_embedding_client(config_arc.clone())
+                .expect("Failed to build real Cloud embedding client for test");
         embedding_client_for_state = Arc::new(real_embedding_client);
 
         // mock_embedding_client_for_test_app and mock_embedding_pipeline_service_for_test_app are already initialized.
@@ -2203,7 +2334,7 @@ pub async fn spawn_app_with_rate_limiting_options(
             template_preferences_routes::template_preferences_routes(app_state_inner.clone()),
         ) // Add template preferences routes
         .nest("/payment", payment_routes::payment_routes()) // Add payment routes
-        .nest("/", lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
+        .merge(lorebook_routes::lorebook_routes()) // Align with main.rs: Nest lorebook routes under /
         .route_layer(middleware::from_fn_with_state(
             app_state_inner.clone(),
             auth_log_wrapper,
@@ -2293,6 +2424,7 @@ pub mod db {
     #[cfg(feature = "postgres-backend")]
     use crate::db::MIGRATIONS;
     use crate::db::{DbId, DbTimestamp}; // Import unified types
+    use crate::models::chats::{DbInsertableChatMessage, MessageRole};
 
     // PostgreSQL-specific imports
     #[cfg(feature = "postgres-backend")]
@@ -2324,24 +2456,20 @@ pub mod db {
     /// For SQLite: Creates an in-memory database with migrations.
     ///
     /// Returns (pool, test_db_name) for PostgreSQL, (pool, "") for SQLite.
-    pub async fn create_test_pool(db_name_suffix: Option<&str>) -> (DbPool, String) {
+    pub async fn create_test_pool(_db_name_suffix: Option<&str>) -> (DbPool, String) {
         #[cfg(feature = "postgres-backend")]
         {
-            setup_test_database(db_name_suffix).await
+            setup_test_database(_db_name_suffix).await
         }
 
         #[cfg(feature = "sqlite-backend")]
         {
             use diesel::r2d2::{ConnectionManager, Pool};
 
-            let database_url = if db_name_suffix.is_some() {
-                format!(
-                    "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
-                    DbId::new()
-                )
-            } else {
-                "file:memdb_shared?mode=memory&cache=shared&busy_timeout=5000".to_string()
-            };
+            let database_url = format!(
+                "file:memdb{}?mode=memory&cache=shared&busy_timeout=5000",
+                DbId::new()
+            );
 
             // Customizer to set busy_timeout
             #[derive(Debug)]
@@ -2410,7 +2538,7 @@ pub mod db {
         let conn_default = pool_default
             .get()
             .await
-            .expect("Failed to get default DB connection");
+            .unwrap_or_else(|e| panic!("Failed to get default DB connection: {}", e));
 
         // Drop and Create the test database
         let db_name_clone_drop = db_name.clone();
@@ -2438,13 +2566,24 @@ pub mod db {
 
         // Run migrations on the test database
         #[cfg(feature = "postgres-backend")]
-        let conn = crate::db::get_conn(&pool)
-            .await
-            .expect("Failed to get test DB connection for migration");
-        conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
-            .await
-            .expect("Migration task failed")
-            .expect("Failed to run migrations");
+        {
+            let conn = crate::db::get_conn(&pool)
+                .await
+                .expect("Failed to get test DB connection for migration");
+            conn.interact(|conn| conn.run_pending_migrations(MIGRATIONS).map(|_| ()))
+                .await
+                .expect("Migration task failed")
+                .expect("Failed to run migrations");
+        }
+
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        {
+            let mut conn = pool.get().expect("Failed to get connection for migrations");
+            const MIGRATIONS: diesel_migrations::EmbeddedMigrations =
+                diesel_migrations::embed_migrations!("migrations_sqlite");
+            conn.run_pending_migrations(MIGRATIONS)
+                .expect("Failed to run SQLite migrations");
+        }
 
         (pool, db_name)
     }
@@ -2505,6 +2644,8 @@ pub mod db {
             total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
+            created_at: crate::db::DbTimestamp::now(),
+            updated_at: crate::db::DbTimestamp::now(),
         };
 
         #[cfg(feature = "postgres-backend")]
@@ -2514,7 +2655,7 @@ pub mod db {
                 .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
 
             conn.interact(move |conn_actual| {
-                use diesel::{RunQueryDsl, SelectableHelper};
+                use diesel::{RunQueryDsl, SelectableHelper}; // Added SelectableHelper
                 diesel::insert_into(crate::schema::users::table)
                     .values(new_user_payload)
                     .returning(UserDbQuery::as_returning())
@@ -2624,6 +2765,8 @@ pub mod db {
             total_token_cost_cents: crate::db::DbBigInt::from(0),
             tokens_last_reset_at: None,
             token_usage_updated_at: crate::db::DbTimestamp::now(),
+            created_at: crate::db::DbTimestamp::now(),
+            updated_at: crate::db::DbTimestamp::now(),
         };
 
         #[cfg(feature = "postgres-backend")]
@@ -2708,7 +2851,10 @@ pub mod db {
                                                   // use crate::schema::characters; // Already imported at top of file usually
         use crate::models::OptionalStringArray;
 
-        let _conn = crate::db::get_conn(&pool).await?;
+        #[cfg(feature = "postgres-backend")]
+        let _conn = crate::db::get_conn(pool).await?;
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        let _conn = pool.get()?;
         let now = DbTimestamp::now();
         let name_clone_for_payload = name.clone(); // Clone for payload and error message
 
@@ -2734,9 +2880,9 @@ pub mod db {
             avatar: None,
             chat: None,
             #[cfg(feature = "postgres-backend")]
-            created_at: Some(now),
+            created_at: now,
             #[cfg(feature = "postgres-backend")]
-            updated_at: Some(now),
+            updated_at: now,
             #[cfg(feature = "sqlite-backend")]
             created_at: now,
             #[cfg(feature = "sqlite-backend")]
@@ -2818,7 +2964,8 @@ pub mod db {
                     use diesel::prelude::*;
                     diesel::insert_into(crate::schema::characters::table)
                         .values(new_character_payload)
-                        .get_result::<Character>(conn_actual)
+                        .returning(Character::as_returning())
+                        .get_result(conn_actual)
                 })
                 .await
                 .map_err(move |interact_err| {
@@ -2843,7 +2990,8 @@ pub mod db {
                     crate::schema::characters::table
                         .filter(crate::schema::characters::name.eq(name_for_query))
                         .order_by(crate::schema::characters::created_at.desc())
-                        .first::<Character>(conn_actual)
+                        .select(Character::as_select())
+                        .first(conn_actual)
                         .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
                 })
                 .await
@@ -2858,6 +3006,50 @@ pub mod db {
         };
 
         Ok(character)
+    }
+
+    /// Unified helper to create a DbInsertableChatMessage that works for both backends.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_test_message(
+        id: DbId,
+        chat_id: DbId,
+        user_id: DbId,
+        msg_type: MessageRole,
+        content: Vec<u8>,
+        content_nonce: Option<Vec<u8>>,
+        model_name: String,
+        created_at: DbTimestamp,
+        updated_at: DbTimestamp,
+    ) -> DbInsertableChatMessage {
+        #[cfg(feature = "postgres-backend")]
+        {
+            DbInsertableChatMessage::new(
+                chat_id,
+                user_id,
+                msg_type,
+                content,
+                content_nonce,
+                model_name,
+            )
+            .with_id(id)
+            .with_created_at(created_at)
+            .with_updated_at(updated_at)
+        }
+
+        #[cfg(feature = "sqlite-backend")]
+        {
+            DbInsertableChatMessage::new(
+                chat_id,
+                user_id,
+                msg_type,
+                content,
+                content_nonce,
+                model_name,
+            )
+            .with_id(id)
+            .with_created_at(created_at)
+            .with_updated_at(updated_at)
+        }
     }
 }
 
@@ -3508,33 +3700,43 @@ pub fn assert_ai_history(
         .get_last_request()
         .expect("Mock AI client did not receive a request");
 
-    let mut history_start_index = 0;
-    if let Some(first_msg) = last_request.messages.first() {
-        if matches!(first_msg.role, genai::chat::ChatRole::System) {
-            history_start_index = 1;
-            debug!("[DEBUG] System prompt detected, starting history comparison from index 1.");
-        }
-    }
-    let history_end_index = last_request.messages.len().saturating_sub(1);
-    let history_start_index = history_start_index.min(history_end_index);
-    let history_sent_to_ai = &last_request.messages[history_start_index..history_end_index];
+    let history_sent_to_ai = &last_request.history;
 
-    println!(
-        "\n[DEBUG] All messages sent to AI client (including system prompt and current prompt):"
-    );
-    for (i, msg) in last_request.messages.iter().enumerate() {
-        let role_str = match msg.role {
-            genai::chat::ChatRole::User => "User",
-            genai::chat::ChatRole::Assistant => "Assistant",
-            genai::chat::ChatRole::System => "System",
-            genai::chat::ChatRole::Tool => "Tool",
+    println!("\n[DEBUG] All messages sent to AI client (excluding preamble and current prompt):");
+    if let Some(preamble) = &last_request.preamble {
+        println!("  [Preamble] System: {}", preamble);
+    }
+    for (i, msg) in history_sent_to_ai.iter().enumerate() {
+        let (role_str, content) = match msg {
+            rig::message::Message::User { content } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::UserContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("User", text)
+            }
+            rig::message::Message::Assistant { content, .. } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::AssistantContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("Assistant", text)
+            }
         };
-        let content = msg.content.first_text().unwrap_or("<non-text content>");
         println!("  [{i}] {role_str}: {content}");
     }
+    println!("  [Current] User: {}", last_request.prompt);
 
     println!(
-        "\n[DEBUG] Comparing {} expected messages against {} actual messages in history (excluding current prompt)",
+        "\n[DEBUG] Comparing {} expected messages against {} actual messages in history",
         expected_history.len(),
         history_sent_to_ai.len()
     );
@@ -3542,35 +3744,37 @@ pub fn assert_ai_history(
     assert_eq!(
         history_sent_to_ai.len(),
         expected_history.len(),
-        "Number of history messages sent to AI mismatch. Actual: {:?}, Expected: {:?}",
-        history_sent_to_ai
-            .iter()
-            .map(|m| (
-                format!("{:?}", m.role),
-                m.content.first_text().unwrap_or("").to_string()
-            ))
-            .collect::<Vec<_>>(),
-        expected_history
+        "Number of history messages sent to AI mismatch."
     );
 
     for (i, expected) in expected_history.iter().enumerate() {
         let actual = &history_sent_to_ai[i];
         let (expected_role_str, expected_content) = expected;
 
-        let actual_role_str = match actual.role {
-            genai::chat::ChatRole::User => "User",
-            genai::chat::ChatRole::Assistant => "Assistant",
-            genai::chat::ChatRole::System => "System",
-            genai::chat::ChatRole::Tool => {
-                panic!("Unexpected role in AI history: {:?}", actual.role)
+        let (actual_role_str, actual_content) = match actual {
+            rig::message::Message::User { content } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::UserContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("User", text)
+            }
+            rig::message::Message::Assistant { content, .. } => {
+                let text = content
+                    .iter()
+                    .map(|c| match c {
+                        rig::message::AssistantContent::Text(t) => t.text.clone(),
+                        _ => "".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                ("Assistant", text)
             }
         };
-        let actual_content = actual.content.first_text().unwrap_or_else(|| {
-            panic!(
-                "Expected text content in AI history, got: {:?}",
-                actual.content
-            )
-        });
 
         println!(
             "[DEBUG] Compare message {i}: Expected {expected_role_str}:'{expected_content}' vs Actual {actual_role_str}:'{actual_content}'"
@@ -3621,8 +3825,8 @@ pub async fn set_history_settings(
         stop_sequences: None,
         model_name: None,
         model_provider: None,
-        gemini_enable_code_execution: None,
-        gemini_thinking_budget: None,
+        enable_code_execution: None,
+        thinking_budget: None,
         chronicle_id: None,
         agent_mode: None,
         active_custom_persona_id: None,
@@ -3632,7 +3836,7 @@ pub async fn set_history_settings(
         min_p: None,
         top_a: None,
         logit_bias: None,
-        gemini_thinking_level: None,
+        thinking_level: None,
         rag_chronicles_limit: None,
         rag_lorebooks_limit: None,
         rag_older_chat_limit: None,

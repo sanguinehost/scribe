@@ -19,7 +19,10 @@ use scribe_backend::{
         agentic::{AgenticNarrativeFactory, SearchKnowledgeBaseTool},
         ChronicleService, ScribeTool,
     },
-    test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestAppGuard, TestDataGuard},
+    test_helpers::{
+        spawn_app_permissive_rate_limiting, MockQdrantClientService, TestApp, TestAppGuard,
+        TestDataGuard,
+    },
 };
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
@@ -47,9 +50,12 @@ async fn create_test_user(
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
+        id: scribe_backend::db::DbId::new(),
         username: username.clone(),
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
@@ -197,8 +203,8 @@ fn create_duplicate_everest_messages(
             content_nonce: Some(nonce),
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(20),
-            completion_tokens: Some(50),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(20)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(50)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
@@ -219,7 +225,7 @@ async fn create_existing_everest_events(
     user_id: scribe_backend::db::DbId,
     chronicle_id: Uuid,
     test_app: &TestApp,
-    session_dek: &SessionDek,
+    session_dek: Option<&SessionDek>,
 ) -> AnyhowResult<()> {
     let chronicle_service =
         ChronicleService::new(test_app.db_pool.clone(), test_app.ai_client.clone());
@@ -247,14 +253,20 @@ async fn create_existing_everest_events(
     ];
 
     for event_request in existing_events {
-        chronicle_service
-            .create_event(
-                user_id,
-                chronicle_id.into(),
-                event_request,
-                Some(&session_dek),
-            )
+        let event = chronicle_service
+            .create_event(user_id, chronicle_id.into(), event_request, session_dek)
             .await?;
+
+        // Explicitly embed for search tool tests (only in cloud mode)
+        #[cfg(feature = "postgres-backend")]
+        {
+            let app_state = test_app.create_app_state().await;
+            app_state
+                .embedding_pipeline_service
+                .process_and_embed_chronicle_event(app_state.clone(), event, session_dek)
+                .await
+                .unwrap();
+        }
     }
 
     Ok(())
@@ -270,6 +282,12 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
     ));
 
     let services = scribe_backend::state::AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone()
             as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
@@ -370,7 +388,7 @@ async fn test_search_knowledge_base_tool_functionality() {
 
     // Create some existing events
     let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))); // Dummy for search test
-    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
+    create_existing_everest_events(user_id, chronicle_id, &test_app, None)
         .await
         .unwrap();
 
@@ -379,6 +397,46 @@ async fn test_search_knowledge_base_tool_functionality() {
 
     // Test the search tool
     let app_state = create_test_app_state(test_app.clone()).await;
+
+    // Mock search response for the search tool
+    use qdrant_client::qdrant::{PointId, ScoredPoint, Value as QValue};
+    use std::collections::HashMap;
+
+    let mut payload = HashMap::new();
+    payload.insert("chunk_text".to_string(), QValue::from("The user performed a powerful act of cleansing, removing all human pollution and remains from Mount Everest in the Himalayas".to_string()));
+    payload.insert(
+        "source_type".to_string(),
+        QValue::from("chronicle_event".to_string()),
+    );
+    payload.insert("user_id".to_string(), QValue::from(user_id.to_string()));
+    payload.insert(
+        "event_id".to_string(),
+        QValue::from(uuid::Uuid::new_v4().to_string()),
+    );
+    payload.insert(
+        "event_type".to_string(),
+        QValue::from("ENVIRONMENTAL_CLEANSING".to_string()),
+    );
+    payload.insert(
+        "chronicle_id".to_string(),
+        QValue::from(chronicle_id.to_string()),
+    );
+    payload.insert(
+        "created_at".to_string(),
+        QValue::from(chrono::Utc::now().to_rfc3339()),
+    );
+
+    test_app
+        .mock_qdrant_service
+        .as_ref()
+        .unwrap()
+        .add_search_response(Ok(vec![ScoredPoint {
+            id: Some(PointId::from(uuid::Uuid::new_v4().to_string())),
+            payload,
+            score: 0.95,
+            ..Default::default()
+        }]));
+
     let search_tool = SearchKnowledgeBaseTool::new(
         test_app.qdrant_service.clone(),
         test_app.mock_embedding_client.clone(),
@@ -387,7 +445,7 @@ async fn test_search_knowledge_base_tool_functionality() {
 
     let search_params = json!({
         "query": "Mount Everest cleansing pollution",
-        "search_type": "chronicle_events",
+        "search_type": "chronicles",
         "limit": 10,
         "user_id": user_id.to_string()
     });
@@ -409,6 +467,11 @@ async fn test_search_knowledge_base_tool_functionality() {
             .map(|s| s.contains("Mount Everest") && s.contains("cleans"))
             .unwrap_or(false)
     });
+
+    assert!(
+        found_everest_events,
+        "Search tool should correctly find the mocked Everest event"
+    );
 
     if found_everest_events {
         println!("✅ Search tool successfully found existing Everest events");
@@ -434,7 +497,7 @@ async fn test_deduplication_failure_multiple_everest_events() {
         .expect("Failed to create test chat session");
 
     // Create existing events that should prevent duplicates
-    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
+    create_existing_everest_events(user_id, chronicle_id, &test_app, Some(&session_dek))
         .await
         .unwrap();
 
@@ -444,16 +507,15 @@ async fn test_deduplication_failure_multiple_everest_events() {
 
     // Create a mock AI response for the workflow that marks the events as NOT significant to test deduplication
     let mock_response = json!({
-        "is_significant": false,
+        "should_create_event": false,
         "summary": "Duplicate Mount Everest cleansing event - already exists in chronicle",
-        "event_category": "WORLD",
-        "event_type": "ENVIRONMENTAL_CLEANSING",
-        "narrative_action": "CLEANSED",
-        "primary_agent": "User",
-        "primary_patient": "Mount Everest",
-        "confidence": 0.9,
         "reasoning": "This appears to be a duplicate of existing Mount Everest cleansing events already in the chronicle",
-        "actions": []
+        "keywords": ["everest", "duplicate"],
+        "facts": [],
+        "surprise_score": 0.1,
+        "significance_score": 0.5,
+        "opinions": [],
+        "observations": []
     });
 
     let mock_ai_client = Arc::new(
@@ -496,9 +558,12 @@ async fn test_deduplication_failure_multiple_everest_events() {
             user_id.into(),
             session_id.into(),
             Some(chronicle_id.into()),
+            None,
             &duplicate_messages,
             &session_dek,
-            None, // No persona context
+            None,
+            None,
+            None,
         )
         .await
         .expect("Workflow should complete");
@@ -607,11 +672,11 @@ async fn test_chronicle_context_retrieval_for_deduplication() {
     let test_app = spawn_app_permissive_rate_limiting(false, false, false).await;
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
-    let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
+    let (user_id, _session_dek) = create_test_user(&test_app).await.unwrap();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
-    // Create existing events
-    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
+    // Create existing events - NOT encrypted for simple context check
+    create_existing_everest_events(user_id, chronicle_id, &test_app, None)
         .await
         .unwrap();
 
@@ -659,7 +724,7 @@ async fn test_ai_triage_with_existing_context() {
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create existing events
-    create_existing_everest_events(user_id, chronicle_id, &test_app, &session_dek)
+    create_existing_everest_events(user_id, chronicle_id, &test_app, Some(&session_dek))
         .await
         .unwrap();
 
@@ -708,6 +773,7 @@ async fn test_ai_triage_with_existing_context() {
     // Create a mock AI response for the significance analysis
     let mock_triage_response = json!({
         "is_significant": false,
+        "significance_score": 0.5,
         "reasoning": "The conversation describes Mount Everest cleansing which is already covered by existing events in the chronicle",
         "confidence": 0.85
     });

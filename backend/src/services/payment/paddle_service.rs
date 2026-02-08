@@ -484,7 +484,7 @@ impl PaddleService {
 
         let response = self
             .client
-            .post(&format!("{}/customers", base_url))
+            .post(format!("{}/customers", base_url))
             .bearer_auth(api_key)
             .json(&payload)
             .send()
@@ -594,7 +594,7 @@ impl PaddleService {
 
         let response = self
             .client
-            .post(&format!("{}/transactions", base_url))
+            .post(format!("{}/transactions", base_url))
             .bearer_auth(api_key)
             .json(request)
             .send()
@@ -771,7 +771,7 @@ impl PaddleService {
 
         let response = self
             .client
-            .post(&format!("{}/subscriptions", base_url))
+            .post(format!("{}/subscriptions", base_url))
             .bearer_auth(api_key)
             .json(request)
             .send()
@@ -867,7 +867,7 @@ impl PaddleService {
 
         let response = self
             .client
-            .get(&format!("{}/subscriptions/{}", base_url, subscription_id))
+            .get(format!("{}/subscriptions/{}", base_url, subscription_id))
             .bearer_auth(api_key)
             .send()
             .await
@@ -989,7 +989,7 @@ impl PaddleService {
 
         let response = self
             .client
-            .post(&format!(
+            .post(format!(
                 "{}/subscriptions/{}/cancel",
                 base_url, subscription_id
             ))
@@ -1050,7 +1050,7 @@ impl PaddleService {
         // Create customer auth token request (customer_id in URL path, not body)
         let response = self
             .client
-            .post(&format!(
+            .post(format!(
                 "{}/customers/{}/auth-tokens",
                 base_url, customer_id
             ))

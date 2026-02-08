@@ -11,13 +11,12 @@ use crate::{
     llm::{AiClient, EmbeddingClient},
     services::{
         embeddings::{
-            ChatMessageChunkMetadata, ChronicleEventMetadata, CognitiveFactMetadata,
+            metadata::ChronicleEventMetadata, ChatMessageChunkMetadata, CognitiveFactMetadata,
             LorebookChunkMetadata,
         },
         ChronicleService, LorebookService,
     },
     state::AppState,
-    vector_db::qdrant_client::QdrantClientServiceTrait,
 };
 
 use super::tools::{ScribeTool, ToolError, ToolParams, ToolResult};
@@ -272,8 +271,8 @@ impl ScribeTool for CreateChronicleEventTool {
         match self
             .chronicle_service
             .create_event(
-                user_uuid.into(),
-                chronicle_uuid.into(),
+                user_uuid,
+                chronicle_uuid,
                 final_create_request,
                 Some(&session_dek_wrapper), // Pass SessionDek for AI-generated events encryption
             )
@@ -443,38 +442,29 @@ Respond with JSON:
 impl AnalyzeTextSignificanceTool {
     /// Helper method to call AI for triage analysis using structured outputs
     async fn call_ai_for_triage(&self, prompt: &str) -> Result<ToolResult, ToolError> {
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, MessageContent,
+        use crate::llm::RigCompletionRequest;
+
+        let rig_req = RigCompletionRequest {
+            model_name: "gemini-2.5-flash-lite".to_string(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: prompt.to_string(),
+            preamble: Some("You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.".to_string()),
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some(1024),
+            ..Default::default()
         };
-
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(prompt.to_string()),
-            options: None,
-        };
-
-        let mut genai_chat_options = GenAiChatOptions::default();
-        genai_chat_options = genai_chat_options.with_temperature(1.0);
-        genai_chat_options = genai_chat_options.with_max_tokens(1024);
-
-        // Add structured output format to chat options
-        genai_chat_options = genai_chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
-        // CLEAN: No "Respond only with valid JSON" needed - Gemini 2.5+ enforces schema natively
-        let system_prompt = "You are a narrative triage agent. Analyze roleplay conversations and determine if they contain significant events worth recording.";
-        let chat_req = ChatRequest::new(vec![user_message]).with_system(system_prompt);
 
         let response = self
             .ai_client
-            .exec_chat("gemini-2.5-flash-lite", chat_req, Some(genai_chat_options))
+            .completion(rig_req)
             .await
             .map_err(|e| ToolError::ExecutionFailed(format!("AI call failed: {}", e)))?;
 
-        let content = response.first_text().unwrap_or_default();
+        let content = response.content;
 
         // CLEAN: Direct JSON parsing (no markdown fence stripping needed)
-        serde_json::from_str(content)
+        serde_json::from_str(&content)
             .map_err(|e| ToolError::ExecutionFailed(format!("JSON parse failed: {}", e)))
     }
 }
@@ -568,14 +558,13 @@ impl ScribeTool for CreateLorebookEntryTool {
         let keywords = params
             .get("keywords")
             .and_then(|v| v.as_str())
-            .map(|s| {
+            .and_then(|s| {
                 if s.is_empty() {
                     None
                 } else {
                     Some(s.to_string())
                 }
-            })
-            .flatten();
+            });
 
         // Parse user UUID
         let user_uuid = DbId::parse_str(user_id_str)
@@ -609,8 +598,8 @@ impl ScribeTool for CreateLorebookEntryTool {
         match self
             .lorebook_service
             .create_entry_for_narrative_intelligence(
-                user_uuid.into(),
-                lorebook_id.map(|id| id.into()),
+                user_uuid,
+                lorebook_id,
                 name.to_string(),
                 content.to_string(),
                 keywords,
@@ -640,20 +629,22 @@ impl ScribeTool for CreateLorebookEntryTool {
 // NOTE: ExtractWorldConceptsTool removed - was only returning mock data and not used in the single-agent system
 
 /// Tool for searching knowledge base using vector embeddings (Step 2 of workflow)
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
 pub struct SearchKnowledgeBaseTool {
-    qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+    vector_service: Arc<crate::vector_db::VectorService>,
     embedding_client: Arc<dyn EmbeddingClient>,
     app_state: Arc<AppState>,
 }
 
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
 impl SearchKnowledgeBaseTool {
     pub fn new(
-        qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+        vector_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient>,
         app_state: Arc<AppState>,
     ) -> Self {
         Self {
-            qdrant_service,
+            vector_service,
             embedding_client,
             app_state,
         }
@@ -831,6 +822,7 @@ impl SearchKnowledgeBaseTool {
 }
 
 #[async_trait]
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
 impl ScribeTool for SearchKnowledgeBaseTool {
     fn name(&self) -> &'static str {
         "search_knowledge_base"
@@ -994,8 +986,8 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
         // SECURITY CRITICAL: Create filter to only return results for this user
         // With optional session/chronicle scoping for context control
-        use crate::vector_db::qdrant_client::{Condition, FieldCondition, Filter, Match};
         use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
+        use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match};
 
         // Base security filter - ALWAYS filter by user_id
         let user_condition = Condition {
@@ -1021,9 +1013,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
             if includes_lorebooks {
                 // Fetch lorebook IDs associated with this session
-                let lorebook_ids = self
-                    .get_session_lorebook_ids(session_id.into(), user_id.into())
-                    .await?;
+                let lorebook_ids = self.get_session_lorebook_ids(session_id, user_id).await?;
                 info!(
                     "Session {} has {} associated lorebooks: {:?}",
                     session_id,
@@ -1200,16 +1190,14 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             );
 
             // Get all lorebook IDs from all sessions in this chronicle
-            let chronicle_lorebook_ids = match self
-                .get_chronicle_lorebook_ids(chronicle_id.into(), user_id.into())
-                .await
-            {
-                Ok(ids) => ids,
-                Err(e) => {
-                    warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
-                    vec![]
-                }
-            };
+            let chronicle_lorebook_ids =
+                match self.get_chronicle_lorebook_ids(chronicle_id, user_id).await {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        warn!("Failed to fetch chronicle lorebook IDs: {:?}", e);
+                        vec![]
+                    }
+                };
 
             debug!(
                 "Found {} lorebooks in chronicle {}",
@@ -1358,7 +1346,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 ],
             };
 
-            self.qdrant_service
+            self.vector_service
                 .hybrid_search(
                     Some(query_embedding),   // Use vector search as primary
                     Some(query.to_string()), // Also do text matching
@@ -1370,7 +1358,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 .await
         } else {
             info!("Using pure vector search for complex query");
-            self.qdrant_service
+            self.vector_service
                 .search_points_with_threshold(
                     query_embedding,
                     limit * 2, // Get more candidates initially for better filtering
@@ -1427,7 +1415,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             // Try to parse as different metadata types
             if let Ok(lorebook_meta) = LorebookChunkMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if lorebook_meta.user_id != user_id.into() {
+                if lorebook_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Lorebook result for user {} returned to user {}",
                         lorebook_meta.user_id, user_id
@@ -1438,15 +1426,18 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 let should_include = matches!(search_type, "all" | "lorebooks");
                 if should_include {
                     // Decrypt content if encrypted fields are present
-                    let content = if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+                    let content = if let (Some(encrypted_chunk), Some(nonce)) = (
                         lorebook_meta.encrypted_chunk_text.as_ref(),
                         lorebook_meta.chunk_text_nonce.as_ref(),
                     ) {
                         // We have encrypted content
                         if let Some(ref session_dek) = session_dek_opt {
                             // We have the DEK to decrypt
-                            match crate::crypto::decrypt_gcm(encrypted_chunk, nonce, &session_dek.0)
-                            {
+                            match crate::crypto::decrypt_gcm(
+                                encrypted_chunk.as_slice(),
+                                nonce.as_slice(),
+                                &session_dek.0,
+                            ) {
                                 Ok(decrypted_secret) => {
                                     let decrypted_bytes =
                                         secrecy::ExposeSecret::expose_secret(&decrypted_secret);
@@ -1466,15 +1457,15 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                         "[no encrypted content]".to_string()
                     };
 
-                    let title = if let (Some(ref encrypted_title), Some(ref title_nonce)) = (
+                    let title = if let (Some(encrypted_title), Some(title_nonce)) = (
                         lorebook_meta.encrypted_title.as_ref(),
                         lorebook_meta.title_nonce.as_ref(),
                     ) {
                         // We have encrypted title
                         if let Some(ref session_dek) = session_dek_opt {
                             match crate::crypto::decrypt_gcm(
-                                encrypted_title,
-                                title_nonce,
+                                encrypted_title.as_slice(),
+                                title_nonce.as_slice(),
                                 &session_dek.0,
                             ) {
                                 Ok(decrypted_secret) => {
@@ -1530,7 +1521,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 }
             } else if let Ok(chat_meta) = ChatMessageChunkMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if chat_meta.user_id != user_id.into() {
+                if chat_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Chat result for user {} returned to user {}",
                         chat_meta.user_id, user_id
@@ -1541,15 +1532,18 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 let should_include = matches!(search_type, "all");
                 if should_include {
                     // Decrypt content if encrypted fields are present
-                    let content = if let (Some(ref encrypted_text), Some(ref nonce)) = (
+                    let content = if let (Some(encrypted_text), Some(nonce)) = (
                         chat_meta.encrypted_text.as_ref(),
                         chat_meta.text_nonce.as_ref(),
                     ) {
                         // We have encrypted content
                         if let Some(ref session_dek) = session_dek_opt {
                             // We have the DEK to decrypt
-                            match crate::crypto::decrypt_gcm(encrypted_text, nonce, &session_dek.0)
-                            {
+                            match crate::crypto::decrypt_gcm(
+                                encrypted_text.as_slice(),
+                                nonce.as_slice(),
+                                &session_dek.0,
+                            ) {
                                 Ok(decrypted_secret) => {
                                     let decrypted_bytes =
                                         secrecy::ExposeSecret::expose_secret(&decrypted_secret);
@@ -1582,7 +1576,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
             } else if let Ok(chronicle_meta) = ChronicleEventMetadata::try_from(payload_map.clone())
             {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if chronicle_meta.user_id != user_id.into() {
+                if chronicle_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Chronicle result for user {} returned to user {}",
                         chronicle_meta.user_id, user_id
@@ -1599,10 +1593,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     if let Some(json_value) = payload_map.get("event_json") {
                         // Convert Qdrant Value to serde_json::Value
                         // We need to handle the conversion carefully
-                        let json_val: serde_json::Value = json_value
-                            .clone()
-                            .try_into()
-                            .unwrap_or(serde_json::Value::Null);
+                        let json_val: serde_json::Value = json_value.clone().into();
 
                         if let Some(summary) = json_val.get("summary").and_then(|s| s.as_str()) {
                             content = Some(summary.to_string());
@@ -1631,12 +1622,15 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                                 bytes
                             });
 
-                            if let (Some(encrypted), Some(nonce), Some(ref session_dek)) =
+                            if let (Some(ref encrypted), Some(ref nonce), Some(session_dek)) =
                                 (encrypted_bytes, nonce_bytes, session_dek_opt.as_ref())
                             {
                                 // Decrypt the content
-                                match crate::crypto::decrypt_gcm(&encrypted, &nonce, &session_dek.0)
-                                {
+                                match crate::crypto::decrypt_gcm(
+                                    encrypted.as_slice(),
+                                    nonce.as_slice(),
+                                    &session_dek.0,
+                                ) {
                                     Ok(decrypted_secret) => {
                                         let decrypted_bytes =
                                             secrecy::ExposeSecret::expose_secret(&decrypted_secret);
@@ -1675,7 +1669,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
 
                     // Prioritize results from the specified chronicle_id
                     if let Some(target_chronicle_id) = chronicle_id_opt {
-                        if chronicle_meta.chronicle_id == target_chronicle_id.into() {
+                        if chronicle_meta.chronicle_id == target_chronicle_id {
                             chronicle_priority_results.push(result);
                         } else {
                             results.push(result);
@@ -1686,7 +1680,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                 }
             } else if let Ok(fact_meta) = CognitiveFactMetadata::try_from(payload_map.clone()) {
                 // SECURITY: Double-check that this result belongs to the requesting user
-                if fact_meta.user_id != user_id.into() {
+                if fact_meta.user_id != user_id {
                     error!(
                         "SECURITY VIOLATION: Fact result for user {} returned to user {}",
                         fact_meta.user_id, user_id
@@ -1700,11 +1694,7 @@ impl ScribeTool for SearchKnowledgeBaseTool {
                     match self
                         .app_state
                         .recall_pipeline
-                        .get_fact_by_id(
-                            user_id.into(),
-                            fact_meta.chronicle_id.into(),
-                            fact_meta.fact_id.into(),
-                        )
+                        .get_fact_by_id(user_id, fact_meta.chronicle_id, fact_meta.fact_id)
                         .await
                     {
                         Ok(Some(fact)) => {
@@ -2027,51 +2017,43 @@ Return your analysis as a JSON object with these four arrays."#,
         );
 
         // Call AI with structured output
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, MessageContent,
+        use crate::llm::RigCompletionRequest;
+
+        let rig_req = RigCompletionRequest {
+            model_name: "gemini-2.5-flash".to_string(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: analysis_prompt,
+            preamble: None,
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some(2048),
+            ..Default::default()
         };
 
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(analysis_prompt),
-            options: None,
-        };
-
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(2048);
-
-        // Enable structured output using JSON schema
-        let response_format = ChatResponseFormat::JsonMode;
-        chat_options = chat_options.with_response_format(response_format);
-
-        let chat_request = ChatRequest::new(vec![user_message]);
-
-        let response = self
-            .ai_client
-            .exec_chat("gemini-2.5-flash", chat_request, Some(chat_options))
-            .await
-            .map_err(|e| {
-                ToolError::ExecutionFailed(format!("AI call for lorebook analysis failed: {}", e))
-            })?;
+        let response = self.ai_client.completion(rig_req).await.map_err(|e| {
+            ToolError::ExecutionFailed(format!("AI call for lorebook analysis failed: {}", e))
+        })?;
 
         // Extract token usage for cost tracking
-        let prompt_tokens = response.usage.prompt_tokens.unwrap_or(0);
-        let completion_tokens = response.usage.completion_tokens.unwrap_or(0);
-        let total_tokens = response.usage.total_tokens.unwrap_or(0);
+        let prompt_tokens = response.prompt_tokens.unwrap_or(0);
+        let completion_tokens = response.completion_tokens.unwrap_or(0);
+        let total_tokens = response.total_tokens.unwrap_or(0);
 
         info!(
             "AI token usage - prompt: {}, completion: {}, total: {}",
             prompt_tokens, completion_tokens, total_tokens
         );
 
-        let ai_content = response
-            .first_text()
-            .ok_or_else(|| ToolError::ExecutionFailed("AI response had no content".to_string()))?;
+        let ai_content = &response.content;
+        if ai_content.is_empty() {
+            return Err(ToolError::ExecutionFailed(
+                "AI response had no content".to_string(),
+            ));
+        }
 
-        // Parse AI response as JSON
-        let analysis: crate::DbJson = serde_json::from_str(ai_content).map_err(|e| {
+        // Parse AI response as JSON - strip markdown fences if present
+        let json_content = crate::llm::response_utils::strip_markdown_fences(ai_content);
+        let analysis: crate::DbJson = serde_json::from_str(json_content).map_err(|e| {
             ToolError::ExecutionFailed(format!(
                 "Failed to parse AI analysis response as JSON: {}",
                 e
@@ -2169,7 +2151,7 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
 
         let count = params.get("count").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
 
-        if count < 1 || count > 20 {
+        if !(1..=20).contains(&count) {
             return Err(ToolError::InvalidParams(
                 "count must be between 1 and 20".to_string(),
             ));
@@ -2244,64 +2226,31 @@ impl ScribeTool for CreateBatchLorebookEntriesTool {
 
         // Use AI to generate entries with structured outputs
         use crate::services::character_generation::structured_output::BatchLorebookEntriesOutput;
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions, ChatRequest,
-            ChatResponseFormat, ChatRole, MessageContent,
+        // Call AI with structured output
+        use crate::llm::RigCompletionRequest;
+
+        let rig_req = RigCompletionRequest {
+            model_name: "gemini-2.5-flash-lite".to_string(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: prompt.to_string(),
+            preamble: None,
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some((count * 800).min(8192) as i32),
+            ..Default::default()
         };
-
-        let system_prompt = format!(
-            r#"You are a world-building assistant creating {} lorebook entries.
-
-Each entry should include:
-1. **Name**: Clear, concise title
-2. **Content**: Rich, detailed information (150-500 words)
-3. **Keys**: 3-5 trigger keywords (names, places, concepts)
-4. **Category**: Optional category (character, location, lore, item, faction, event)
-
-Guidelines:
-- Write engaging, immersive content
-- Maintain consistency with provided context
-- Ensure entries are related and complement each other
-- Generate appropriate trigger keys with variations
-- Focus on information useful during roleplay
-- Avoid redundancy between entries
-
-You must respond with a JSON object containing an array of {} entries."#,
-            count, count
-        );
-
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(prompt),
-            options: None,
-        };
-
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        let max_tokens = (count * 800).min(8192) as u32; // ~800 tokens per entry
-        chat_options = chat_options.with_max_tokens(max_tokens);
-
-        // Enable structured output using JSON schema
-        let response_format = ChatResponseFormat::JsonMode;
-        chat_options = chat_options.with_response_format(response_format);
-
-        let chat_request = ChatRequest::new(vec![user_message]).with_system(&system_prompt);
 
         // Execute AI generation
         let start_time = std::time::Instant::now();
-        let response = self
-            .ai_client
-            .exec_chat("gemini-2.5-flash-lite", chat_request, Some(chat_options))
-            .await
-            .map_err(|e| {
-                error!("AI batch generation failed: {}", e);
-                ToolError::ExecutionFailed(format!("AI generation failed: {}", e))
-            })?;
+        let response = self.ai_client.completion(rig_req).await.map_err(|e| {
+            error!("AI batch generation failed: {}", e);
+            ToolError::ExecutionFailed(format!("AI generation failed: {}", e))
+        })?;
 
         // Extract token usage for cost tracking
-        let prompt_tokens = response.usage.prompt_tokens.unwrap_or(0);
-        let completion_tokens = response.usage.completion_tokens.unwrap_or(0);
-        let total_tokens = response.usage.total_tokens.unwrap_or(0);
+        let prompt_tokens = response.prompt_tokens.unwrap_or(0);
+        let completion_tokens = response.completion_tokens.unwrap_or(0);
+        let total_tokens = response.total_tokens.unwrap_or(0);
 
         info!(
             "AI token usage - prompt: {}, completion: {}, total: {}",
@@ -2309,12 +2258,17 @@ You must respond with a JSON object containing an array of {} entries."#,
         );
 
         // Parse structured output
-        let response_text = response
-            .first_text()
-            .ok_or_else(|| ToolError::ExecutionFailed("No content in AI response".to_string()))?;
+        let response_text = &response.content;
+        if response_text.is_empty() {
+            return Err(ToolError::ExecutionFailed(
+                "No content in AI response".to_string(),
+            ));
+        }
 
-        let batch_output: BatchLorebookEntriesOutput = serde_json::from_str(response_text)
-            .map_err(|e| {
+        // Parse structured output - strip markdown fences if present
+        let json_content = crate::llm::response_utils::strip_markdown_fences(response_text);
+        let batch_output: BatchLorebookEntriesOutput =
+            serde_json::from_str(json_content).map_err(|e| {
                 error!("Failed to parse batch lorebook output: {}", e);
                 ToolError::ExecutionFailed(format!("JSON parse failed: {}", e))
             })?;
@@ -2350,8 +2304,8 @@ You must respond with a JSON object containing an array of {} entries."#,
             match self
                 .lorebook_service
                 .create_entry_for_narrative_intelligence(
-                    user_uuid.into(),
-                    lorebook_id.map(|id| id.into()),
+                    user_uuid,
+                    lorebook_id,
                     entry_output.name.clone(),
                     entry_output.content.clone(),
                     keywords,
@@ -2516,15 +2470,17 @@ impl ScribeTool for UpdateLorebookEntryTool {
 
 /// Tool for querying rulebook/game rules from lorebook entries tagged with "rules"
 /// This is used by the Game Master mode to enforce game mechanics and world consistency
+#[cfg(feature = "remote-vector")]
 pub struct QueryRulesTool {
-    qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+    qdrant_service: Arc<crate::vector_db::VectorService>,
     embedding_client: Arc<dyn EmbeddingClient>,
     _app_state: Arc<AppState>,
 }
 
+#[cfg(feature = "remote-vector")]
 impl QueryRulesTool {
     pub fn new(
-        qdrant_service: Arc<dyn QdrantClientServiceTrait>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient>,
         app_state: Arc<AppState>,
     ) -> Self {
@@ -2537,6 +2493,7 @@ impl QueryRulesTool {
 }
 
 #[async_trait]
+#[cfg(feature = "remote-vector")]
 impl ScribeTool for QueryRulesTool {
     fn name(&self) -> &'static str {
         "query_rules"
@@ -2633,7 +2590,7 @@ impl ScribeTool for QueryRulesTool {
 
         // Build filter for rules search
         use crate::vector_db::qdrant_client::{Condition, FieldCondition, Filter, Match};
-        use qdrant_client::qdrant::{condition::ConditionOneOf, r#match::MatchValue};
+        use crate::vector_db::qdrant_client::{ConditionOneOf, MatchValue};
 
         // Base conditions: user_id + source_type=lorebook_entry
         let must_conditions = vec![
@@ -2694,21 +2651,21 @@ impl ScribeTool for QueryRulesTool {
             let content = payload
                 .get("content")
                 .and_then(|v| match &v.kind {
-                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    Some(crate::vector_db::qdrant_client::Kind::StringValue(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .unwrap_or("");
             let keywords = payload
                 .get("keywords")
                 .and_then(|v| match &v.kind {
-                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    Some(crate::vector_db::qdrant_client::Kind::StringValue(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .unwrap_or("");
             let entry_name = payload
                 .get("entry_name")
                 .and_then(|v| match &v.kind {
-                    Some(qdrant_client::qdrant::value::Kind::StringValue(s)) => Some(s.as_str()),
+                    Some(crate::vector_db::qdrant_client::Kind::StringValue(s)) => Some(s.as_str()),
                     _ => None,
                 })
                 .unwrap_or("Unknown Rule");
@@ -2770,6 +2727,7 @@ impl ScribeTool for QueryRulesTool {
 // ============================================================================
 
 #[cfg(test)]
+#[cfg(all(test, feature = "remote-vector"))]
 mod query_rules_tests {
     use super::*;
     use serde_json::json;

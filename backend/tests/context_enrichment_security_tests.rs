@@ -90,6 +90,12 @@ async fn create_test_app_state(
             test_app.db_pool.clone(),
         )),
         token_service: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -416,6 +422,7 @@ async fn test_agent_analysis_storage_security() {
             message_type: MessageRole::User,
             content: b"Test message for user1".to_vec(),
             content_nonce: None,
+            rag_embedding_id: None,
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
@@ -436,6 +443,8 @@ async fn test_agent_analysis_storage_security() {
             credit_cost: 0,
             actual_charge: scribe_backend::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         };
 
         insert_into(chat_messages::table)
@@ -450,6 +459,7 @@ async fn test_agent_analysis_storage_security() {
             message_type: MessageRole::User,
             content: b"Test message for user2".to_vec(),
             content_nonce: None,
+            rag_embedding_id: None,
             role: Some("user".to_string()),
             parts: None,
             attachments: None,
@@ -470,6 +480,8 @@ async fn test_agent_analysis_storage_security() {
             credit_cost: 0,
             actual_charge: scribe_backend::db::DbDecimal::from(0),
             game_time: None,
+            reasoning_content: None,
+            reasoning_content_nonce: None,
         };
 
         insert_into(chat_messages::table)

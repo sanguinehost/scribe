@@ -386,7 +386,7 @@ pub async fn get_subscription(
                 } else {
                     0
                 };
-                (usage.message_count as i32, is_over, delay)
+                (usage.message_count, is_over, delay)
             } else {
                 (0, false, 0)
             }
@@ -555,7 +555,7 @@ pub async fn get_usage(
                 } else {
                     0
                 };
-                (usage.message_count as i32, is_over, delay)
+                (usage.message_count, is_over, delay)
             } else {
                 (0, false, 0)
             }
@@ -811,7 +811,7 @@ pub async fn verify_transaction(
         .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
     let transaction_id_for_db = transaction_id.clone();
-    let user_id_for_check = user.id.clone();
+    let user_id_for_check = user.id;
     let stored_transaction = conn
         .interact(move |conn| {
             use crate::models::payment::PaymentTransaction;
@@ -846,7 +846,7 @@ pub async fn verify_transaction(
                 .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-            let user_id_for_sub = user.id.clone();
+            let user_id_for_sub = user.id;
             let existing_subscription = conn
                 .interact(move |conn| {
                     use crate::models::payment::Subscription;
@@ -2068,7 +2068,7 @@ async fn process_transaction_completed(
 
     let user_id = match user_id {
         Ok(id) => {
-            tracing::debug!("Step 2 complete: Found user_id: {}", id);
+            tracing::debug!("Step 2 complete: Found user_id: {}", loggable_user_id(id));
             id
         }
         Err(e) => {
@@ -2082,7 +2082,10 @@ async fn process_transaction_completed(
     };
 
     // Get the full user record
-    tracing::debug!("Step 3: Fetching full user record for user_id: {}", user_id);
+    tracing::debug!(
+        "Step 3: Fetching full user record for user_id: {}",
+        loggable_user_id(user_id)
+    );
     let user = match conn
         .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await
@@ -3033,7 +3036,7 @@ async fn process_subscription_created(
 
     let user_id = match user_id {
         Ok(id) => {
-            tracing::debug!("Step 8 complete: Found user_id: {}", id);
+            tracing::debug!("Step 8 complete: Found user_id: {}", loggable_user_id(id));
             id
         }
         Err(e) => {
@@ -3047,7 +3050,10 @@ async fn process_subscription_created(
     };
 
     // Get the full user record
-    tracing::debug!("Step 9: Fetching full user record for user_id: {}", user_id);
+    tracing::debug!(
+        "Step 9: Fetching full user record for user_id: {}",
+        loggable_user_id(user_id)
+    );
     let user = match conn
         .interact(move |conn| crate::auth::find_user_by_id(conn, user_id))
         .await
@@ -3763,7 +3769,7 @@ fn map_price_id_to_plan(
 /// Check if new_plan is higher tier than old_plan
 #[cfg(feature = "payment")]
 fn is_higher_tier(new_plan: &str, old_plan: &str) -> Result<bool, AppError> {
-    let tier_order = vec!["free", "basic", "premium"];
+    let tier_order = ["free", "basic", "premium"];
 
     let new_idx = tier_order
         .iter()
@@ -4278,7 +4284,7 @@ pub async fn get_credit_transactions(
             transaction_type: transaction.transaction_type,
             description,
             metadata,
-            reference_id: transaction.reference_id,
+            reference_id: transaction.reference_id.map(|id| id.to_string()),
             created_at: transaction
                 .created_at
                 .unwrap_or_else(crate::DbTimestamp::now),

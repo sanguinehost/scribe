@@ -1,6 +1,7 @@
 use crate::auth::token_auth::UnifiedAuth;
 use crate::errors::AppError;
 use crate::models::users::{AccountStatus, UserDbQuery, UserRole};
+use crate::privacy::logging::loggable_user_id;
 use crate::schema::users;
 use crate::state::AppState;
 use axum::{
@@ -52,17 +53,16 @@ fn require_admin(auth: &UnifiedAuth) -> Result<(), AppError> {
         }, |user| {
             // Access role from User struct
             let user_id = user.id;
-            let username = user.username.clone();
 
             // Ideally we would have role here directly, but we need to get it from the database
             // since we added it after the auth system was set up
             match user.role {
                 UserRole::Administrator => {
-                    debug!(user_id = %user_id, username = %username, "User has Administrator role, access granted");
+                    debug!(user_id = %loggable_user_id(user_id), "User has Administrator role, access granted");
                     Ok(())
                 }
                 role => {
-                    warn!(user_id = %user_id, username = %username, role = ?role, "User does not have Administrator role");
+                    warn!(user_id = %loggable_user_id(user_id), role = ?role, "User does not have Administrator role");
                     Err(AppError::Forbidden("Access denied - admin privileges required".to_string()))
                 }
             }
@@ -134,7 +134,7 @@ async fn get_user_handler(
     let user_detail = AdminUserDetailResponse {
         id: user.id,
         username: user.username,
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         email: user.email,
         #[cfg(feature = "postgres-backend")]
         email: Some(user.email),
@@ -187,7 +187,7 @@ async fn lock_user_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
@@ -250,7 +250,7 @@ async fn unlock_user_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
@@ -324,7 +324,7 @@ async fn update_user_role_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
             diesel::update(users::table)
@@ -351,7 +351,7 @@ async fn update_user_role_handler(
     let user_detail = AdminUserDetailResponse {
         id: updated_user.id,
         username: updated_user.username,
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         email: updated_user.email,
         #[cfg(feature = "postgres-backend")]
         email: Some(updated_user.email),

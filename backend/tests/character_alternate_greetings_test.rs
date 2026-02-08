@@ -28,15 +28,15 @@ fn test_alternate_greetings_v3_conversion() {
         ..Default::default()
     };
 
-    let parsed_card = ParsedCharacterCard::V3(card);
+    let parsed_card = ParsedCharacterCard::V3(Box::new(card));
     let user_id = Uuid::new_v4();
 
     // Convert to NewCharacter
     let new_character = NewCharacter::from_parsed_card(&parsed_card, user_id.into());
 
     // Check that alternate_greetings are properly converted
-    assert!(new_character.alternate_greetings.0.is_some());
-    let db_greetings = new_character.alternate_greetings.0.unwrap();
+    assert!(!new_character.alternate_greetings.0.is_empty());
+    let db_greetings = &new_character.alternate_greetings.0;
 
     // Should be Option<Vec<Option<String>>> format for database
     assert_eq!(db_greetings.len(), 3);
@@ -60,15 +60,15 @@ fn test_alternate_greetings_v2_fallback_conversion() {
         ..Default::default()
     };
 
-    let parsed_card = ParsedCharacterCard::V2Fallback(card_data);
+    let parsed_card = ParsedCharacterCard::V2Fallback(Box::new(card_data));
     let user_id = Uuid::new_v4();
 
     // Convert to NewCharacter
     let new_character = NewCharacter::from_parsed_card(&parsed_card, user_id.into());
 
     // Check that alternate_greetings are properly converted
-    assert!(new_character.alternate_greetings.0.is_some());
-    let db_greetings = new_character.alternate_greetings.0.unwrap();
+    assert!(!new_character.alternate_greetings.0.is_empty());
+    let db_greetings = &new_character.alternate_greetings.0;
 
     // Should be Option<Vec<Option<String>>> format for database
     assert_eq!(db_greetings.len(), 2);
@@ -96,23 +96,14 @@ fn test_empty_alternate_greetings_conversion() {
         ..Default::default()
     };
 
-    let parsed_card = ParsedCharacterCard::V3(card);
+    let parsed_card = ParsedCharacterCard::V3(Box::new(card));
     let user_id = Uuid::new_v4();
 
     // Convert to NewCharacter
     let new_character = NewCharacter::from_parsed_card(&parsed_card, user_id.into());
 
-    // Check that empty alternate_greetings results in None (or empty Vec depending on impl)
-    // DbStringArray::default() is usually None or empty vec
-    assert!(
-        new_character.alternate_greetings.0.is_none()
-            || new_character
-                .alternate_greetings
-                .0
-                .as_ref()
-                .unwrap()
-                .is_empty()
-    );
+    // Check that empty alternate_greetings results in empty Vec
+    assert!(new_character.alternate_greetings.0.is_empty());
 
     println!("✓ Empty alternate greetings correctly converted to None");
 }

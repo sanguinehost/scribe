@@ -32,18 +32,14 @@ async fn test_chronicle_creation_refusal() {
 
     // Configure the mock client from the app
     if let Some(mock_client) = &app.mock_ai_client {
-        // We need to wrap the JSON in a ChatResponse
-        use genai::adapter::AdapterKind;
-        use genai::chat::{ChatResponse, MessageContent, Usage};
-        use genai::ModelIden;
+        use scribe_backend::llm::rig_client::RigChatResponse;
 
-        let chat_response = ChatResponse {
-            content: MessageContent::from_text(refusal_response.to_string()),
+        let chat_response = RigChatResponse {
+            content: refusal_response.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
         mock_client.set_response(Ok(chat_response));
     } else {
@@ -65,7 +61,7 @@ async fn test_chronicle_creation_refusal() {
 
     // Setup TokenizerService and HybridTokenCounter
     let tokenizer_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
     let tokenizer = TokenizerService::new(tokenizer_path).expect("Failed to create tokenizer");
     let token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer));
 
@@ -92,11 +88,13 @@ async fn test_chronicle_creation_refusal() {
         created_at: chrono::Utc::now().into(),
 
         user_id: DbId::new(),
-        prompt_tokens: Some(10),
-        completion_tokens: Some(10),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(10)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(10)),
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash-lite".to_string(),
+        role: Some("user".to_string()),
+        updated_at: chrono::Utc::now().into(),
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
@@ -109,6 +107,11 @@ async fn test_chronicle_creation_refusal() {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        reasoning_content: None,
+        reasoning_content_nonce: None,
+        parts: None,
+        attachments: None,
+        rag_embedding_id: None,
     };
 
     // Encrypt the content
@@ -127,7 +130,8 @@ async fn test_chronicle_creation_refusal() {
         .process_narrative_event(
             user_id,
             chat_session_id,
-            None, // No existing chronicle
+            None, // No chronicle
+            None, // No message_variant_id
             &messages,
             &session_dek,
             None, // No persona context
@@ -170,17 +174,14 @@ async fn test_chronicle_creation_success() {
     });
 
     if let Some(mock_client) = &app.mock_ai_client {
-        use genai::adapter::AdapterKind;
-        use genai::chat::{ChatResponse, MessageContent, Usage};
-        use genai::ModelIden;
+        use scribe_backend::llm::rig_client::RigChatResponse;
 
-        let chat_response = ChatResponse {
-            content: MessageContent::from_text(success_response.to_string()),
+        let chat_response = RigChatResponse {
+            content: success_response.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
         mock_client.set_response(Ok(chat_response));
     } else {
@@ -200,7 +201,7 @@ async fn test_chronicle_creation_success() {
     ));
 
     let tokenizer_path =
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model");
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json");
     let tokenizer = TokenizerService::new(tokenizer_path).expect("Failed to create tokenizer");
     let token_counter = Arc::new(HybridTokenCounter::new_local_only(tokenizer));
 
@@ -222,6 +223,8 @@ async fn test_chronicle_creation_success() {
 
     let user_id = DbId::new();
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username: "testuser".to_string(),
         password_hash: "hash".to_string(),
@@ -234,9 +237,9 @@ async fn test_chronicle_creation_success() {
         recovery_dek_nonce: None,
         role: UserRole::User,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: DbTimestamp::now(),
     };
@@ -276,11 +279,13 @@ async fn test_chronicle_creation_success() {
         created_at: chrono::Utc::now().into(),
 
         user_id: DbId::new(),
-        prompt_tokens: Some(10),
-        completion_tokens: Some(10),
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(10)),
+        completion_tokens: Some(scribe_backend::db::DbBigInt(10)),
         raw_prompt_ciphertext: None,
         raw_prompt_nonce: None,
         model_name: "gemini-2.5-flash-lite".to_string(),
+        role: Some("user".to_string()),
+        updated_at: chrono::Utc::now().into(),
         status: "completed".to_string(),
         error_message: None,
         superseded_at: None,
@@ -293,6 +298,11 @@ async fn test_chronicle_creation_success() {
         credit_cost: 0,
         actual_charge: scribe_backend::db::DbDecimal::from(0),
         game_time: None,
+        reasoning_content: None,
+        reasoning_content_nonce: None,
+        parts: None,
+        attachments: None,
+        rag_embedding_id: None,
     };
 
     let _ = message.encrypt_content_field(&session_dek.0, "Something happened");
@@ -304,6 +314,7 @@ async fn test_chronicle_creation_success() {
             user_id,
             chat_session_id,
             Some(chronicle_id),
+            None, // No message_variant_id
             &messages,
             &session_dek,
             None,

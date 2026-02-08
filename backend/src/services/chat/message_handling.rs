@@ -218,6 +218,7 @@ pub struct SaveMessageParams<'a> {
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
     pub credits_cost_override: Option<crate::db::DbDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
     pub game_time: Option<Value>, // ADDED: The in-game time when the message was sent
+    pub reasoning_content: Option<&'a str>, // ADDED: Reasoning content from Assistant
 }
 
 /// Saves a single chat message (user or assistant) and triggers background embedding.
@@ -249,6 +250,7 @@ pub async fn save_message(
         #[cfg(not(feature = "postgres-backend"))]
             credits_cost_override: _,
         game_time,
+        reasoning_content,
     } = params;
 
     // Clone model_name early for later use in token tracking
@@ -353,6 +355,7 @@ pub async fn save_message(
                 dek_arc,
                 raw_prompt_debug, // Pass through the raw_prompt for the variant
                 None, // game_state will be updated later by narrative service if applicable
+                reasoning_content,
             )
             .await;
 
@@ -581,20 +584,38 @@ pub async fn save_message(
         (content.as_bytes().to_vec(), None)
     };
 
+    let (reasoning_to_save, reasoning_nonce_to_save) = if let Some(dek_arc) = &user_dek_secret_box {
+        if let Some(reasoning) = reasoning_content {
+            let (ciphertext, nonce) =
+                crypto::encrypt_gcm(reasoning.as_bytes(), dek_arc).map_err(|e| {
+                    error!(%session_id, "Failed to encrypt reasoning content: {}", e);
+                    AppError::EncryptionError(format!("Failed to encrypt reasoning: {e}"))
+                })?;
+            (Some(ciphertext), Some(nonce))
+        } else {
+            (None, None)
+        }
+    } else {
+        (reasoning_content.map(|r| r.as_bytes().to_vec()), None)
+    };
+
     // Generate new ID for SQLite (no DEFAULT in schema)
     #[cfg(feature = "sqlite-backend")]
     let message_id = crate::db::DbId::new();
 
     #[cfg(feature = "sqlite-backend")]
     let mut new_message_to_insert = DbInsertableChatMessage::new(
-        message_id, // id field - CRITICAL for SQLite (7 args total)
-        session_id, // chat_id field in DbInsertableChatMessage
+        session_id,
         user_id,
-        message_type_enum, // msg_type field in DbInsertableChatMessage
-        content_to_save,   // content field
-        nonce_to_save,     // content_nonce field
-        model_name,        // model_name field
+        message_type_enum,
+        content_to_save,
+        nonce_to_save,
+        model_name,
     )
+    .with_reasoning(reasoning_to_save, reasoning_nonce_to_save)
+    .with_id(message_id)
+    .with_created_at(crate::db::DbTimestamp::now())
+    .with_updated_at(crate::db::DbTimestamp::now())
     .with_status(status);
 
     #[cfg(feature = "postgres-backend")]
@@ -606,6 +627,7 @@ pub async fn save_message(
         nonce_to_save,     // content_nonce field
         model_name,        // model_name field
     )
+    .with_reasoning(reasoning_to_save, reasoning_nonce_to_save)
     .with_status(status);
 
     if let Some(err_msg) = error_message {
@@ -622,8 +644,10 @@ pub async fn save_message(
         new_message_to_insert =
             new_message_to_insert.with_attachments(crate::db::Json(attachments_val));
     }
-    new_message_to_insert =
-        new_message_to_insert.with_token_counts(prompt_tokens_val, completion_tokens_val);
+    new_message_to_insert = new_message_to_insert.with_token_counts(
+        prompt_tokens_val.map(crate::db::DbBigInt::from),
+        completion_tokens_val.map(crate::db::DbBigInt::from),
+    );
 
     if let Some(gt) = game_time {
         new_message_to_insert.game_time = Some(crate::db::Json(gt));
@@ -908,6 +932,7 @@ fn calculate_token_cost_cents(prompt_tokens: i64, completion_tokens: i64, model_
     total_cost_cents
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn update_cumulative_token_counts(
     pool: &crate::db::DbPool,
     session_id: crate::db::DbId,
@@ -960,44 +985,46 @@ async fn update_cumulative_token_counts(
         #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         let (prompt_delta, completion_delta) = (prompt_tokens, completion_tokens);
 
+        // Define SQL type alias based on backend
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        type CostSqlType = diesel::sql_types::Double;
+        #[cfg(feature = "postgres-backend")]
+        type CostSqlType = diesel::sql_types::Numeric;
+
         // Update chat session cumulative counts
         diesel::update(chat_sessions::table.find(session_id))
             .set((
                 chat_sessions::total_prompt_tokens
-                    .eq(chat_sessions::total_prompt_tokens + prompt_delta),
+                    .eq(chat_sessions::total_prompt_tokens + prompt_delta as i64),
                 chat_sessions::total_completion_tokens
-                    .eq(chat_sessions::total_completion_tokens + completion_delta),
+                    .eq(chat_sessions::total_completion_tokens + completion_delta as i64),
                 chat_sessions::estimated_cost_cents
                     .eq(chat_sessions::estimated_cost_cents + estimated_cost_cents),
                 // NEW: Track all four cost values properly
-                chat_sessions::total_actual_cost.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_actual_cost + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_cost_val)),
-                chat_sessions::total_modified_cost.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_modified_cost + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(modified_cost_val)),
+                chat_sessions::total_actual_cost
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_actual_cost + ")
+                        .bind::<CostSqlType, _>(actual_cost_val)),
+                chat_sessions::total_modified_cost
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_modified_cost + ")
+                        .bind::<CostSqlType, _>(modified_cost_val)),
                 chat_sessions::total_credit_cost.eq(chat_sessions::total_credit_cost + credit_cost),
-                chat_sessions::total_actual_charge.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_actual_charge + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(actual_charge_val)),
+                chat_sessions::total_actual_charge
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_actual_charge + ")
+                        .bind::<CostSqlType, _>(actual_charge_val)),
                 // Keep total_credits_used for backwards compatibility (uses actual_cost)
-                // Note: total_credits_used in SQLite schema is Integer, in Postgres it is Numeric.
+                // Note: total_credits_used in SQLite schema is Double, in Postgres it is Numeric.
                 // We use credits_used_delta which is typed correctly for each backend.
-                chat_sessions::total_credits_used.eq(diesel::dsl::sql::<
-                    crate::schema::sql_types_unified::DbNumericType,
-                >("total_credits_used + ")
-                .bind::<crate::schema::sql_types_unified::DbNumericType, _>(credits_used_delta)),
+                chat_sessions::total_credits_used
+                    .eq(diesel::dsl::sql::<CostSqlType>("total_credits_used + ")
+                        .bind::<CostSqlType, _>(credits_used_delta)),
                 chat_sessions::tokens_counted_at.eq(diesel::dsl::now),
             ))
             .execute(conn)?;
 
         // Update user cumulative counts
         let (prompt_db, completion_db, cost_db) = (
-            prompt_tokens as i64,
-            completion_tokens as i64,
+            prompt_tokens,
+            completion_tokens,
             estimated_cost_cents as i64,
         );
 

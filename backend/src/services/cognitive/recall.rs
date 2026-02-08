@@ -23,6 +23,7 @@ impl RecallPipeline {
 
     /// Retrieves relevant cognitive context (Opinions and Observations) for a query.
     #[instrument(skip(self, session_dek, state), fields(user_id = %user_id, chronicle_id = %chronicle_id))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn recall_context(
         &self,
         user_id: DbId,

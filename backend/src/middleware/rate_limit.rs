@@ -155,7 +155,7 @@ pub fn create_ai_lorebook_rate_limiter() -> SimpleRateLimiter {
 pub async fn template_rate_limit_middleware(request: Request, next: Next) -> Response {
     // Create a static rate limiter instance
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
-    let limiter = RATE_LIMITER.get_or_init(|| create_template_rate_limiter());
+    let limiter = RATE_LIMITER.get_or_init(create_template_rate_limiter);
 
     // Extract client identifier
     let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
@@ -194,7 +194,7 @@ pub async fn template_rate_limit_middleware(request: Request, next: Next) -> Res
 /// Rate limiter middleware for credit purchase endpoints
 pub async fn credit_purchase_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
-    let limiter = RATE_LIMITER.get_or_init(|| create_credit_purchase_rate_limiter());
+    let limiter = RATE_LIMITER.get_or_init(create_credit_purchase_rate_limiter);
 
     // Extract client identifier
     let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
@@ -245,7 +245,7 @@ pub async fn credit_purchase_rate_limit_middleware(request: Request, next: Next)
 /// Rate limiter middleware for subscription management endpoints
 pub async fn subscription_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
-    let limiter = RATE_LIMITER.get_or_init(|| create_subscription_rate_limiter());
+    let limiter = RATE_LIMITER.get_or_init(create_subscription_rate_limiter);
 
     // Extract client identifier
     let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
@@ -296,7 +296,7 @@ pub async fn subscription_rate_limit_middleware(request: Request, next: Next) ->
 /// Rate limiter middleware for webhook endpoints
 pub async fn webhook_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
-    let limiter = RATE_LIMITER.get_or_init(|| create_webhook_rate_limiter());
+    let limiter = RATE_LIMITER.get_or_init(create_webhook_rate_limiter);
 
     // Extract client identifier (for webhooks, use signature or user-agent)
     let client_id = if let Some(signature) = request.headers().get("paddle-signature") {
@@ -341,7 +341,7 @@ pub async fn webhook_rate_limit_middleware(request: Request, next: Next) -> Resp
 /// Rate limiter middleware for AI lorebook endpoints
 pub async fn ai_lorebook_rate_limit_middleware(request: Request, next: Next) -> Response {
     static RATE_LIMITER: std::sync::OnceLock<SimpleRateLimiter> = std::sync::OnceLock::new();
-    let limiter = RATE_LIMITER.get_or_init(|| create_ai_lorebook_rate_limiter());
+    let limiter = RATE_LIMITER.get_or_init(create_ai_lorebook_rate_limiter);
 
     // Extract client identifier - use both IP and user_id if available
     let client_ip = if let Some(forwarded) = request.headers().get("x-forwarded-for") {
@@ -511,7 +511,7 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
                     if is_over_limit {
                         // Add warning header but continue (soft limit, not hard limit)
                         warn!(
-                            user_id = %user.id,
+                            user_id = %crate::privacy::logging::loggable_user_id(user.id),
                             usage_percentage = usage_percentage,
                             "User exceeded daily soft limit"
                         );

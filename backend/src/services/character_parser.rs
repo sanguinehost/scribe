@@ -81,8 +81,8 @@ impl From<ZipError> for ParserError {
 // Define the structure to represent the parsed result
 #[derive(Debug)]
 pub enum ParsedCharacterCard {
-    V3(CharacterCardV3), // Represents a card parsed from 'ccv3' or a full V3 structure
-    V2Fallback(CharacterCardDataV3), // Represents data parsed from 'chara' (V2)
+    V3(Box<CharacterCardV3>), // Represents a card parsed from 'ccv3' or a full V3 structure
+    V2Fallback(Box<CharacterCardDataV3>), // Represents data parsed from 'chara' (V2)
 }
 
 // --- Helper Functions ---
@@ -274,7 +274,7 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
     // 1. Try ccv3 first
     if let Some(base64_str) = ccv3_data_base64.as_ref() {
         match try_parse_v3_from_base64(base64_str, "ccv3 chunk") {
-            Ok(card) => return Ok(ParsedCharacterCard::V3(card)),
+            Ok(card) => return Ok(ParsedCharacterCard::V3(Box::new(card))),
             Err(e) => {
                 warn!(
                     "Failed to parse ccv3 chunk: {}. Falling back to 'chara' if possible.",
@@ -288,7 +288,7 @@ pub fn parse_character_card_png(png_data: &[u8]) -> Result<ParsedCharacterCard, 
     // 2. If ccv3 failed or was not present, try chara
     if let Some(base64_str) = chara_data_base64.as_ref() {
         match try_parse_chara_fallback(Some(base64_str), ccv3_parse_error.is_some()) {
-            Ok(Some(data_v2)) => return Ok(ParsedCharacterCard::V2Fallback(data_v2)),
+            Ok(Some(data_v2)) => return Ok(ParsedCharacterCard::V2Fallback(Box::new(data_v2))),
             Err(e) => {
                 // If chara parsing also failed, we should return this error
                 return Err(e);
@@ -327,7 +327,7 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
             .map_err(|e| ParserError::JsonError(e.to_string()))?;
 
         info!("Loaded character from V2 JSON format. Treating as V2 fallback.");
-        Ok(ParsedCharacterCard::V2Fallback(data_v2))
+        Ok(ParsedCharacterCard::V2Fallback(Box::new(data_v2)))
     } else {
         // Parse as V3 format
         let mut card = serde_json::from_slice::<CharacterCardV3>(json_data)
@@ -337,7 +337,7 @@ pub fn parse_character_card_json(json_data: &[u8]) -> Result<ParsedCharacterCard
         card.merge_flattened_fields();
 
         validate_v3_spec(&card, "JSON card");
-        Ok(ParsedCharacterCard::V3(card))
+        Ok(ParsedCharacterCard::V3(Box::new(card)))
     }
 }
 
@@ -356,11 +356,9 @@ fn detect_v2_format(json_value: &crate::DbJson) -> bool {
         }
 
         // Check for typical V2 fields at the root level
-        let has_v2_fields = obj.contains_key("name")
+        obj.contains_key("name")
             && obj.contains_key("description")
-            && obj.contains_key("personality");
-
-        has_v2_fields
+            && obj.contains_key("personality")
     } else {
         false
     }
@@ -396,7 +394,7 @@ pub fn parse_character_card_charx<R: Read + Seek>(
         .map_err(|e| ParserError::JsonError(e.to_string()))?;
 
     validate_v3_spec(&card, "CHARX card.json");
-    Ok(ParsedCharacterCard::V3(card))
+    Ok(ParsedCharacterCard::V3(Box::new(card)))
 }
 
 // Declare the test module

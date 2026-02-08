@@ -91,7 +91,7 @@ async fn test_user_asset_helper_methods() -> Result<()> {
 
     // Create mock UserAsset for user avatar
     let user_avatar = UserAsset {
-        id: Some(1),
+        id: 1,
         user_id: user_id.into(),
         persona_id: None,
         asset_type: "avatar".to_string(),
@@ -106,7 +106,7 @@ async fn test_user_asset_helper_methods() -> Result<()> {
 
     // Create mock UserAsset for persona avatar
     let persona_avatar = UserAsset {
-        id: Some(2),
+        id: 2,
         user_id: user_id.into(),
         persona_id: Some(persona_id.into()),
         asset_type: "avatar".to_string(),
@@ -141,7 +141,7 @@ async fn test_different_asset_types() -> Result<()> {
 
     // Create mock UserAsset for non-avatar asset
     let other_asset = UserAsset {
-        id: Some(3),
+        id: 3,
         user_id: user_id.into(),
         persona_id: Some(persona_id.into()),
         asset_type: "banner".to_string(), // Not an avatar

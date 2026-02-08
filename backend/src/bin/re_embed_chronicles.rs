@@ -13,9 +13,7 @@ use futures::future::join_all;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     config::Config,
-    llm::{
-        gemini_client::build_gemini_client, gemini_embedding_client::build_gemini_embedding_client,
-    },
+    llm::{cloud_embedding_client::build_cloud_embedding_client, rig_client::RigClient},
     logging::init_subscriber,
     models::{
         chronicle_event::ChronicleEvent,
@@ -23,7 +21,6 @@ use scribe_backend::{
     },
     schema::{chronicle_events, users},
     state::AppState,
-    vector_db::QdrantClientService,
 };
 use secrecy::{ExposeSecret, SecretString};
 use std::sync::Arc;
@@ -98,15 +95,18 @@ async fn main() -> Result<()> {
         .gemini_api_key
         .as_ref()
         .context("GEMINI_API_KEY is required")?;
-    let ai_client = Arc::new(build_gemini_client(api_key, &config.gemini_api_base_url)?);
-    let embedding_client = Arc::new(build_gemini_embedding_client(config.clone())?);
-    let qdrant_service = Arc::new(QdrantClientService::new(config.clone()).await?);
+    let ai_client = Arc::new(RigClient::new(Some(api_key.clone()), None, None));
+    let embedding_client = Arc::new(build_cloud_embedding_client(config.clone())?);
+    let embedding_model =
+        scribe_backend::llm::UnifiedEmbeddingModel::Cloud((*embedding_client).clone());
+    let qdrant_service =
+        scribe_backend::vector_db::create_vector_service(config.clone(), embedding_model).await?;
 
     // Initialize services - build with required external services
     let app_state = AppState::builder(pool.clone(), config)
         .with_ai_client(ai_client)
         .with_embedding_client(embedding_client)
-        .with_qdrant_service(qdrant_service)
+        .with_vector_service(qdrant_service)
         .build()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to build app state: {}", e))?;
@@ -173,7 +173,7 @@ async fn main() -> Result<()> {
         info!(
             "Processing chunk {}/{} (events {}-{})",
             chunk_idx + 1,
-            (total_events + chunk_size - 1) / chunk_size,
+            total_events.div_ceil(chunk_size),
             chunk_start + 1,
             std::cmp::min(chunk_start + chunk_size, total_events)
         );
@@ -272,7 +272,7 @@ async fn main() -> Result<()> {
             chunk_progress = format!(
                 "Chunk {}/{}",
                 chunk_idx + 1,
-                (total_events + chunk_size - 1) / chunk_size
+                total_events.div_ceil(chunk_size)
             ),
             overall_progress = format!("{}/{}", events_done, total_events),
             success_count = processed,

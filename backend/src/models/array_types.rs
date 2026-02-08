@@ -140,7 +140,19 @@ impl FromSql<Nullable<Text>, Sqlite> for OptionalStringArray {
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 impl diesel::deserialize::FromSqlRow<Nullable<Text>, Sqlite> for OptionalStringArray {
     fn build_from_row<'a>(row: &mut dyn diesel::row::Row<'a, Sqlite>) -> deserialize::Result<Self> {
-        FromSql::<Nullable<Text>, Sqlite>::from_sql(row.get_next()?)
+        let val = <Option<String> as diesel::deserialize::FromSqlRow<
+            Nullable<Text>,
+            Sqlite,
+        >>::build_from_row(row)?;
+
+        match val {
+            None => Ok(Self(None)),
+            Some(json_str) => {
+                let parsed: Option<Vec<Option<String>>> = serde_json::from_str(&json_str)
+                    .map_err(|e| format!("Failed to parse JSON array: {}", e))?;
+                Ok(Self(parsed))
+            }
+        }
     }
 }
 

@@ -147,7 +147,9 @@ export class ChatController {
 					cached.completion_tokens !== msg.completion_tokens ||
 					cached.error !== msg.error ||
 					cached.variant_count !== msg.variant_count ||
-					cached.current_variant_index !== msg.current_variant_index;
+					cached.current_variant_index !== msg.current_variant_index ||
+					cached.reasoning_content !== msg.reasoningContent ||
+					cached.is_thinking !== msg.isThinking;
 
 				if (hasChanged) {
 					// Message content changed
@@ -178,7 +180,10 @@ export class ChatController {
 						isRegenerating: msg.isRegenerating,
 						// Preserve shouldAnimate flag for animation control
 						shouldAnimate: msg.shouldAnimate,
-						variants: msg.variants
+						variants: msg.variants,
+						// CRITICAL: Map reasoning content from streaming message to UI
+						reasoning_content: msg.reasoningContent,
+						is_thinking: msg.isThinking
 					};
 
 					newCache.set(msg.id, newMessage);
@@ -713,7 +718,8 @@ export class ChatController {
 				userMessage: content,
 				history: existingHistoryForApi,
 				model: currentModel || undefined,
-				agentMode: this.agentMode
+				agentMode: this.agentMode,
+				thinking_level: this.chat.thinking_level || undefined
 			});
 
 			// Refresh chat metadata
@@ -864,7 +870,8 @@ export class ChatController {
 				isRegeneration: true,
 				guidance: guidance,
 				targetMessageId: targetMessageIdForVariant,
-				variantOf: originalMessageId
+				variantOf: originalMessageId,
+				thinking_level: this.chat.thinking_level || undefined
 			});
 
 			// await this.refreshChatMetadata();

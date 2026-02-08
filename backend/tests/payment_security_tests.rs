@@ -156,7 +156,7 @@ mod payment_security_tests {
         let _balance1 = conn
             .interact(move |conn| {
                 let service = CreditService::new(config.clone());
-                service.initialize_user_credits(conn, user1_id)
+                service.initialize_user_credits(conn, user1_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -168,7 +168,7 @@ mod payment_security_tests {
         let _balance2 = conn2
             .interact(move |conn| {
                 let service = CreditService::new(config2.clone());
-                service.initialize_user_credits(conn, user2_id)
+                service.initialize_user_credits(conn, user2_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -199,21 +199,23 @@ mod payment_security_tests {
                 let service = CreditService::new(config.clone());
 
                 // Initialize user credits
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
 
                 // Add credits with sensitive description
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     100,
                     "test",
                     "Sensitive transaction description",
                     None,
-                    Some(json!({"sensitive_field": "secret_value"})),
+                    Some(scribe_backend::db::Json(
+                        json!({"sensitive_field": "secret_value"}),
+                    )),
                 )?;
 
                 // Get transaction history
-                service.get_transaction_history(conn, user_id, Some(10), None)
+                service.get_transaction_history(conn, user_id.into(), Some(10), None)
             })
             .await
             .expect("Failed to interact")
@@ -264,7 +266,15 @@ mod payment_security_tests {
             let result = conn
                 .interact(move |conn| {
                     let service = CreditService::new(config_clone.clone());
-                    service.add_credits(conn, user_id, 10, "test", &payload_clone, None, None)
+                    service.add_credits(
+                        conn,
+                        user_id.into(),
+                        10,
+                        "test",
+                        &payload_clone,
+                        None,
+                        None,
+                    )
                 })
                 .await;
 
@@ -302,12 +312,12 @@ mod payment_security_tests {
                 let service = CreditService::new(config.clone());
 
                 // Initialize user
-                service.initialize_user_credits(conn, user_id)?;
+                service.initialize_user_credits(conn, user_id.into())?;
 
                 // Try to add negative credits
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     -1000, // Negative amount
                     "test",
                     "Attempting negative credit addition",
@@ -347,11 +357,19 @@ mod payment_security_tests {
                 let service = CreditService::new(config1.clone());
 
                 // Initialize and add some credits
-                service.initialize_user_credits(conn, user_id)?;
-                service.add_credits(conn, user_id, 100, "test", "Initial credits", None, None)?;
+                service.initialize_user_credits(conn, user_id.into())?;
+                service.add_credits(
+                    conn,
+                    user_id.into(),
+                    100,
+                    "test",
+                    "Initial credits",
+                    None,
+                    None,
+                )?;
 
                 // Reserve credits
-                service.reserve_credits(conn, user_id, 30, "Test reservation", None)
+                service.reserve_credits(conn, user_id.into(), 30, "Test reservation", None)
             })
             .await
             .expect("Failed to interact")
@@ -365,7 +383,7 @@ mod payment_security_tests {
         let confirmed_balance = conn2
             .interact(move |conn| {
                 let service = CreditService::new(config2.clone());
-                service.confirm_reservation(conn, user_id, reservation_id)
+                service.confirm_reservation(conn, user_id.into(), reservation_id)
             })
             .await
             .expect("Failed to interact")
@@ -396,11 +414,11 @@ mod payment_security_tests {
                 let service = CreditService::new(config1.clone());
 
                 // Initialize and add credits
-                service.initialize_user_credits(conn, user_id)?;
-                service.add_credits(conn, user_id, 100, "test", "Initial", None, None)?;
+                service.initialize_user_credits(conn, user_id.into())?;
+                service.add_credits(conn, user_id.into(), 100, "test", "Initial", None, None)?;
 
                 // Reserve credits
-                service.reserve_credits(conn, user_id, 40, "To be refunded", None)
+                service.reserve_credits(conn, user_id.into(), 40, "To be refunded", None)
             })
             .await
             .expect("Failed to interact")
@@ -412,7 +430,7 @@ mod payment_security_tests {
         let refunded_balance = conn2
             .interact(move |conn| {
                 let service = CreditService::new(config2.clone());
-                service.refund_reservation(conn, user_id, reservation_id, "Test refund")
+                service.refund_reservation(conn, user_id.into(), reservation_id, "Test refund")
             })
             .await
             .expect("Failed to interact")
@@ -897,10 +915,10 @@ mod payment_security_tests {
 
         conn.interact(move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user1_id)?;
+            service.initialize_user_credits(conn, user1_id.into())?;
             service.add_credits(
                 conn,
-                user1_id,
+                user1_id.into(),
                 100,
                 "cross_user_test",
                 "User1 transaction",
@@ -953,7 +971,7 @@ mod payment_security_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config.clone());
-                service.get_balance(conn, user_id)
+                service.get_balance(conn, user_id.into())
             })
             .await??;
 

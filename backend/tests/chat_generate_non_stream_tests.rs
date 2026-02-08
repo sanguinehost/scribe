@@ -9,8 +9,8 @@ use axum::{
 use bigdecimal::{BigDecimal, ToPrimitive};
 use chrono::Utc;
 use diesel::prelude::*;
-use genai::chat::{ChatRole, MessageContent, Usage};
 use scribe_backend::db::{DbId, DbTimestamp};
+use scribe_backend::llm::RigChatResponse;
 use scribe_backend::models::OptionalStringArray;
 use serde_json::json;
 use std::str::FromStr;
@@ -261,8 +261,8 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         character_version: Some("2.0".to_string()),
         spec: "test".to_string(),
         spec_version: "test".to_string(),
-        created_at: Some(now.into()),
-        updated_at: Some(now.into()),
+        created_at: now.into(),
+        updated_at: now.into(),
         creation_date: Some(now.into()),
         modification_date: Some(now.into()),
         ..Default::default()
@@ -419,19 +419,12 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     // Configure Mock AI client for a successful response
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
         let ai_response_content = "Mock AI success response for session settings test.".to_string();
-        let successful_response = genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini/mock-model",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini/mock-model",
-            ),
-            content: genai::chat::MessageContent::from(ai_response_content),
+        let successful_response = RigChatResponse {
+            content: ai_response_content,
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
         mock_client.set_response(Ok(successful_response));
     } else {
@@ -444,11 +437,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("gemini/mock-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
+        ..Default::default()
     };
 
     // Check session one last time before making chat generate request
@@ -505,37 +494,45 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
 
     info!("Got last AI request from mock client");
 
-    let last_message_content = last_request.messages.last().unwrap().content.clone();
+    let last_message_content = last_request.history.last().unwrap();
 
-    let prompt_text = last_message_content
-        .first_text()
-        .expect("Expected last message content to be text");
+    let prompt_text = match last_message_content {
+        rig::message::Message::User { content } => match content.iter().next() {
+            Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+            _ => None,
+        }
+        .expect("Expected text content"),
+        _ => panic!("Expected user message"),
+    };
     info!(
         "--- DEBUG: Prompt Text Content ---\n{}\n--- END DEBUG ---",
         prompt_text
     );
     info!("--- DEBUG: All Messages ---");
-    for (i, msg) in last_request.messages.iter().enumerate() {
-        let content_text = msg.content.first_text().unwrap_or("Non-text content");
-        info!(
-            "Message {}: Role={:?}, Content={}",
-            i, msg.role, content_text
-        );
+    for (i, msg) in last_request.history.iter().enumerate() {
+        let content_text = match msg {
+            rig::message::Message::User { content } => match content.iter().next() {
+                Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+                _ => None,
+            }
+            .unwrap_or_else(|| "Non-text content".to_string()),
+            rig::message::Message::Assistant { content, .. } => match content.iter().next() {
+                Some(rig::message::AssistantContent::Text(t)) => Some(t.text.clone()),
+                _ => None,
+            }
+            .unwrap_or_else(|| "Non-text content".to_string()),
+        };
+        info!("Message {}: Content={}", i, content_text);
     }
     info!("--- END DEBUG ---");
 
     let _user_message = last_request
-        .messages
+        .history
         .iter()
-        .find(|msg| matches!(msg.role, ChatRole::User))
+        .find(|msg| matches!(msg, rig::message::Message::User { .. }))
         .expect("User message should exist");
 
-    let options = test_app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock AI client should be present")
-        .get_last_options()
-        .expect("No options recorded by mock AI client");
+    let options = last_request.clone();
 
     if let Some(temp) = options.temperature {
         let expected_temp = test_temp.to_f64().unwrap();
@@ -547,11 +544,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
         panic!("Expected temperature to be set in options");
     }
     if let Some(tokens) = options.max_tokens {
-        assert_eq!(
-            tokens,
-            u32::try_from(test_tokens).expect("test_tokens should be positive"),
-            "Max tokens value doesn't match"
-        );
+        assert_eq!(tokens, test_tokens, "Max tokens value doesn't match");
     } else {
         panic!("Expected max_tokens to be set in options");
     }
@@ -784,8 +777,8 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         character_version: Some("2.0".to_string()),
         spec: "test".to_string(),
         spec_version: "test".to_string(),
-        created_at: Some(now.into()),
-        updated_at: Some(now.into()),
+        created_at: now.into(),
+        updated_at: now.into(),
         creation_date: Some(now.into()),
         modification_date: Some(now.into()),
         ..Default::default()
@@ -912,6 +905,9 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let client = reqwest::Client::new(); // Initialize client
@@ -949,38 +945,42 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         .get_last_request()
         .expect("Mock AI client did not receive a request");
 
-    let last_message_content = last_request.messages.last().unwrap().content.clone();
+    let last_message_content = last_request.history.last().unwrap();
 
-    let prompt_text = last_message_content
-        .first_text()
-        .expect("Expected last message content to be text");
-    eprintln!(
-        "--- DEBUG: Prompt Text Content ---
-{prompt_text}
---- END DEBUG ---"
-    );
+    let prompt_text = match last_message_content {
+        rig::message::Message::User { content } => match content.iter().next() {
+            Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+            _ => None,
+        }
+        .expect("Expected text content"),
+        _ => panic!("Expected user message"),
+    };
+    eprintln!("--- DEBUG: Prompt Text Content ---\n{prompt_text}\n--- END DEBUG ---");
     eprintln!("--- DEBUG: All Messages ---");
-    for (i, msg) in last_request.messages.iter().enumerate() {
-        let content_text = msg.content.first_text().unwrap_or("Non-text content");
-        eprintln!(
-            "Message {}: Role={:?}, Content={}",
-            i, msg.role, content_text
-        );
+    for (i, msg) in last_request.history.iter().enumerate() {
+        let content_text = match msg {
+            rig::message::Message::User { content } => match content.iter().next() {
+                Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
+                _ => None,
+            }
+            .unwrap_or_else(|| "Non-text content".to_string()),
+            rig::message::Message::Assistant { content, .. } => match content.iter().next() {
+                Some(rig::message::AssistantContent::Text(t)) => Some(t.text.clone()),
+                _ => None,
+            }
+            .unwrap_or_else(|| "Non-text content".to_string()),
+        };
+        eprintln!("Message {}: Content={}", i, content_text);
     }
     eprintln!("--- END DEBUG ---");
 
     let _user_message = last_request
-        .messages
+        .history
         .iter()
-        .find(|msg| matches!(msg.role, ChatRole::User))
+        .find(|msg| matches!(msg, rig::message::Message::User { .. }))
         .expect("User message should exist");
 
-    let options = test_app
-        .mock_ai_client
-        .as_ref()
-        .expect("Mock AI client should be present")
-        .get_last_options()
-        .expect("No options recorded by mock AI client");
+    let options = last_request.clone();
 
     if let Some(temp) = options.temperature {
         let expected_temp = test_temp.to_f64().unwrap();
@@ -992,11 +992,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
         panic!("Expected temperature to be set in options");
     }
     if let Some(tokens) = options.max_tokens {
-        assert_eq!(
-            tokens,
-            u32::try_from(test_tokens).expect("test_tokens should be positive"),
-            "Max tokens value doesn't match"
-        );
+        assert_eq!(tokens, test_tokens, "Max tokens value doesn't match");
     } else {
         panic!("Expected max_tokens to be set in options");
     }
@@ -1315,16 +1311,12 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -1337,6 +1329,9 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -1550,16 +1545,12 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -1572,6 +1563,9 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -1785,16 +1779,12 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -1807,6 +1797,9 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -1854,16 +1847,12 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response 2"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response 2".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
     // Client is reused from above
     let response_2 = client
@@ -2045,16 +2034,12 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -2067,6 +2052,9 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -2280,16 +2268,12 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
 
     let payload = GenerateChatRequest {
@@ -2302,6 +2286,9 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -2349,16 +2336,12 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
         .mock_ai_client
         .as_ref()
         .unwrap()
-        .set_response(Ok(genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(genai::adapter::AdapterKind::Gemini, "mock-model"),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "mock-model",
-            ),
-            content: genai::chat::MessageContent::from("Mock response 2"),
+        .set_response(Ok(RigChatResponse {
+            content: "Mock response 2".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         }));
     // Client is reused from above
     let response_2 = client
@@ -2519,19 +2502,12 @@ async fn test_get_chat_messages_success() -> anyhow::Result<()> {
     // Configure Mock AI client for a successful response, as /generate will call it
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
         let ai_response_content = "Mock AI success for get_chat_messages test.".to_string();
-        let successful_response = genai::chat::ChatResponse {
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini/mock-model",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini/mock-model",
-            ),
-            content: genai::chat::MessageContent::from(ai_response_content),
+        let successful_response = RigChatResponse {
+            content: ai_response_content,
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
         mock_client.set_response(Ok(successful_response));
     } else {
@@ -2616,14 +2592,14 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: OptionalStringArray(None),
+        tags: None,
         creator: None,
         character_version: None,
-        alternate_greetings: OptionalStringArray(None),
+        alternate_greetings: None,
         nickname: None,
         creator_notes_multilingual: None,
-        source: OptionalStringArray(None),
-        group_only_greetings: scribe_backend::db::DbStringArray(None),
+        source: None,
+        group_only_greetings: None,
         creation_date: None,
         modification_date: None,
         persona: None,
@@ -2654,7 +2630,7 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: scribe_backend::db::DbStringArray(None),
+        system_tags: None,
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -2747,6 +2723,9 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client_b
@@ -2783,6 +2762,9 @@ async fn test_get_chat_messages_unauthorized() -> Result<(), Box<dyn std::error:
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let client = reqwest::Client::new();
@@ -2897,24 +2879,11 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
     // --- End Mock RAG Response ---
 
     if let Some(mock_client) = test_app.mock_ai_client.as_ref() {
-        let successful_response = genai::chat::ChatResponse {
-            captured_raw_body: None,
-            content: genai::chat::MessageContent::from("AI response."),
-            usage: genai::chat::Usage {
-                prompt_tokens: None,
-                prompt_tokens_details: None,
-                completion_tokens: None,
-                completion_tokens_details: None,
-                total_tokens: None,
-            },
-            model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.0-flash-exp",
-            ),
-            provider_model_iden: genai::ModelIden::new(
-                genai::adapter::AdapterKind::Gemini,
-                "gemini-2.0-flash-exp",
-            ),
+        let successful_response = RigChatResponse {
+            content: "AI response.".to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
         };
         mock_client.set_response(Ok(successful_response));
@@ -2930,6 +2899,9 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let response = client
@@ -2949,7 +2921,7 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
         .unwrap()
         .get_last_request()
         .unwrap();
-    let system_prompt = last_request.system.unwrap();
+    let system_prompt = last_request.preamble.unwrap();
 
     assert!(system_prompt.contains("<character_profile>"));
     // Note: The character's system prompt override is now incorporated into the base prompt template

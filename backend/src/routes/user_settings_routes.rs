@@ -1,4 +1,5 @@
 #![allow(clippy::items_after_statements)]
+use crate::privacy::logging::loggable_user_id;
 use axum::{
     extract::{Path, State},      // Added Path
     http::{Request, StatusCode}, // Added Request
@@ -37,7 +38,7 @@ impl From<User> for DefaultPersonaResponse {
         Self {
             id: user.id,
             username: user.username,
-            email: user.email,
+            email: user.email.clone(),
             default_persona_id: user.default_persona_id,
         }
     }
@@ -79,7 +80,7 @@ async fn get_user_settings_handler(
         .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, "Getting user settings");
+    debug!(user_id = %loggable_user_id(user.id), "Getting user settings");
 
     let settings =
         UserSettingsService::get_user_settings(&app_state.pool, user.id, &app_state.config).await?;
@@ -97,7 +98,7 @@ async fn update_user_settings_handler(
         .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, "Updating user settings");
+    debug!(user_id = %loggable_user_id(user.id), "Updating user settings");
 
     use validator::Validate;
     update_request.validate()?;
@@ -122,7 +123,7 @@ async fn delete_user_settings_handler(
         .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, "Deleting user settings (reset to defaults)");
+    debug!(user_id = %loggable_user_id(user.id), "Deleting user settings (reset to defaults)");
 
     UserSettingsService::delete_user_settings(&app_state.pool, user.id).await?;
 
@@ -138,7 +139,7 @@ async fn set_default_persona_handler(
     let user = auth
         .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
-    debug!(user_id = %user.id, %persona_id, "Attempting to set default persona");
+    debug!(user_id = %loggable_user_id(user.id), %persona_id, "Attempting to set default persona");
 
     // Verify the user owns the persona
     let persona_lookup_result = UserPersonaService::get_user_persona_by_id_and_user_id(
@@ -196,17 +197,16 @@ async fn get_user_token_usage_handler(
         .user()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, "Getting user token usage statistics");
+    debug!(user_id = %loggable_user_id(user.id), "Getting user token usage statistics");
 
-    let total_tokens =
-        i64::from(user.total_prompt_tokens) + i64::from(user.total_completion_tokens);
-    let total_cost_dollars = i64::from(user.total_token_cost_cents) as f64 / 100.0;
+    let total_tokens = *user.total_prompt_tokens + *user.total_completion_tokens;
+    let total_cost_dollars = *user.total_token_cost_cents as f64 / 100.0;
 
     let token_usage = TokenUsageSummary {
-        total_prompt_tokens: i64::from(user.total_prompt_tokens),
-        total_completion_tokens: i64::from(user.total_completion_tokens),
+        total_prompt_tokens: *user.total_prompt_tokens,
+        total_completion_tokens: *user.total_completion_tokens,
         total_tokens,
-        total_cost_cents: i64::from(user.total_token_cost_cents),
+        total_cost_cents: *user.total_token_cost_cents,
         total_cost_dollars,
         tokens_last_reset_at: user.tokens_last_reset_at,
         token_usage_updated_at: user.token_usage_updated_at,

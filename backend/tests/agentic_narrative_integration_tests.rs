@@ -50,9 +50,12 @@ async fn create_test_user(
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
+        id: scribe_backend::db::DbId::new(),
         username,
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
@@ -134,8 +137,8 @@ fn create_roleplay_messages(
             content_nonce: Some(nonce),
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(20),
-            completion_tokens: Some(50),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(20)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(50)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
@@ -297,8 +300,20 @@ async fn test_agentic_tools_with_mock_ai() {
         ]
     });
 
-    // Test 1: Analyze Text Significance Tool with real AI
-    let triage_tool = AnalyzeTextSignificanceTool::new(test_app.ai_client.clone());
+    // Test 1: Analyze Text Significance Tool with mock AI
+    let mock_triage_response = json!({
+        "is_significant": true,
+        "significance_score": 0.9,
+        "reason": "Legendary sword discovery is significant",
+        "confidence": 0.95,
+        "suggested_categories": ["chronicle_events"]
+    });
+    let mock_client = Arc::new(
+        scribe_backend::test_helpers::MockAiClient::new_with_response(
+            mock_triage_response.to_string(),
+        ),
+    );
+    let triage_tool = AnalyzeTextSignificanceTool::new(mock_client);
     let triage_result = triage_tool.execute(&messages).await.unwrap();
 
     assert!(triage_result.get("is_significant").is_some());
@@ -374,6 +389,12 @@ async fn test_agentic_tools_with_mock_ai() {
             test_app.db_pool.clone(),
         )),
         token_service: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None,
         #[cfg(feature = "local-llm")]
@@ -486,8 +507,8 @@ async fn test_workflow_orchestration() {
             content_nonce: None,
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(5),
-            completion_tokens: Some(5),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(5)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(5)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),
@@ -501,8 +522,8 @@ async fn test_workflow_orchestration() {
             content_nonce: None,
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(10),
-            completion_tokens: Some(10),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(10)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(10)),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "test-model".to_string(),

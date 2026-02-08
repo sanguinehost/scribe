@@ -162,10 +162,10 @@ fn test_default_empty_strings() {
 // use uuid::Uuid; // Need Uuid for user_id
 
 fn create_minimal_v2_fallback(name: &str) -> ParsedCharacterCard {
-    ParsedCharacterCard::V2Fallback(CharacterCardDataV3 {
+    ParsedCharacterCard::V2Fallback(Box::new(CharacterCardDataV3 {
         name: Some(name.to_string()),
         ..Default::default()
-    })
+    }))
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn test_from_parsed_card_v2_with_collections() {
         description: "A description".to_string(),
         ..Default::default()
     };
-    let parsed_v2 = ParsedCharacterCard::V2Fallback(data_v2);
+    let parsed_v2 = ParsedCharacterCard::V2Fallback(Box::new(data_v2));
 
     let new_char = NewCharacter::from_parsed_card(&parsed_v2, user_id);
 
@@ -205,14 +205,14 @@ fn test_from_parsed_card_v2_with_collections() {
     assert_eq!(new_char.spec_version, "2.0");
     assert_eq!(
         new_char.tags,
-        scribe_backend::models::OptionalStringArray(Some(vec![
+        scribe_backend::models::OptionalStringArray::from_vec(vec![
             Some("tag1".to_string()),
             Some("tag2".to_string())
-        ]))
+        ])
     );
     assert_eq!(
         new_char.alternate_greetings,
-        scribe_backend::models::OptionalStringArray(Some(vec![Some("hi".to_string())]))
+        scribe_backend::models::OptionalStringArray::from_vec(vec![Some("hi".to_string())])
     );
     assert_eq!(new_char.description, Some(b"A description".to_vec()));
 }
@@ -244,7 +244,7 @@ fn test_from_parsed_card_v3() {
         data: data_v3.clone(), // Clone data_v3 for comparison later
         ..Default::default()
     };
-    let parsed_v3 = ParsedCharacterCard::V3(card_v3);
+    let parsed_v3 = ParsedCharacterCard::V3(Box::new(card_v3));
 
     let new_char = NewCharacter::from_parsed_card(&parsed_v3, user_id);
 
@@ -286,11 +286,11 @@ fn test_from_parsed_card_v3() {
     );
     assert_eq!(
         new_char.tags,
-        scribe_backend::models::OptionalStringArray(Some(vec![Some("v3tag".to_string())]))
+        scribe_backend::models::OptionalStringArray::from_vec(vec![Some("v3tag".to_string())])
     );
     assert_eq!(
         new_char.alternate_greetings,
-        scribe_backend::models::OptionalStringArray(Some(vec![Some("v3greet".to_string())]))
+        scribe_backend::models::OptionalStringArray::from_vec(vec![Some("v3greet".to_string())])
     );
     assert_eq!(new_char.creator, Some(data_v3.creator));
     assert_eq!(new_char.character_version, Some(data_v3.character_version));

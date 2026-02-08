@@ -52,6 +52,9 @@
 	// Credit purchase dialog state
 	let showPurchaseDialog = $state(false);
 
+	let chatModelOverride = $state<string>('');
+
+
 	// Load settings on chat change (same as ChatConfigPanel)
 	$effect(() => {
 		if (chat?.id) {
@@ -105,10 +108,12 @@
 				// Update currentChronicleId from the fresh backend settings
 				// This ensures the UI shows the correct chronicle association from the database
 				currentChronicleId = settings.chronicle_id || null;
+				chatModelOverride = settings.model_name || '';
 				// gameMasterModeEnabled is now derived from chat prop
 				console.log('[Chat Header] Loaded settings:', {
 					chronicleId: currentChronicleId,
-					gameMasterModeEnabled
+					gameMasterModeEnabled,
+					chatModelOverride
 				});
 			} else {
 				console.error('[Chat Header] Failed to load chat settings:', result.error);

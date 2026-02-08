@@ -1,6 +1,7 @@
 // backend/src/middleware/auth_middleware.rs
 // Authentication middleware that supports both JWT (desktop) and cookie (web) authentication
 
+use crate::privacy::logging::loggable_user_id;
 use axum::{
     extract::{FromRequestParts, Request, State},
     http::StatusCode,
@@ -40,8 +41,7 @@ pub async fn unified_login_required(
     let auth_type = if auth.is_token_auth { "JWT" } else { "cookie" };
     if let Some(user) = auth.user() {
         debug!(
-            user_id = %user.id,
-            username = %user.username,
+            user_id = %loggable_user_id(user.id),
             auth_type = auth_type,
             "unified_login_required: User authenticated successfully"
         );

@@ -13,18 +13,17 @@ use crate::{
     state::DbPool, // Corrected DbPool import
 };
 
+use serde::{Deserialize, Serialize};
+
+// Existing imports...
+
 /// Helper enum for database updates to improve type safety
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 enum DatabaseUpdate<T> {
+    #[default]
     NoChange,
     SetValue(T),
     SetNull,
-}
-
-impl<T> Default for DatabaseUpdate<T> {
-    fn default() -> Self {
-        Self::NoChange
-    }
 }
 
 // Convert to Option<Option<T>> for Diesel compatibility
@@ -80,8 +79,9 @@ struct ChatSessionUpdateBuilder {
     history_management_limit: DatabaseUpdate<i32>,
     model_name: DatabaseUpdate<String>,
     model_provider: DatabaseUpdate<String>,
-    gemini_thinking_budget: DatabaseUpdate<i32>,
-    gemini_enable_code_execution: DatabaseUpdate<bool>,
+    thinking_budget: DatabaseUpdate<i32>,
+    enable_code_execution: DatabaseUpdate<bool>,
+    thinking_level: DatabaseUpdate<String>,
     player_chronicle_id: DatabaseUpdate<Option<crate::db::DbId>>,
     agent_mode: DatabaseUpdate<String>,
     active_custom_persona_id: DatabaseUpdate<Option<crate::db::DbId>>,
@@ -145,12 +145,17 @@ impl ChatSessionUpdateBuilder {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
-            gemini_thinking_budget: match self.gemini_thinking_budget {
+            thinking_budget: match self.thinking_budget {
                 DatabaseUpdate::SetValue(v) => Some(v),
                 _ => None,
             },
-            gemini_enable_code_execution: match self.gemini_enable_code_execution {
+            enable_code_execution: match self.enable_code_execution {
                 DatabaseUpdate::SetValue(v) => Some(v),
+                _ => None,
+            },
+            thinking_level: match self.thinking_level {
+                DatabaseUpdate::SetValue(v) => Some(Some(v)),
+                DatabaseUpdate::SetNull => Some(None),
                 _ => None,
             },
             player_chronicle_id: match self.player_chronicle_id {
@@ -199,8 +204,9 @@ impl ChatSessionUpdateBuilder {
             || !matches!(self.history_management_limit, DatabaseUpdate::NoChange)
             || !matches!(self.model_name, DatabaseUpdate::NoChange)
             || !matches!(self.model_provider, DatabaseUpdate::NoChange)
-            || !matches!(self.gemini_thinking_budget, DatabaseUpdate::NoChange)
-            || !matches!(self.gemini_enable_code_execution, DatabaseUpdate::NoChange)
+            || !matches!(self.thinking_budget, DatabaseUpdate::NoChange)
+            || !matches!(self.enable_code_execution, DatabaseUpdate::NoChange)
+            || !matches!(self.thinking_level, DatabaseUpdate::NoChange)
             || !matches!(self.player_chronicle_id, DatabaseUpdate::NoChange)
             || !matches!(self.agent_mode, DatabaseUpdate::NoChange)
             || !matches!(self.active_custom_persona_id, DatabaseUpdate::NoChange)
@@ -232,8 +238,9 @@ struct ChatSessionUpdateChangeset {
     history_management_limit: Option<i32>,
     model_name: Option<String>,
     model_provider: Option<String>,
-    gemini_thinking_budget: Option<i32>,
-    gemini_enable_code_execution: Option<bool>,
+    thinking_budget: Option<i32>,
+    enable_code_execution: Option<bool>,
+    thinking_level: Option<Option<String>>,
     player_chronicle_id: Option<Option<crate::db::DbId>>,
     agent_mode: Option<String>,
     active_custom_persona_id: Option<Option<crate::db::DbId>>,
@@ -370,15 +377,18 @@ pub async fn get_session_settings(
             })?;
 
         // Query 2: stop_sequences (complex array type)
-        // DbStringArray already wraps Option internally, so don't use Option<DbStringArray>
-        let stop_sequences = chat_sessions::table
+        // DbStringArray already wraps Option internally usually, but the column is nullable in DB
+        // so we must read as Option<DbStringArray> to avoid UnexpectedNullError.
+        let stop_sequences_opt = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select(chat_sessions::stop_sequences)
-            .first::<crate::db::DbStringArray>(conn)
+            .first::<Option<crate::db::DbStringArray>>(conn)
             .map_err(|e| {
                 error!(%session_id, %user_id, error = ?e, "Failed to fetch stop_sequences after ownership check");
                 AppError::DatabaseQueryError(e.to_string())
             })?;
+
+        let stop_sequences = stop_sequences_opt;
 
         // Query 3: 3 simple fields
         let settings_part3 = chat_sessions::table
@@ -402,8 +412,8 @@ pub async fn get_session_settings(
         let settings_part4 = chat_sessions::table
             .filter(chat_sessions::id.eq(session_id))
             .select((
-                chat_sessions::gemini_thinking_budget,
-                chat_sessions::gemini_enable_code_execution,
+                chat_sessions::thinking_budget,
+                chat_sessions::enable_code_execution,
                 chat_sessions::player_chronicle_id,
                 chat_sessions::agent_mode,
             ))
@@ -472,7 +482,7 @@ pub async fn get_session_settings(
                 chat_sessions::min_p,
                 chat_sessions::top_a,
                 chat_sessions::logit_bias,
-                chat_sessions::gemini_thinking_level,
+                chat_sessions::thinking_level,
                 chat_sessions::rag_chronicles_limit,
                 chat_sessions::rag_lorebooks_limit,
                 chat_sessions::rag_older_chat_limit,
@@ -515,8 +525,8 @@ pub async fn get_session_settings(
         ) = settings_part3;
 
         let (
-            gemini_thinking_budget,
-            gemini_enable_code_execution,
+            thinking_budget,
+            enable_code_execution,
             player_chronicle_id,
             agent_mode,
         ) = settings_part4;
@@ -548,12 +558,12 @@ pub async fn get_session_settings(
             top_k,
             top_p,
             seed,
-            stop_sequences: stop_sequences.into(),
+            stop_sequences: Some(stop_sequences.clone().unwrap_or_default()),
             history_management_strategy,
             history_management_limit,
             model_name: Some(model_name),
-            gemini_thinking_budget,
-            gemini_enable_code_execution,
+            thinking_budget,
+            enable_code_execution,
             chronicle_id: player_chronicle_id,
             agent_mode,
             active_custom_persona_id,
@@ -563,7 +573,7 @@ pub async fn get_session_settings(
             min_p,
             top_a,
             logit_bias,
-            gemini_thinking_level,
+            thinking_level: gemini_thinking_level,
             rag_chronicles_limit,
             rag_lorebooks_limit,
             rag_older_chat_limit,
@@ -639,23 +649,19 @@ fn apply_payload_to_builder(
     }
     #[cfg(feature = "postgres-backend")]
     {
-        if let Some(stop_seqs) = payload.stop_sequences {
-            // DbStringArray is a wrapper around Option<Vec<Option<String>>>
-            // We need to extract the inner vector if it exists
-            if let Some(inner_vec) = stop_seqs.0 {
-                update_builder.stop_sequences =
-                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
-            }
+        if let Some(ref stop_seqs) = payload.stop_sequences {
+            // DbStringArray is Vec<Option<String>>
+            // We need to extract the inner vector
+            update_builder.stop_sequences =
+                DatabaseUpdate::SetValue(stop_seqs.0.iter().flatten().cloned().collect());
         }
     }
 
     #[cfg(feature = "sqlite-backend")]
     {
-        if let Some(stop_seqs) = payload.stop_sequences {
-            if let Some(inner_vec) = stop_seqs.0 {
-                update_builder.stop_sequences =
-                    DatabaseUpdate::SetValue(inner_vec.into_iter().flatten().collect());
-            }
+        if let Some(ref stop_seqs) = payload.stop_sequences {
+            update_builder.stop_sequences =
+                DatabaseUpdate::SetValue(stop_seqs.0.iter().flatten().cloned().collect());
         }
     }
     if let Some(hist_strat) = payload.history_management_strategy {
@@ -670,11 +676,14 @@ fn apply_payload_to_builder(
     if let Some(provider) = payload.model_provider {
         update_builder.model_provider = DatabaseUpdate::SetValue(provider);
     }
-    if let Some(gem_budget) = payload.gemini_thinking_budget {
-        update_builder.gemini_thinking_budget = DatabaseUpdate::SetValue(gem_budget);
+    if let Some(gem_budget) = payload.thinking_budget {
+        update_builder.thinking_budget = DatabaseUpdate::SetValue(gem_budget);
     }
-    if let Some(gem_exec) = payload.gemini_enable_code_execution {
-        update_builder.gemini_enable_code_execution = DatabaseUpdate::SetValue(gem_exec);
+    if let Some(gem_exec) = payload.enable_code_execution {
+        update_builder.enable_code_execution = DatabaseUpdate::SetValue(gem_exec);
+    }
+    if let Some(level) = payload.thinking_level {
+        update_builder.thinking_level = DatabaseUpdate::SetValue(level);
     }
     // Chronicle ID handling
     if let Some(chronicle_id) = payload.chronicle_id {

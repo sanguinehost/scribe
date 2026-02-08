@@ -17,21 +17,20 @@ cargo run --bin scribe-backend
 
 ### Backend Development
 
-> [!CAUTION]
-> **REQUIRED: Sentencepiece Library Linking**
+> [!IMPORTANT]
+> **Command Output Handling**
 >
-> Before running ANY `cargo check`, `cargo build`, or `cargo clippy` command, you MUST export the following environment variables to link against the local sentencepiece build:
+> When running long-running commands like `cargo test`, `cargo check`, or `cargo build`, **always pipe output to a file in `/tmp/`** instead of using `tail` or `head`. This ensures the full output is available for review.
+>
 > ```bash
-> export PKG_CONFIG_PATH="/home/socol/Workspace/sentencepiece/build:${PKG_CONFIG_PATH:-}"
-> export LD_LIBRARY_PATH="/home/socol/Workspace/sentencepiece/build/src:${LD_LIBRARY_PATH:-}"
-> ```
+> # Good - full output preserved
+> cargo test 2>&1 | tee /tmp/test-output.log
+> cargo check 2>&1 | tee /tmp/check-output.log
 >
-> **Alternatively, use the build script** which handles this automatically:
-> ```bash
-> ./scripts/build-desktop-dev.sh --check  # For desktop feature check
+> # Bad - loses important output
+> cargo test 2>&1 | tail -n 50
 > ```
->
-> Without these exports, `sentencepiece-sys` will fail to compile with C++ errors.
+
 
 ```bash
 # Build and run backend
@@ -216,6 +215,12 @@ All code changes must include comprehensive testing:
 - Routes → Handlers → Services → Models pattern in backend
 - Reusable components with Svelte 5 runes in frontend
 - Strong typing throughout (no `any` in TypeScript)
+
+**Privacy-Safe Logging**: See [docs/PRIVACY_SAFE_LOGGING.md](docs/PRIVACY_SAFE_LOGGING.md). Key rules:
+- **Never log raw user IDs** - use `loggable_user_id(user.id)` for obfuscated format `u8a3f2xx`
+- **Never log usernames/emails** - use `sanitize_personal_info(email)` for partial redaction
+- **Never log user content** (messages, prompts, AI responses, reasoning) - log only lengths/metadata
+- **For payment/sensitive flows** - use `sanitize_json_value()` for deep PII redaction
 
 **Security**: Never commit secrets, use environment variables, and ensure all user data is properly encrypted at rest.
 ## Context Management & Limits

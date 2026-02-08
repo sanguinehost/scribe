@@ -35,7 +35,6 @@ use crate::{
         embeddings::RetrievedChunk,
         ChronicleService, LorebookService,
     },
-    vector_db::qdrant_client::QdrantClientServiceTrait,
     AppState,
 };
 
@@ -124,7 +123,7 @@ impl NarrativeIntelligenceService {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
         config: Option<NarrativeProcessingConfig>,
@@ -215,6 +214,7 @@ impl NarrativeIntelligenceService {
         chronicle_id = ?chronicle_id,
         message_count = recent_messages.len()
     ))]
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_conversation_context(
         &self,
         user_id: crate::db::DbId,
@@ -442,6 +442,7 @@ impl NarrativeIntelligenceService {
     /// 2. Uses LLM to determine state changes based on conversation
     /// 3. Reconciles changes
     /// 4. Persists new state to DB
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_game_state(
         &self,
         user_id: crate::db::DbId,
@@ -671,7 +672,7 @@ impl NarrativeIntelligenceService {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) -> Self {
@@ -699,7 +700,7 @@ impl NarrativeIntelligenceService {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
+        qdrant_service: Arc<crate::vector_db::VectorService>,
         embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) -> Self {
@@ -846,7 +847,7 @@ impl NarrativeIntelligenceService {
 
         Ok(CharacterContext::new(
             character.id,
-            character.name,
+            character.name.clone(),
             description,
             personality,
             scenario,

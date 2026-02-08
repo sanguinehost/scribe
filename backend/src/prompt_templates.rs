@@ -7,18 +7,13 @@ use std::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 /// Narrative style variables for template customization
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum Tense {
+    #[default]
     PastTense,
     PresentTense,
     FutureTense,
-}
-
-impl Default for Tense {
-    fn default() -> Self {
-        Self::PastTense
-    }
 }
 
 impl Tense {
@@ -31,18 +26,12 @@ impl Tense {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum Narration {
     FirstPerson,
     SecondPerson,
+    #[default]
     ThirdPerson,
-}
-
-impl Default for Narration {
-    fn default() -> Self {
-        Self::ThirdPerson
-    }
 }
 
 impl Narration {
@@ -55,18 +44,13 @@ impl Narration {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum Perspective {
+    #[default]
     Omniscient,
     LimitedCharacter,
     LimitedUser,
-}
-
-impl Default for Perspective {
-    fn default() -> Self {
-        Self::Omniscient
-    }
 }
 
 impl Perspective {
@@ -79,19 +63,14 @@ impl Perspective {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum ResponseLength {
+    #[default]
     Flexible,
     Concise,
     Moderate,
     Extended,
-}
-
-impl Default for ResponseLength {
-    fn default() -> Self {
-        Self::Flexible
-    }
 }
 
 impl ResponseLength {
@@ -108,7 +87,7 @@ impl ResponseLength {
 }
 
 /// Narrative style variables that can be customized per user/character
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct NarrativeStyle {
     #[serde(default)]
     pub tense: Tense,
@@ -118,17 +97,6 @@ pub struct NarrativeStyle {
     pub perspective: Perspective,
     #[serde(default)]
     pub length: ResponseLength,
-}
-
-impl Default for NarrativeStyle {
-    fn default() -> Self {
-        Self {
-            tense: Tense::default(),
-            narration: Narration::default(),
-            perspective: Perspective::default(),
-            length: ResponseLength::default(),
-        }
-    }
 }
 
 /// Template compatibility requirements
@@ -176,6 +144,12 @@ impl From<&PromptTemplate> for TemplateInfo {
 pub struct TemplateManager {
     env: Environment<'static>,
     templates: HashMap<String, PromptTemplate>,
+}
+
+impl Default for TemplateManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TemplateManager {
@@ -227,7 +201,7 @@ impl TemplateManager {
                 for entry in entries.flatten() {
                     if let Some(extension) = entry.path().extension() {
                         if extension == "json" {
-                            match std::fs::read_to_string(&entry.path()) {
+                            match std::fs::read_to_string(entry.path()) {
                                 Ok(content) => {
                                     if let Err(e) = self.load_template_from_string(&content) {
                                         error!(file = ?entry.path(), error = %e, "Failed to load template from file");
@@ -315,6 +289,7 @@ impl TemplateManager {
 
     /// Sanitizes context values to prevent template injection attacks
     /// Skips sanitization for the 'self' key which contains template sections
+    #[allow(clippy::only_used_in_recursion)]
     fn sanitize_context(&self, value: crate::DbJson, skip_keys: &[&str]) -> crate::DbJson {
         let value_inner = value.0.clone();
         match &value_inner {

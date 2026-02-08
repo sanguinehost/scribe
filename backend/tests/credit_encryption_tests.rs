@@ -76,10 +76,10 @@ async fn test_credit_description_encrypted_at_rest() {
     let conn = app.db_pool.get().await.expect("Failed to get connection");
     conn.interact(move |conn| {
         let service = CreditService::new(config.clone());
-        service.initialize_user_credits(conn, user_id)?;
+        service.initialize_user_credits(conn, user_id.into())?;
         service.add_credits(
             conn,
-            user_id,
+            user_id.into(),
             100,
             "test",
             sensitive_description,
@@ -164,15 +164,15 @@ async fn test_credit_metadata_encrypted_at_rest() {
     let conn = app.db_pool.get().await.expect("Failed to get connection");
     conn.interact(move |conn| {
         let service = CreditService::new(config.clone());
-        service.initialize_user_credits(conn, user_id)?;
+        service.initialize_user_credits(conn, user_id.into())?;
         service.add_credits(
             conn,
-            user_id,
+            user_id.into(),
             200,
             "purchase",
             "Credit package purchase",
             None,
-            Some(metadata),
+            Some(scribe_backend::db::Json(metadata)),
         )
     })
     .await
@@ -266,15 +266,15 @@ async fn test_credit_transaction_decryption_roundtrip() {
         let metadata = original_metadata.clone();
         move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 500,
                 "monthly_grant",
                 original_description,
                 None,
-                Some(metadata),
+                Some(scribe_backend::db::Json(metadata)),
             )
         }
     })
@@ -299,7 +299,7 @@ async fn test_credit_transaction_decryption_roundtrip() {
                     .first::<CreditTransaction>(conn)?;
 
                 // Decrypt (using fallback DEK derivation for testing)
-                service.decrypt_transaction_data(conn, test_user_id, &transaction, None)
+                service.decrypt_transaction_data(conn, test_user_id.into(), &transaction, None)
             }
         })
         .await
@@ -349,15 +349,15 @@ async fn test_credit_encryption_key_mismatch() {
         let config = config.clone();
         move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user1_id)?;
+            service.initialize_user_credits(conn, user1_id.into())?;
             service.add_credits(
                 conn,
-                user1_id,
+                user1_id.into(),
                 100,
                 "test",
                 "User 1 secret data",
                 None,
-                Some(json!({"secret": "user1_value"})),
+                Some(scribe_backend::db::Json(json!({"secret": "user1_value"}))),
             )
         }
     })
@@ -388,7 +388,7 @@ async fn test_credit_encryption_key_mismatch() {
             move |conn| {
                 let service = CreditService::new(config.clone());
                 // Try to decrypt user1's transaction using user2's key derivation
-                service.decrypt_transaction_data(conn, user2_id, &transaction, None)
+                service.decrypt_transaction_data(conn, user2_id.into(), &transaction, None)
             }
         })
         .await
@@ -437,15 +437,15 @@ async fn test_credit_encryption_with_special_characters() {
         let description = description.to_string();
         move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 150,
                 "bonus",
                 &description,
                 None,
-                Some(metadata),
+                Some(scribe_backend::db::Json(metadata)),
             )
         }
     })
@@ -468,7 +468,7 @@ async fn test_credit_encryption_with_special_characters() {
                     .order(dsl::created_at.desc())
                     .first::<CreditTransaction>(conn)?;
 
-                service.decrypt_transaction_data(conn, test_user_id, &transaction, None)
+                service.decrypt_transaction_data(conn, test_user_id.into(), &transaction, None)
             }
         })
         .await
@@ -524,7 +524,7 @@ async fn test_credit_encryption_nonce_uniqueness() {
         let config = config.clone();
         move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)
+            service.initialize_user_credits(conn, user_id.into())
         }
     })
     .await
@@ -540,12 +540,12 @@ async fn test_credit_encryption_nonce_uniqueness() {
                 let service = CreditService::new(config.clone());
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     10,
                     "test",
                     "Identical description for nonce test",
                     None,
-                    Some(json!({"iteration": i})),
+                    Some(scribe_backend::db::Json(json!({"iteration": i}))),
                 )
             }
         })
@@ -635,15 +635,15 @@ async fn test_credit_decryption_with_corrupted_data() {
         let config = config.clone();
         move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 100,
                 "test",
                 "Original data before corruption",
                 None,
-                Some(json!({"status": "valid"})),
+                Some(scribe_backend::db::Json(json!({"status": "valid"}))),
             )
         }
     })
@@ -660,7 +660,7 @@ async fn test_credit_decryption_with_corrupted_data() {
                 .filter(user_id.eq(user_id))
                 .order(created_at.desc())
                 .first(conn)?;
-            Ok::<Uuid, diesel::result::Error>(txn.id)
+            Ok::<Uuid, diesel::result::Error>(*txn.id)
         })
         .await
         .expect("Failed to interact")
@@ -706,7 +706,7 @@ async fn test_credit_decryption_with_corrupted_data() {
                     .find(transaction_id)
                     .first::<CreditTransaction>(conn)?;
 
-                service.decrypt_transaction_data(conn, test_user_id, &transaction, None)
+                service.decrypt_transaction_data(conn, test_user_id.into(), &transaction, None)
             }
         })
         .await
@@ -743,10 +743,10 @@ async fn test_credit_encryption_without_metadata() {
         let config = config.clone();
         move |conn| {
             let service = CreditService::new(config.clone());
-            service.initialize_user_credits(conn, user_id)?;
+            service.initialize_user_credits(conn, user_id.into())?;
             service.add_credits(
                 conn,
-                user_id,
+                user_id.into(),
                 50,
                 "test",
                 "Description only, no metadata",
@@ -798,7 +798,7 @@ async fn test_credit_encryption_without_metadata() {
             let transaction = transaction.clone();
             move |conn| {
                 let service = CreditService::new(config.clone());
-                service.decrypt_transaction_data(conn, user_id, &transaction, None)
+                service.decrypt_transaction_data(conn, user_id.into(), &transaction, None)
             }
         })
         .await
@@ -854,12 +854,12 @@ async fn test_no_plaintext_pii_in_credit_transactions() {
                 let service = CreditService::new(config.clone());
                 service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     25,
                     "test",
                     &description,
                     None,
-                    Some(metadata),
+                    Some(scribe_backend::db::Json(metadata)),
                 )
             }
         })

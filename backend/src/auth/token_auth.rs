@@ -111,7 +111,7 @@ where
 
                             // Load the user from the database
                             let pool = app_state.pool.clone();
-                            let user_id = claims.sub.clone();
+                            let user_id = claims.sub;
 
                             let user = match crate::db::with_conn(&pool, move |conn| {
                                 crate::auth::get_user(conn, user_id).map_err(AppError::from)
@@ -147,7 +147,7 @@ where
                             // Set the user in the session (in-memory only, not persisted)
                             auth_session.user = Some(user.clone());
 
-                            info!(user_id = %user.id, username = %user.username, "✓ JWT authentication successful - user loaded and session created");
+                            info!(user_id = %crate::privacy::logging::loggable_user_id(user.id), "JWT authentication successful - user loaded and session created");
 
                             return Ok(UnifiedAuth {
                                 session: auth_session,

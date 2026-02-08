@@ -17,9 +17,9 @@ use axum::routing::{delete, get, post};
 use axum::Json;
 use axum::Router;
 use axum_login::{AuthSession, AuthUser, AuthnBackend};
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 use secrecy::ExposeSecret;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,7 @@ pub struct LoginSuccessResponse {
 }
 
 // Desktop-specific request/response types (feature-gated)
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[derive(Debug, Serialize)]
 pub struct DesktopConfigResponse {
     pub setup_complete: bool,
@@ -78,13 +78,13 @@ pub struct DesktopConfigResponse {
     pub deployment_mode: String, // "local" | "remote"
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[derive(Debug, Deserialize)]
 pub struct DesktopSetupPayload {
     pub auth_mode: String, // "quick_start" | "account"
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[derive(Debug, Deserialize)]
 pub struct DesktopUpgradeAccountPayload {
     pub username: String,
@@ -92,7 +92,7 @@ pub struct DesktopUpgradeAccountPayload {
 }
 
 pub fn auth_routes() -> Router<AppState> {
-    #[cfg(feature = "desktop")]
+    #[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
     {
         Router::new()
             .route("/register", post(register_handler))
@@ -122,7 +122,7 @@ pub fn auth_routes() -> Router<AppState> {
             .route("/token/logout", post(token_logout_handler))
     }
 
-    #[cfg(not(feature = "desktop"))]
+    #[cfg(any(not(feature = "desktop"), feature = "postgres-backend"))]
     {
         Router::new()
             .route("/register", post(register_handler))
@@ -217,13 +217,13 @@ pub async fn register_handler(
     match user_result {
         Ok(user) => {
             debug!("User creation with email verification completed.");
-            info!(user_id = %user.id, "User registration successful.");
+            info!(user_id = %loggable_user_id(user.id), "User registration successful.");
             // Use AuthResponse for success
             // The created user has the recovery phrase that was used
             let response = AuthResponse {
                 user_id: user.id,
                 username: user.username,
-                email: user.email,
+                email: Some(user.email),
                 role: format!("{:?}", user.role),
                 recovery_key: user.recovery_phrase.clone(), // Get recovery phrase from the returned user
                 default_persona_id: user.default_persona_id,
@@ -370,7 +370,7 @@ pub async fn login_handler(
             // Get session ID and expiry from tower_sessions::Session
             let session_id_str = session.id().map_or_else(
                 || {
-                    error!(user_id = %user.id, "Failed to get session ID after login for response");
+                    error!(user_id = %loggable_user_id(user.id), "Failed to get session ID after login for response");
                     // Fallback or handle error appropriately, though this should ideally not happen
                     // For now, let's use a placeholder or consider this a critical error.
                     // However, axum-login should have ensured a session exists.
@@ -382,7 +382,7 @@ pub async fn login_handler(
             );
 
             let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {
-                error!(user_id = %user.id, session_id = %session_id_str, "Failed to convert session expiry to UTC for login response");
+                error!(user_id = %loggable_user_id(user.id), session_id = %session_id_str, "Failed to convert session expiry to UTC for login response");
                 AppError::InternalServerErrorGeneric("Failed to process session expiry for login response.".to_string())
             })?;
 
@@ -390,7 +390,7 @@ pub async fn login_handler(
                 user: AuthResponse {
                     user_id: user.id,
                     username: user.username.clone(),
-                    email: user.email.clone(),
+                    email: Some(user.email.clone()),
                     role: format!("{:?}", user.role),
                     recovery_key: None, // Login response doesn't include recovery key
                     default_persona_id: user.default_persona_id,
@@ -615,12 +615,12 @@ pub async fn invalidate_session_handler(
 pub async fn me_handler(auth: UnifiedAuth) -> Result<Response, AppError> {
     info!("Me handler entered.");
     if let Some(user) = auth.user().cloned() {
-        info!(user_id = %user.id, "Returning current user data for /me endpoint.");
+        info!(user_id = %loggable_user_id(user.id), "Returning current user data for /me endpoint.");
         // Use AuthResponse for consistency
         let response = AuthResponse {
             user_id: user.id,
             username: user.username,
-            email: user.email,
+            email: Some(user.email),
             role: format!("{:?}", user.role),
             recovery_key: None, // /me endpoint doesn't return recovery key
             default_persona_id: user.default_persona_id,
@@ -676,7 +676,7 @@ pub async fn create_session_handler(
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             use diesel::prelude::*;
             // SQLite doesn't support RETURNING, so we insert and query back
@@ -747,7 +747,7 @@ pub async fn get_session_handler(
         let user_response = AuthResponse {
             user_id: user.id,
             username: user.username.clone(), // Assuming User struct has these fields and they are cloneable
-            email: user.email.clone(),
+            email: Some(user.email.clone()),
             role: format!("{:?}", user.role), // Assuming role is an enum
             recovery_key: None, // Session response doesn't typically include recovery key
             default_persona_id: user.default_persona_id,
@@ -803,7 +803,7 @@ pub async fn extend_session_handler(
                 })
         }
 
-        #[cfg(feature = "sqlite-backend")]
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
         {
             use diesel::prelude::*;
             // SQLite doesn't support RETURNING on UPDATE, so we update and query back
@@ -837,8 +837,7 @@ pub async fn extend_session_handler(
         .ok_or_else(|| AppError::BadRequest("Invalid session data: missing userId".to_string()))?;
 
     let user_id = DbId::parse_str(user_id)
-        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?
-        .into();
+        .map_err(|e| AppError::BadRequest(format!("Invalid user ID in session: {e}")))?;
 
     let session_response = SessionResponse {
         id: session.0,
@@ -900,7 +899,7 @@ pub async fn delete_user_sessions_handler(
                     if let Some(session_user_id) = json["userId"].as_str() {
                         // Check if it matches our target userId
                         if let Ok(parsed_id) = DbId::parse_str(session_user_id) {
-                            let parsed_id: crate::db::DbId = parsed_id.into();
+                            let parsed_id: crate::db::DbId = parsed_id;
                             if parsed_id == user_id {
                                 return Some(session_db_id); // Return renamed variable
                             }
@@ -1121,7 +1120,7 @@ pub async fn recover_password_handler(
 }
 
 // Desktop-specific handlers (feature-gated)
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(err)]
 pub async fn get_desktop_config_handler() -> Result<Response, AppError> {
     info!("Desktop config handler entered");
@@ -1144,7 +1143,7 @@ pub async fn get_desktop_config_handler() -> Result<Response, AppError> {
     Ok(Json(response).into_response())
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(skip(state, auth_session, session, payload), err)]
 pub async fn desktop_setup_handler(
     State(state): State<AppState>,
@@ -1265,7 +1264,7 @@ pub async fn desktop_setup_handler(
             user: AuthResponse {
                 user_id: user.id,
                 username: user.username,
-                email: user.email,
+                email: Some(user.email),
                 role: format!("{:?}", user.role),
                 recovery_key: None,
                 default_persona_id: user.default_persona_id,
@@ -1288,7 +1287,7 @@ pub async fn desktop_setup_handler(
     }
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(skip(state), err)]
 pub async fn desktop_auto_login_handler(
     State(state): State<AppState>,
@@ -1305,65 +1304,83 @@ pub async fn desktop_auto_login_handler(
 
     // Get or create default user
     let pool = state.pool.clone();
-    let user_id = match crate::desktop::get_default_user_id()? {
-        Some(id) => {
-            debug!(?id, "Using existing default user");
-            id
-        }
-        None => {
-            info!("No default user ID in config, checking if user exists in database");
-
-            // First try to find existing user by username
-            let pool_clone = pool.clone();
-            let existing_user_result = crate::db::with_conn(&pool_clone, move |conn| {
-                crate::auth::get_user_by_username(conn, "quickstart_user").map_err(AppError::from)
+    // Attempt to load user from config ID first
+    let user_from_config = if let Some(id) = crate::desktop::get_default_user_id()? {
+        debug!(?id, "Found default user ID in config, verifying existence");
+        let pool_clone = pool.clone();
+        crate::db::with_conn(&pool_clone, move |conn| {
+            crate::auth::get_user(conn, id).map(Some).or_else(|e| {
+                if matches!(e, AuthError::UserNotFound) {
+                    Ok(None)
+                } else {
+                    Err(AppError::from(e))
+                }
             })
-            .await;
+        })
+        .await?
+    } else {
+        None
+    };
 
-            let user_id = if let Ok(user) = existing_user_result {
-                info!(?user.id, "Found existing quickstart_user, saving to config");
-                crate::desktop::set_default_user_id(user.id)?;
-                user.id
-            } else {
-                info!("No quickstart_user found in database, creating new user");
-                // Create default user
-                let user_db = crate::auth::user_store::create_user_in_db(
-                    &pool,
-                    "quickstart_user",
-                    "default_password_12345",
-                    "quickstart@localhost",
-                    None,
-                )
-                .await
-                .map_err(|e| {
-                    error!("Failed to create default user: {}", e);
-                    AppError::InternalServerErrorGeneric(format!(
-                        "Failed to create default user: {}",
-                        e
-                    ))
-                })?;
+    let user = if let Some(u) = user_from_config {
+        u
+    } else {
+        info!("No valid default user ID in config, checking if 'quickstart_user' exists by name");
+        let pool_clone = pool.clone();
+        let existing_user_opt = crate::db::with_conn(&pool_clone, move |conn| {
+            crate::auth::get_user_by_username(conn, "quickstart_user")
+                .map(Some)
+                .or_else(|e| {
+                    if matches!(e, AuthError::UserNotFound) {
+                        Ok(None)
+                    } else {
+                        Err(AppError::from(e))
+                    }
+                })
+        })
+        .await?;
 
-                // Save user ID to config
-                let user_id = user_db.id;
-                crate::desktop::set_default_user_id(user_id)?;
-                info!(
-                    ?user_id,
-                    "Created and saved default user for Quick Start mode"
-                );
-                user_id
-            };
+        if let Some(u) = existing_user_opt {
+            info!(?u.id, "Found existing quickstart_user, updating config");
+            crate::desktop::set_default_user_id(u.id)?;
+            u
+        } else {
+            info!("No quickstart_user found in database, creating new user");
+            // Create default user
+            let user_db = crate::auth::user_store::create_user_in_db(
+                &pool,
+                "quickstart_user",
+                "default_password_12345",
+                "quickstart@localhost",
+                None,
+            )
+            .await
+            .map_err(|e| {
+                error!("Failed to create default user: {}", e);
+                AppError::InternalServerErrorGeneric(format!(
+                    "Failed to create default user: {}",
+                    e
+                ))
+            })?;
 
-            user_id
+            // Save user ID to config
+            let user_id = user_db.id;
+            crate::desktop::set_default_user_id(user_id)?;
+            info!(
+                ?user_id,
+                "Created and saved default user for Quick Start mode"
+            );
+
+            // Load the newly created user
+            let pool_clone = pool.clone();
+            crate::db::with_conn(&pool_clone, move |conn| {
+                crate::auth::get_user(conn, user_id).map_err(AppError::from)
+            })
+            .await?
         }
     };
 
-    debug!(?user_id, "Loading default user for auto-login");
-
-    // Load the user from database
-    let user = crate::db::with_conn(&pool, move |conn| {
-        crate::auth::get_user(conn, user_id).map_err(AppError::from)
-    })
-    .await?;
+    debug!(user_id = %loggable_user_id(user.id), "Using default user for auto-login");
 
     // For desktop mode, generate JWT tokens directly (no session-based auth needed)
     // Get the token service
@@ -1374,7 +1391,7 @@ pub async fn desktop_auto_login_handler(
 
     // Generate token pair for the user
     let token_pair = token_service.generate_token_pair(user.id).map_err(|e| {
-        error!(user_id = %user.id, error = ?e, "Failed to generate token pair for auto-login");
+        error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to generate token pair for auto-login");
         AppError::InternalServerErrorGeneric("Token generation failed".to_string())
     })?;
 
@@ -1382,14 +1399,14 @@ pub async fn desktop_auto_login_handler(
     // IMPORTANT: DEK must be persisted to decrypt data across sessions
     let dek_b64 = match crate::desktop::get_quick_start_dek()? {
         Some(existing_dek) => {
-            info!(user_id = %user.id, "Using existing persisted DEK for Quick Start mode");
+            info!(user_id = %loggable_user_id(user.id), "Using existing persisted DEK for Quick Start mode");
             existing_dek
         }
         None => {
-            info!(user_id = %user.id, "No persisted DEK found, generating new one");
+            info!(user_id = %loggable_user_id(user.id), "No persisted DEK found, generating new one");
             // Generate new DEK
             let dek_secret = crate::crypto::generate_dek().map_err(|e| {
-                error!(user_id = %user.id, error = ?e, "Failed to generate DEK for Quick Start mode");
+                error!(user_id = %loggable_user_id(user.id), error = ?e, "Failed to generate DEK for Quick Start mode");
                 AppError::InternalServerErrorGeneric("DEK generation failed".to_string())
             })?;
 
@@ -1399,7 +1416,7 @@ pub async fn desktop_auto_login_handler(
 
             // Persist the DEK for future auto-logins
             crate::desktop::set_quick_start_dek(new_dek_b64.clone())?;
-            info!(user_id = %user.id, "Generated and persisted new DEK for Quick Start mode");
+            info!(user_id = %loggable_user_id(user.id), "Generated and persisted new DEK for Quick Start mode");
 
             new_dek_b64
         }
@@ -1413,7 +1430,7 @@ pub async fn desktop_auto_login_handler(
         user: AuthResponse {
             user_id: user.id,
             username: user.username.clone(),
-            email: user.email.clone(),
+            email: Some(user.email.clone()),
             role: format!("{:?}", user.role),
             recovery_key: None,
             default_persona_id: user.default_persona_id,
@@ -1421,11 +1438,11 @@ pub async fn desktop_auto_login_handler(
         dek: Some(dek_b64),
     };
 
-    info!(user_id = %user.id, "Auto-login JWT tokens generated successfully with DEK");
+    info!(user_id = %loggable_user_id(user.id), "Auto-login JWT tokens generated successfully with DEK");
     Ok((StatusCode::OK, Json(response)).into_response())
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(all(feature = "desktop", not(feature = "postgres-backend")))]
 #[instrument(skip(state, auth_session, payload), err)]
 pub async fn desktop_upgrade_account_handler(
     State(state): State<AppState>,
@@ -1582,7 +1599,7 @@ pub async fn token_login_handler(
                 user: AuthResponse {
                     user_id: user.id,
                     username: user.username,
-                    email: user.email,
+                    email: Some(user.email),
                     role: format!("{:?}", user.role),
                     recovery_key: None,
                     default_persona_id: user.default_persona_id,

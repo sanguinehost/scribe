@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use tracing::{debug, warn};
 
 use crate::errors::{AppError, Result};
-use crate::services::gemini_token_client::GeminiTokenClient;
+use crate::services::token_client::TokenClient;
 use crate::services::tokenizer_service::{TokenEstimate, TokenizerService};
 
 /// `HybridTokenCounter` combines local tokenization with API-based counting
@@ -15,8 +15,8 @@ use crate::services::tokenizer_service::{TokenEstimate, TokenizerService};
 pub struct HybridTokenCounter {
     /// Local tokenizer for offline estimation
     tokenizer: TokenizerService,
-    /// Gemini API client for online verification (optional)
-    api_client: Option<GeminiTokenClient>,
+    /// AI provider API client for online verification (optional)
+    api_client: Option<TokenClient>,
     /// Default model to use for token counting
     default_model: String,
 }
@@ -39,7 +39,7 @@ impl HybridTokenCounter {
     #[must_use]
     pub fn new(
         tokenizer: TokenizerService,
-        api_client: Option<GeminiTokenClient>,
+        api_client: Option<TokenClient>,
         default_model: impl Into<String>,
     ) -> Self {
         Self {
@@ -65,10 +65,10 @@ impl HybridTokenCounter {
     ///
     /// Panics if the fallback tokenizer cannot be created from the embedded model file.
     /// This should only happen if the tokenizer model file is corrupted or missing.
-    pub fn new_api_only(api_client: GeminiTokenClient, default_model: impl Into<String>) -> Self {
+    pub fn new_api_only(api_client: TokenClient, default_model: impl Into<String>) -> Self {
         // Still need a tokenizer for fallback
         let tokenizer = TokenizerService::new(
-            "/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model",
+            "/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json",
         )
         .expect("Failed to create tokenizer for fallback");
 
@@ -401,7 +401,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn get_test_model_path() -> PathBuf {
-        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/gemma.model")
+        PathBuf::from("/home/socol/Workspace/scribe/backend/resources/tokenizers/tokenizer.json")
     }
 
     #[test]
@@ -523,7 +523,7 @@ mod tests {
         let api_key = api_key_result.unwrap();
 
         let model_name = "gemini-2.5-flash";
-        let client = GeminiTokenClient::new(api_key.clone());
+        let client = TokenClient::new(api_key.clone());
         let model_path = get_test_model_path();
         let tokenizer = TokenizerService::new(model_path).expect("Failed to create tokenizer");
         let counter = HybridTokenCounter::new(tokenizer, Some(client), model_name);

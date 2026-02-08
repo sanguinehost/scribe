@@ -258,7 +258,7 @@ mod credit_flow_tests {
             &session_key,
             "POST",
             &format!("/api/chat/{}/generate", character.id),
-            Some(payload),
+            Some(scribe_backend::db::Json(payload)),
         )
         .await
         .expect("Failed to execute request");
@@ -366,7 +366,7 @@ mod credit_flow_tests {
             &session_key,
             "POST",
             &format!("/api/chat/{}/generate", character.id),
-            Some(payload),
+            Some(scribe_backend::db::Json(payload)),
         )
         .await
         .expect("Failed to execute request");

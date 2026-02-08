@@ -73,25 +73,25 @@ mod subscription_lifecycle_edge_cases_tests {
             let subscription_id = Uuid::new_v4();
             let expected_period_end = Utc::now() + Duration::days(25); // Save this before moving
             let subscription = NewSubscription {
-                id: subscription_id,
-                user_id,
+                id: subscription_id.into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test_reactivate".to_string()),
                 paddle_subscription_id: Some("sub_test_reactivate".to_string()),
                 plan_type: "basic".to_string(),
                 status: "active".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: expected_period_end,
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: expected_period_end.into(),
                 cancel_at_period_end: Some(true), // Set to cancel at period end
                 trial_end: None,
                 credits_allocated_this_period: Some(true),
-                last_credit_grant: Some(Utc::now() - Duration::days(5)),
+                last_credit_grant: Some((Utc::now() - Duration::days(5)).into()),
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
-                first_payment_date: Some(Utc::now() - Duration::days(30)),
+                first_payment_date: Some((Utc::now() - Duration::days(30)).into()),
                 has_ever_paid: Some(true),
-                cancellation_date: Some(Utc::now() - Duration::hours(2)), // Cancelled 2 hours ago
+                cancellation_date: Some((Utc::now() - Duration::hours(2)).into()), // Cancelled 2 hours ago
                 trial_start_date: None,
-                last_payment_date: Some(Utc::now() - Duration::days(5)),
+                last_payment_date: Some((Utc::now() - Duration::days(5)).into()),
                 grace_period_end: None,
                 scheduled_plan_change: None,
                 scheduled_change_date: None,
@@ -173,7 +173,8 @@ mod subscription_lifecycle_edge_cases_tests {
                 "cancellation_date should be cleared after reactivation"
             );
             assert_eq!(
-                reactivated_sub.current_period_end, expected_period_end,
+                reactivated_sub.current_period_end,
+                expected_period_end.into(),
                 "current_period_end should remain unchanged"
             );
 
@@ -193,25 +194,25 @@ mod subscription_lifecycle_edge_cases_tests {
             // Create an active subscription
             let subscription_id = Uuid::new_v4();
             let subscription = NewSubscription {
-                id: subscription_id,
-                user_id,
+                id: subscription_id.into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test_toggle".to_string()),
                 paddle_subscription_id: Some("sub_test_toggle".to_string()),
                 plan_type: "premium".to_string(),
                 status: "active".to_string(),
-                current_period_start: Utc::now() - Duration::days(10),
-                current_period_end: Utc::now() + Duration::days(20),
+                current_period_start: (Utc::now() - Duration::days(10)).into(),
+                current_period_end: (Utc::now() + Duration::days(20)).into(),
                 cancel_at_period_end: Some(false), // Not cancelled
                 trial_end: None,
                 credits_allocated_this_period: Some(true),
-                last_credit_grant: Some(Utc::now() - Duration::days(10)),
+                last_credit_grant: Some((Utc::now() - Duration::days(10)).into()),
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
-                first_payment_date: Some(Utc::now() - Duration::days(60)),
+                first_payment_date: Some((Utc::now() - Duration::days(60)).into()),
                 has_ever_paid: Some(true),
                 cancellation_date: None,
                 trial_start_date: None,
-                last_payment_date: Some(Utc::now() - Duration::days(10)),
+                last_payment_date: Some((Utc::now() - Duration::days(10)).into()),
                 grace_period_end: None,
                 scheduled_plan_change: None,
                 scheduled_change_date: None,

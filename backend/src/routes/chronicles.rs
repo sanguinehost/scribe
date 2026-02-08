@@ -337,7 +337,7 @@ async fn create_event(
     // Also decrypt keywords if encrypted
     if event.has_encrypted_keywords() {
         let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-        event.keywords = crate::db::DbStringArray::from_strings(decrypted_keywords);
+        event.keywords = Some(crate::db::DbStringArray::from_strings(decrypted_keywords));
     }
 
     info!("Successfully created event {}", event.id);
@@ -377,7 +377,7 @@ async fn list_events(
         // Also decrypt keywords if encrypted
         if event.has_encrypted_keywords() {
             let decrypted_keywords = event.get_decrypted_keywords(&session_dek.0)?;
-            event.keywords = crate::db::DbStringArray::from_strings(decrypted_keywords);
+            event.keywords = Some(crate::db::DbStringArray::from_strings(decrypted_keywords));
         }
     }
 
@@ -725,25 +725,23 @@ async fn get_chat_messages(
     {
         if first_assistant_msg.current_variant_index > 0 {
             // Get character data to access alternate greetings
-            if let Ok(character) = get_character_for_session(state, chat_session_id, user_id).await
+            if let Ok(Some(character)) =
+                get_character_for_session(state, chat_session_id, user_id).await
             {
-                if let Some(character) = character {
-                    let variant_index = (first_assistant_msg.current_variant_index - 1) as usize;
-                    if let Some(alternate_greetings) = &character.alternate_greetings.0 {
-                        if let Some(Some(alternate_greeting)) =
-                            alternate_greetings.get(variant_index)
-                        {
-                            // Replace the message content with the selected variant
-                            // For now, we'll store it as plaintext - in a real implementation,
-                            // we might want to encrypt it with the session DEK
-                            first_assistant_msg.content = alternate_greeting.clone().into_bytes();
-                            first_assistant_msg.content_nonce = None; // Clear nonce since it's plaintext
+                let variant_index = (first_assistant_msg.current_variant_index - 1) as usize;
+                if let Some(alternate_greetings_db) = &character.alternate_greetings {
+                    let alternate_greetings = &alternate_greetings_db.0;
+                    if let Some(Some(alternate_greeting)) = alternate_greetings.get(variant_index) {
+                        // Replace the message content with the selected variant
+                        // For now, we'll store it as plaintext - in a real implementation,
+                        // we might want to encrypt it with the session DEK
+                        first_assistant_msg.content = alternate_greeting.clone().into_bytes();
+                        first_assistant_msg.content_nonce = None; // Clear nonce since it's plaintext
 
-                            info!(
-                                "Applied variant {} to first assistant message for session {}",
-                                first_assistant_msg.current_variant_index, chat_session_id
-                            );
-                        }
+                        info!(
+                            "Applied variant {} to first assistant message for session {}",
+                            first_assistant_msg.current_variant_index, chat_session_id
+                        );
                     }
                 }
             }

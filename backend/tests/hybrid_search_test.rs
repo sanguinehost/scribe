@@ -1,8 +1,7 @@
 #![cfg(feature = "postgres-backend")]
 use scribe_backend::config::Config;
-use scribe_backend::vector_db::qdrant_client::{
-    Kind, PointId, QdrantClientService, QdrantClientServiceTrait, Value,
-};
+use scribe_backend::vector_db::qdrant_client::{Kind, PointId, QdrantClientService, Value};
+use scribe_backend::vector_db::QdrantClientServiceTrait;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -165,14 +164,7 @@ fn create_test_point(
     PointStruct {
         id: Some(PointId::from(id.to_string())),
         payload,
-        vectors: Some(Vectors {
-            vectors_options: Some(VectorsOptions::Vector(Vector {
-                data: vector,
-                indices: None,
-                vector: None,
-                vectors_count: None,
-            })),
-        }),
+        vectors: Some(Vectors::from(vector)),
     }
 }
 

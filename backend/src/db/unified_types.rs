@@ -30,8 +30,7 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use diesel::deserialize::{self, FromSql};
 #[cfg(feature = "sqlite-backend")]
-use diesel::serialize::IsNull;
-use diesel::serialize::{self, Output, ToSql};
+use diesel::serialize::{self, IsNull, Output, ToSql};
 #[cfg(feature = "sqlite-backend")]
 use diesel::sql_types::Timestamp;
 use diesel::sql_types::{BigInt, Nullable, Numeric, Text};
@@ -66,10 +65,10 @@ use uuid::Uuid;
 /// let uuid: &Uuid = &id;  // Deref to Uuid
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = PgUuid))]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Text))]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = PgUuid))]
+#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Text))]
 #[repr(transparent)]
+#[serde(transparent)]
 pub struct DbId(Uuid);
 
 impl DbId {
@@ -190,9 +189,12 @@ impl FromSql<PgUuid, Pg> for DbId {
 }
 
 #[cfg(feature = "postgres-backend")]
-impl ToSql<PgUuid, Pg> for DbId {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <Uuid as ToSql<PgUuid, Pg>>::to_sql(&self.0, out)
+impl diesel::serialize::ToSql<PgUuid, Pg> for DbId {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        <Uuid as diesel::serialize::ToSql<PgUuid, Pg>>::to_sql(&self.0, out)
     }
 }
 
@@ -214,124 +216,45 @@ impl ToSql<Text, Sqlite> for DbId {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
-impl ToSql<Nullable<Text>, Sqlite> for DbId {
+// Nullable<Text> impls removed to rely on blanket impls for Option<T>
+
+// Text SQL type support for SQLite (already present)
+
+// Uuid SQL type support for SQLite (compatibility with Postgres schema)
+#[cfg(all(feature = "sqlite-backend", feature = "postgres-backend"))]
+impl FromSql<diesel::sql_types::Uuid, Sqlite> for DbId {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        // SQLite stores UUIDs as Text (or Blob, but we use Text)
+        // Check if we can just delegate to Text parsing logic
+        // But the input bytes depend on how it was stored.
+        // If stored as Text, bytes should be text.
+        let text = <String as FromSql<diesel::sql_types::Text, Sqlite>>::from_sql(bytes)?;
+        let db_id = DbId::parse_str(&text)
+            .map_err(|e| format!("Failed to parse UUID from TEXT (via Uuid type): {}", e))?;
+        Ok(db_id)
+    }
+}
+
+#[cfg(all(feature = "sqlite-backend", feature = "postgres-backend"))]
+impl ToSql<diesel::sql_types::Uuid, Sqlite> for DbId {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.to_string());
         Ok(IsNull::No)
     }
 }
 
-// Nullable<Text> support for SQLite
-#[cfg(feature = "sqlite-backend")]
-impl FromSql<Nullable<Text>, Sqlite> for DbId {
-    fn from_sql(
-        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        let sqlite_uuid = <SqliteUuid as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        Ok(Self(sqlite_uuid.0))
-    }
-}
-
-// Expression trait implementation for DbId to enable it in WHERE clauses
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::Expression for DbId {
-    type SqlType = PgUuid;
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::Expression for DbId {
-    type SqlType = Text;
-}
-
-// Implement ValidGrouping to enable DbId in GROUP BY and other aggregation contexts
-impl<GB> diesel::expression::ValidGrouping<GB> for DbId {
-    type IsAggregate = diesel::expression::is_aggregate::No;
-}
-
-// Implement QueryId for query caching
-impl diesel::query_builder::QueryId for DbId {
-    type QueryId = Self;
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
+// Nullable<Uuid> impls removed to rely on blanket impls for Option<T>
 
 // Implement AppearsOnTable for all tables (allows DbId to be used in any query context)
-impl<QS> diesel::expression::AppearsOnTable<QS> for DbId where Self: diesel::Expression {}
+// impl<QS> diesel::expression::AppearsOnTable<QS> for DbId where Self: diesel::Expression {}
 
 // Implement QueryFragment to enable SQL generation
-#[cfg(feature = "postgres-backend")]
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbId {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
-    ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<PgUuid, _>(&self.0)?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbId {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
-    ) -> diesel::QueryResult<()> {
-        pass.unsafe_to_cache_prepared();
-        pass.push_sql("'");
-        pass.push_sql(&self.to_string());
-        pass.push_sql("'");
-        Ok(())
-    }
-}
 
 // Note: AsExpression<SqlType> is automatically implemented by Diesel via blanket impl
 // However, for Nullable<SqlType>, we need manual implementations since SqlType != Nullable<SqlType>
 
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>> for DbId {
-    type Expression = <Option<uuid::Uuid> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<PgUuid>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<uuid::Uuid> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<PgUuid>,
-        >>::as_expression(Some(self.0))
-    }
-}
-
-#[cfg(feature = "postgres-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<PgUuid>> for &'a DbId {
-    type Expression = <Option<&'a uuid::Uuid> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<PgUuid>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<&uuid::Uuid> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<PgUuid>,
-        >>::as_expression(Some(&self.0))
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for DbId {
-    type Expression = <Option<String> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Text>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<String> as diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>>>::as_expression(Some(self.to_string()))
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for &'a DbId {
-    type Expression = <Option<String> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Text>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<String> as diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>>>::as_expression(Some(self.to_string()))
-    }
-}
-
-// ============================================================================
 // DbTimestamp - Unified DateTime Type
 // ============================================================================
 
@@ -340,9 +263,10 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Text>> for
 /// Stores UTC timestamps in both PostgreSQL (TIMESTAMPTZ) and SQLite (INTEGER as Unix timestamp).
 /// Provides transparent access to the underlying `chrono::DateTime<Utc>` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Timestamptz))]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Timestamp))]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Timestamptz))]
+#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Timestamp))]
 #[repr(transparent)]
+#[serde(transparent)]
 pub struct DbTimestamp(DateTime<Utc>);
 
 impl DbTimestamp {
@@ -397,112 +321,6 @@ impl From<DbTimestamp> for DateTime<Utc> {
 impl std::fmt::Display for DbTimestamp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.to_rfc3339())
-    }
-}
-
-// Expression trait implementation for DbTimestamp
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::Expression for DbTimestamp {
-    type SqlType = Timestamptz;
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::Expression for DbTimestamp {
-    type SqlType = Timestamp;
-}
-
-// Implement ValidGrouping for DbTimestamp
-impl<GB> diesel::expression::ValidGrouping<GB> for DbTimestamp {
-    type IsAggregate = diesel::expression::is_aggregate::No;
-}
-
-// Implement QueryId for DbTimestamp
-impl diesel::query_builder::QueryId for DbTimestamp {
-    type QueryId = Self;
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
-
-// Implement AppearsOnTable for DbTimestamp
-impl<QS> diesel::expression::AppearsOnTable<QS> for DbTimestamp where Self: diesel::Expression {}
-
-// Implement QueryFragment for DbTimestamp
-#[cfg(feature = "postgres-backend")]
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbTimestamp {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
-    ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<Timestamptz, _>(&self.0)?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbTimestamp {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
-    ) -> diesel::QueryResult<()> {
-        pass.unsafe_to_cache_prepared();
-        pass.push_sql("'");
-        pass.push_sql(&self.0.to_rfc3339());
-        pass.push_sql("'");
-        Ok(())
-    }
-}
-
-// AsExpression implementations for Nullable types
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamptz>> for DbTimestamp {
-    type Expression = <Option<DateTime<Utc>> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Timestamptz>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<DateTime<Utc>> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<Timestamptz>,
-        >>::as_expression(Some(self.0))
-    }
-}
-
-#[cfg(feature = "postgres-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamptz>>
-    for &'a DbTimestamp
-{
-    type Expression = <Option<&'a DateTime<Utc>> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Timestamptz>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<&'a DateTime<Utc>> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<Timestamptz>,
-        >>::as_expression(Some(&self.0))
-    }
-}
-
-// SQLite AsExpression<Nullable<Timestamp>> implementations using NaiveDateTime delegation
-// Diesel's chrono feature for SQLite uses NaiveDateTime, not DateTime<Utc>
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamp>> for DbTimestamp {
-    type Expression = <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Timestamp>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<Timestamp>,
-        >>::as_expression(Some(self.0.naive_utc()))
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Timestamp>>
-    for &'a DbTimestamp
-{
-    type Expression = <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Timestamp>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<chrono::NaiveDateTime> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<Timestamp>,
-        >>::as_expression(Some(self.0.naive_utc()))
     }
 }
 
@@ -578,11 +396,34 @@ impl FromSql<Timestamptz, Pg> for DbTimestamp {
 }
 
 #[cfg(feature = "postgres-backend")]
-impl ToSql<Timestamptz, Pg> for DbTimestamp {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <DateTime<Utc> as ToSql<Timestamptz, Pg>>::to_sql(&self.0, out)
+impl diesel::serialize::ToSql<Timestamptz, Pg> for DbTimestamp {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        <DateTime<Utc> as diesel::serialize::ToSql<Timestamptz, Pg>>::to_sql(&self.0, out)
     }
 }
+
+#[cfg(all(feature = "sqlite-backend", feature = "postgres-backend"))]
+impl FromSql<diesel::sql_types::Timestamptz, Sqlite> for DbTimestamp {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        // Timestamptz in schema is often mapped to Sqlite Timestamp or Text
+        // We should reuse the Timestamp logic
+        <DbTimestamp as FromSql<diesel::sql_types::Timestamp, Sqlite>>::from_sql(bytes)
+    }
+}
+
+#[cfg(all(feature = "sqlite-backend", feature = "postgres-backend"))]
+impl ToSql<diesel::sql_types::Timestamptz, Sqlite> for DbTimestamp {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
+        <DbTimestamp as ToSql<diesel::sql_types::Timestamp, Sqlite>>::to_sql(self, out)
+    }
+}
+
+// Nullable<Timestamptz> impls removed to rely on blanket impls for Option<T>
 
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<BigInt, Sqlite> for DbTimestamp {
@@ -608,7 +449,13 @@ impl FromSql<Timestamp, Sqlite> for DbTimestamp {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes).map_err(|e| {
+            tracing::error!(
+                "DEBUG: DbTimestamp (Timestamp/String) failed to deserialize: {}",
+                e
+            );
+            e
+        })?;
 
         // Try ISO 8601 formats
         if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
@@ -645,14 +492,8 @@ impl ToSql<Timestamp, Sqlite> for DbTimestamp {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
-impl ToSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        // Serialize as ISO 8601 string for Timestamp type
-        out.set_value(self.0.to_rfc3339());
-        Ok(IsNull::No)
-    }
-}
+// Conflicting implementation removed (handled by AsExpression derive)
+// impl ToSql<Nullable<Timestamp>, Sqlite> for DbTimestamp ...
 
 // Nullable<Timestamp> support for SQLite
 #[cfg(feature = "sqlite-backend")]
@@ -660,7 +501,11 @@ impl FromSql<Nullable<Timestamp>, Sqlite> for DbTimestamp {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let text = <Option<String> as FromSql<Nullable<Text>, Sqlite>>::from_sql(bytes)?;
+        let text = text.ok_or_else(|| {
+            tracing::error!("DEBUG: DbTimestamp encountered NULL in a Nullable<Timestamp> column");
+            "Unexpected NULL value for non-optional DbTimestamp"
+        })?;
 
         // Try ISO 8601 formats
         if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
@@ -703,7 +548,13 @@ impl FromSql<Text, Sqlite> for DbTimestamp {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes).map_err(|e| {
+            tracing::error!(
+                "DEBUG: DbTimestamp (Text/String) failed to deserialize: {}",
+                e
+            );
+            e
+        })?;
 
         // Try ISO 8601 formats
         if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
@@ -730,14 +581,17 @@ impl FromSql<Text, Sqlite> for DbTimestamp {
         Err(format!("Invalid timestamp string: {}", text).into())
     }
 }
-
 // Nullable<Text> support for SQLite (used when DbTimestampType = Text)
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<Nullable<Text>, Sqlite> for DbTimestamp {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let text = <Option<String> as FromSql<Nullable<Text>, Sqlite>>::from_sql(bytes)?;
+        let text = text.ok_or_else(|| {
+            tracing::error!("DEBUG: DbTimestamp encountered NULL in a Nullable<Text> column");
+            "Unexpected NULL value for non-optional DbTimestamp (Text)"
+        })?;
 
         // Try ISO 8601 formats
         if let Ok(dt) = DateTime::parse_from_rfc3339(&text) {
@@ -764,6 +618,7 @@ impl FromSql<Nullable<Text>, Sqlite> for DbTimestamp {
         Err(format!("Invalid timestamp string: {}", text).into())
     }
 }
+
 // DbDecimal - Unified BigDecimal Type
 // ============================================================================
 
@@ -901,9 +756,22 @@ impl FromSql<Numeric, Pg> for DbDecimal {
 }
 
 #[cfg(feature = "postgres-backend")]
-impl ToSql<Numeric, Pg> for DbDecimal {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <BigDecimal as ToSql<Numeric, Pg>>::to_sql(&self.0, out)
+impl FromSql<diesel::sql_types::Nullable<Numeric>, Pg> for DbDecimal {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let bd = <BigDecimal as FromSql<Numeric, Pg>>::from_sql(bytes)?;
+        Ok(Self(bd))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl diesel::serialize::ToSql<Numeric, Pg> for DbDecimal {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        <BigDecimal as diesel::serialize::ToSql<Numeric, Pg>>::to_sql(&self.0, out)
     }
 }
 
@@ -1016,9 +884,9 @@ impl<'a> diesel::expression::AsExpression<diesel::sql_types::Integer> for &'a Db
 ///
 /// Stores binary data in both PostgreSQL (BYTEA) and SQLite (BLOB).
 /// Used for encrypted data, hashes, and other binary content.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Bytea))]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Binary))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Bytea))]
+#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = diesel::sql_types::Binary))]
 #[repr(transparent)]
 pub struct DbBlob(Vec<u8>);
 
@@ -1039,107 +907,6 @@ impl DbBlob {
     }
 }
 
-// Expression trait implementation for DbBlob
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::Expression for DbBlob {
-    type SqlType = Bytea;
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::Expression for DbBlob {
-    type SqlType = diesel::sql_types::Binary;
-}
-
-// Implement ValidGrouping for DbBlob
-impl<GB> diesel::expression::ValidGrouping<GB> for DbBlob {
-    type IsAggregate = diesel::expression::is_aggregate::No;
-}
-
-// Implement QueryId for DbBlob
-impl diesel::query_builder::QueryId for DbBlob {
-    type QueryId = Self;
-    const HAS_STATIC_QUERY_ID: bool = false;
-}
-
-// Implement AppearsOnTable for DbBlob
-impl<QS> diesel::expression::AppearsOnTable<QS> for DbBlob where Self: diesel::Expression {}
-
-// Implement QueryFragment for DbBlob
-#[cfg(feature = "postgres-backend")]
-impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbBlob {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
-    ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<Bytea, _>(&self.0)?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbBlob {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
-    ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<diesel::sql_types::Binary, _>(&self.0)?;
-        Ok(())
-    }
-}
-
-// AsExpression implementations for Nullable types
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<Bytea>> for DbBlob {
-    type Expression = <Option<Vec<u8>> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Bytea>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<Vec<u8>> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<Bytea>,
-        >>::as_expression(Some(self.0))
-    }
-}
-
-#[cfg(feature = "postgres-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<Bytea>> for &'a DbBlob {
-    type Expression = <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<Bytea>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<Bytea>,
-        >>::as_expression(Some(&self.0))
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Binary>>
-    for DbBlob
-{
-    type Expression = <Option<Vec<u8>> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<diesel::sql_types::Binary>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<Vec<u8>> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<diesel::sql_types::Binary>,
-        >>::as_expression(Some(self.0))
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<diesel::sql_types::Binary>>
-    for &'a DbBlob
-{
-    type Expression = <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<diesel::sql_types::Binary>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<&'a Vec<u8>> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<diesel::sql_types::Binary>,
-        >>::as_expression(Some(&self.0))
-    }
-}
-
 impl Deref for DbBlob {
     type Target = Vec<u8>;
 
@@ -1154,12 +921,6 @@ impl DerefMut for DbBlob {
     }
 }
 
-impl Default for DbBlob {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
-
 impl From<Vec<u8>> for DbBlob {
     fn from(bytes: Vec<u8>) -> Self {
         Self(bytes)
@@ -1171,6 +932,8 @@ impl From<DbBlob> for Vec<u8> {
         blob.0
     }
 }
+
+// Duplicate ToSql implementation removed
 
 impl DbType for DbBlob {
     type PgType = Vec<u8>;
@@ -1211,9 +974,12 @@ impl FromSql<Bytea, Pg> for DbBlob {
 }
 
 #[cfg(feature = "postgres-backend")]
-impl ToSql<Bytea, Pg> for DbBlob {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <Vec<u8> as ToSql<Bytea, Pg>>::to_sql(&self.0, out)
+impl diesel::serialize::ToSql<Bytea, Pg> for DbBlob {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        <Vec<u8> as diesel::serialize::ToSql<Bytea, Pg>>::to_sql(&self.0, out)
     }
 }
 
@@ -1222,7 +988,11 @@ impl FromSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let vec = <Vec<u8> as FromSql<diesel::sql_types::Binary, Sqlite>>::from_sql(bytes)?;
+        let vec = <Vec<u8> as FromSql<diesel::sql_types::Binary, Sqlite>>::from_sql(bytes)
+            .map_err(|e| {
+                tracing::error!("DEBUG: DbBlob (Vec<u8>) failed to deserialize: {}", e);
+                e
+            })?;
         Ok(Self(vec))
     }
 }
@@ -1236,43 +1006,39 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 
 // ============================================================================
 // DbStringArray - Unified String Array Type
-// ============================================================================
 
-/// Backend-agnostic optional string array
-///
-/// Stores arrays of optional strings in both PostgreSQL (TEXT[]) and SQLite (JSON array as TEXT).
-/// Used for tags, keywords, and other list-based string fields.
+/// Unified string array type
 ///
 /// # PostgreSQL Representation
-/// Native array type: `TEXT[]` with nullable elements
+/// Native `TEXT[]` (nullable elements)
 ///
 /// # SQLite Representation
 /// JSON array stored as TEXT: `["string1", "string2", null, "string3"]`
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Nullable<diesel::sql_types::Array<Nullable<Text>>>))]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = Nullable<Text>))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>))]
+#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = diesel::sql_types::Text))]
 #[repr(transparent)]
-pub struct DbStringArray(pub Option<Vec<Option<String>>>);
+pub struct DbStringArray(pub Vec<Option<String>>);
 
 impl DbStringArray {
     /// Create a new DbStringArray from the raw inner value
-    pub fn new(data: Option<Vec<Option<String>>>) -> Self {
+    pub fn new(data: Vec<Option<String>>) -> Self {
         Self(data)
     }
 
-    /// Create an empty DbStringArray (empty vector)
+    /// Create an empty DbStringArray (vec![])
     pub fn empty() -> Self {
-        Self(Some(Vec::new()))
+        Self(Vec::new())
     }
 
     /// Create from a vector of optional strings
     pub fn from_vec(vec: Vec<Option<String>>) -> Self {
-        Self(Some(vec))
+        Self(vec)
     }
 
     /// Create from a vector of strings (all non-null)
     pub fn from_strings(strings: Vec<String>) -> Self {
-        Self(Some(strings.into_iter().map(Some).collect()))
+        Self(strings.into_iter().map(Some).collect())
     }
 
     /// Create from a vector of strings (backwards compatibility alias for from_strings)
@@ -1280,55 +1046,41 @@ impl DbStringArray {
         Self::from_strings(strings)
     }
 
-    /// Get the inner optional vector
-    pub fn into_option(self) -> Option<Vec<Option<String>>> {
+    /// Get the inner vector
+    pub fn into_inner(self) -> Vec<Option<String>> {
         self.0
     }
 
-    /// Get a reference to the inner optional vector (for compatibility with old .as_ref() pattern)
-    pub fn as_ref(&self) -> Option<&Vec<Option<String>>> {
-        self.0.as_ref()
-    }
-
-    /// Get a direct reference to the inner Option (for pattern matching)
-    pub fn inner_ref(&self) -> &Option<Vec<Option<String>>> {
+    /// Get a direct reference to the inner vector (for pattern matching)
+    pub fn inner_ref(&self) -> &Vec<Option<String>> {
         &self.0
     }
 
-    /// Get as a slice (if present)
-    pub fn as_slice(&self) -> Option<&[Option<String>]> {
-        self.0.as_deref()
+    /// Get as a slice
+    pub fn as_slice(&self) -> &[Option<String>] {
+        &self.0
     }
 
-    /// Check if empty (None or empty vec)
+    /// Check if empty
     pub fn is_empty(&self) -> bool {
-        self.0.as_ref().map_or(true, |v| v.is_empty())
+        self.0.is_empty()
     }
 
-    /// Get length (0 if None)
+    /// Get length
     pub fn len(&self) -> usize {
-        self.0.as_ref().map_or(0, |v| v.len())
+        self.0.len()
     }
 
     /// Create from iterator
-    pub fn from_iter<I>(iter: I) -> Self
+    pub fn from_iter_opt<I>(iter: I) -> Self
     where
         I: IntoIterator<Item = Option<String>>,
     {
-        Self(Some(iter.into_iter().collect()))
+        Self(iter.into_iter().collect())
     }
 }
 
 // Expression trait implementation for DbStringArray
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::Expression for DbStringArray {
-    type SqlType = Nullable<diesel::sql_types::Array<Nullable<Text>>>;
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::Expression for DbStringArray {
-    type SqlType = Nullable<Text>;
-}
 
 // Implement ValidGrouping for DbStringArray
 impl<GB> diesel::expression::ValidGrouping<GB> for DbStringArray {
@@ -1342,7 +1094,6 @@ impl diesel::query_builder::QueryId for DbStringArray {
 }
 
 // Implement AppearsOnTable for DbStringArray
-impl<QS> diesel::expression::AppearsOnTable<QS> for DbStringArray where Self: diesel::Expression {}
 
 // Implement QueryFragment for DbStringArray
 #[cfg(feature = "postgres-backend")]
@@ -1351,7 +1102,7 @@ impl diesel::query_builder::QueryFragment<diesel::pg::Pg> for DbStringArray {
         &'b self,
         mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::pg::Pg>,
     ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<Nullable<diesel::sql_types::Array<Nullable<Text>>>, _>(&self.0)?;
+        pass.push_bind_param::<diesel::sql_types::Nullable<diesel::sql_types::Array<Nullable<Text>>>, _>(&self.0)?;
         Ok(())
     }
 }
@@ -1362,39 +1113,38 @@ impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbStringAr
         &'b self,
         mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
     ) -> diesel::QueryResult<()> {
-        let json_str = match &self.0 {
-            Some(vec) => serde_json::to_string(vec).unwrap_or_else(|_| "[]".to_string()),
-            None => "[]".to_string(),
-        };
-        // Use SQL literal since push_bind_param requires 'b lifetime for the value
+        let json_str = serde_json::to_string(&self.0).unwrap_or_else(|_| "[]".to_string());
         pass.push_sql("'");
-        pass.push_sql(&json_str.replace('\'', "''")); // Escape single quotes for SQL
+        pass.push_sql(&json_str.replace('\'', "''"));
         pass.push_sql("'");
         Ok(())
     }
 }
 
-impl Default for DbStringArray {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-
 impl From<Option<Vec<Option<String>>>> for DbStringArray {
     fn from(opt: Option<Vec<Option<String>>>) -> Self {
-        Self(opt)
+        Self(opt.unwrap_or_default())
     }
 }
 
-impl From<DbStringArray> for Option<Vec<Option<String>>> {
-    fn from(arr: DbStringArray) -> Self {
-        arr.0
+impl From<Option<Vec<String>>> for DbStringArray {
+    fn from(opt: Option<Vec<String>>) -> Self {
+        match opt {
+            Some(vec) => Self::from_strings(vec),
+            None => Self::empty(),
+        }
     }
 }
 
 impl From<Vec<Option<String>>> for DbStringArray {
     fn from(vec: Vec<Option<String>>) -> Self {
-        Self(Some(vec))
+        Self(vec)
+    }
+}
+
+impl From<DbStringArray> for Vec<Option<String>> {
+    fn from(arr: DbStringArray) -> Self {
+        arr.0
     }
 }
 
@@ -1405,15 +1155,15 @@ impl From<Vec<String>> for DbStringArray {
 }
 
 impl DbType for DbStringArray {
-    type PgType = Option<Vec<Option<String>>>;
-    type SqliteType = Option<String>; // JSON array as TEXT
+    type PgType = Vec<Option<String>>;
+    type SqliteType = String; // JSON array as TEXT
 
     #[cfg(feature = "postgres-backend")]
-    type PgSqlType = Nullable<diesel::sql_types::Array<Nullable<Text>>>;
+    type PgSqlType = diesel::sql_types::Array<Nullable<Text>>;
     #[cfg(not(feature = "postgres-backend"))]
     type PgSqlType = ();
 
-    type SqliteSqlType = Nullable<Text>;
+    type SqliteSqlType = Text;
 
     fn to_pg_type(&self) -> Self::PgType {
         self.0.clone()
@@ -1424,77 +1174,97 @@ impl DbType for DbStringArray {
     }
 
     fn to_sqlite_type(&self) -> Self::SqliteType {
-        // CRITICAL: Always return Some("[]") to prevent NULL writes to database
-        // Even if self.0 is None, we want to write "[]" not NULL
-        match &self.0 {
-            Some(vec) => Some(serde_json::to_string(vec).unwrap_or_else(|_| "[]".to_string())),
-            None => Some("[]".to_string()), // Return empty array JSON, not NULL
-        }
+        serde_json::to_string(&self.0).unwrap_or_else(|_| "[]".to_string())
     }
 
     fn from_sqlite_type(value: Self::SqliteType) -> Self {
-        match value {
-            None => Self(Some(Vec::new())), // Return empty array instead of None for NULL values
-            Some(json_str) => {
-                // Deserialize from JSON array
-                match serde_json::from_str::<Vec<Option<String>>>(&json_str) {
-                    Ok(vec) => Self(Some(vec)),
-                    Err(_) => {
-                        // Fallback: treat as empty array on parse error
-                        tracing::warn!(
-                            "Failed to parse DbStringArray from JSON, using empty array"
-                        );
-                        Self(Some(Vec::new())) // Return empty array instead of None on parse error
-                    }
-                }
+        match serde_json::from_str::<Vec<Option<String>>>(&value) {
+            Ok(vec) => Self(vec),
+            Err(_) => {
+                tracing::warn!("Failed to parse DbStringArray from JSON, using empty array");
+                Self(Vec::new())
             }
         }
     }
 }
 
-#[cfg(feature = "postgres-backend")]
-impl FromSql<Nullable<diesel::sql_types::Array<Nullable<Text>>>, Pg> for DbStringArray {
-    fn from_sql(
-        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        let opt_vec = <Option<Vec<Option<String>>> as FromSql<
-            Nullable<diesel::sql_types::Array<Nullable<Text>>>,
-            Pg,
-        >>::from_sql(bytes)?;
-        Ok(Self(opt_vec))
+impl From<DbStringArray> for Option<Vec<Option<String>>> {
+    fn from(arr: DbStringArray) -> Self {
+        Some(arr.0)
     }
 }
 
 #[cfg(feature = "postgres-backend")]
-impl ToSql<Nullable<diesel::sql_types::Array<Nullable<Text>>>, Pg> for DbStringArray {
-    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
-        <Option<Vec<Option<String>>> as ToSql<
-            Nullable<diesel::sql_types::Array<Nullable<Text>>>,
+impl FromSql<diesel::sql_types::Array<Nullable<Text>>, Pg> for DbStringArray {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let vec = <Vec<Option<String>> as FromSql<
+            diesel::sql_types::Array<Nullable<Text>>,
+            Pg,
+        >>::from_sql(bytes)?;
+        Ok(Self(vec))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Array<Nullable<Text>>>, Pg>
+    for DbStringArray
+{
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let opt_vec = <Option<Vec<Option<String>>> as FromSql<
+            diesel::sql_types::Nullable<diesel::sql_types::Array<Nullable<Text>>>,
+            Pg,
+        >>::from_sql(bytes)?;
+        Ok(Self(opt_vec.unwrap_or_default()))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl diesel::serialize::ToSql<diesel::sql_types::Array<Nullable<Text>>, Pg> for DbStringArray {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        <Vec<Option<String>> as diesel::serialize::ToSql<
+            diesel::sql_types::Array<Nullable<Text>>,
             Pg,
         >>::to_sql(&self.0, out)
     }
 }
 
 #[cfg(feature = "sqlite-backend")]
-impl FromSql<Nullable<Text>, Sqlite> for DbStringArray {
+impl FromSql<Text, Sqlite> for DbStringArray {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let opt_json = <Option<String> as FromSql<Nullable<Text>, Sqlite>>::from_sql(bytes)?;
-        Ok(Self::from_sqlite_type(opt_json))
+        let json = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        Ok(Self::from_sqlite_type(json))
+    }
+}
+#[cfg(feature = "sqlite-backend")]
+impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for DbStringArray {
+    fn from_sql(
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        match <Option<String> as FromSql<diesel::sql_types::Nullable<Text>, Sqlite>>::from_sql(
+            bytes,
+        )? {
+            Some(json) => Ok(Self::from_sqlite_type(json)),
+            None => Ok(Self::empty()),
+        }
     }
 }
 
 #[cfg(feature = "sqlite-backend")]
-impl ToSql<Nullable<Text>, Sqlite> for DbStringArray {
+impl ToSql<Text, Sqlite> for DbStringArray {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
-        match self.to_sqlite_type() {
-            Some(json_str) => {
-                out.set_value(json_str);
-                Ok(IsNull::No)
-            }
-            None => Ok(IsNull::Yes),
-        }
+        let json = serde_json::to_string(&self.0)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+        out.set_value(json);
+        Ok(IsNull::No)
     }
 }
 
@@ -1577,11 +1347,13 @@ mod tests {
 ///
 /// Stores 64-bit integers in both PostgreSQL (BIGINT) and SQLite (INTEGER).
 /// Provides transparent access to the underlying `i64` value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = BigInt))]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow), diesel(sql_type = diesel::sql_types::Integer))]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = BigInt))]
+#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = BigInt))]
 #[repr(transparent)]
+#[serde(transparent)]
 pub struct DbBigInt(pub i64);
 
 impl DbBigInt {
@@ -1591,12 +1363,6 @@ impl DbBigInt {
 
     pub fn into_inner(self) -> i64 {
         self.0
-    }
-}
-
-impl Default for DbBigInt {
-    fn default() -> Self {
-        Self(0)
     }
 }
 
@@ -1626,50 +1392,17 @@ impl From<DbBigInt> for i64 {
     }
 }
 
+impl std::ops::Add for DbBigInt {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
 impl std::fmt::Display for DbBigInt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-// Expression trait implementation for DbBigInt
-#[cfg(feature = "postgres-backend")]
-impl diesel::expression::Expression for DbBigInt {
-    type SqlType = BigInt;
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::query_builder::QueryFragment<diesel::sqlite::Sqlite> for DbBigInt {
-    fn walk_ast<'b>(
-        &'b self,
-        mut pass: diesel::query_builder::AstPass<'_, 'b, diesel::sqlite::Sqlite>,
-    ) -> diesel::QueryResult<()> {
-        pass.push_bind_param::<BigInt, _>(&self.0)?;
-        Ok(())
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::AsExpression<diesel::sql_types::Nullable<BigInt>> for DbBigInt {
-    type Expression = <Option<i64> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<BigInt>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<i64> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<BigInt>,
-        >>::as_expression(Some(self.0))
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl<'a> diesel::expression::AsExpression<diesel::sql_types::Nullable<BigInt>> for &'a DbBigInt {
-    type Expression = <Option<i64> as diesel::expression::AsExpression<
-        diesel::sql_types::Nullable<BigInt>,
-    >>::Expression;
-    fn as_expression(self) -> Self::Expression {
-        <Option<i64> as diesel::expression::AsExpression<
-            diesel::sql_types::Nullable<BigInt>,
-        >>::as_expression(Some(self.0))
     }
 }
 
@@ -1693,9 +1426,24 @@ impl diesel::deserialize::FromSql<BigInt, diesel::sqlite::Sqlite> for DbBigInt {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
-impl diesel::expression::Expression for DbBigInt {
-    type SqlType = BigInt;
+#[cfg(feature = "postgres-backend")]
+impl diesel::serialize::ToSql<BigInt, Pg> for DbBigInt {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        diesel::serialize::ToSql::<BigInt, Pg>::to_sql(&self.0, out)
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl diesel::deserialize::FromSql<BigInt, Pg> for DbBigInt {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> diesel::deserialize::Result<Self> {
+        let val = <i64 as diesel::deserialize::FromSql<BigInt, Pg>>::from_sql(bytes)?;
+        Ok(DbBigInt(val))
+    }
 }
 
 impl DbType for DbBigInt {

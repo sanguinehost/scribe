@@ -136,8 +136,12 @@ fn create_conversation_messages(user_id: DbId, session_id: DbId, count: usize) -
             content_nonce: Some(vec![1, 2, 3, 4]),
             created_at: Utc::now().into(),
             user_id,
-            prompt_tokens: Some(20),
-            completion_tokens: Some(if i % 2 == 0 { 0 } else { 30 }),
+            prompt_tokens: Some(scribe_backend::db::DbBigInt(20)),
+            completion_tokens: Some(scribe_backend::db::DbBigInt(if i % 2 == 0 {
+                0
+            } else {
+                30
+            })),
             raw_prompt_ciphertext: None,
             raw_prompt_nonce: None,
             model_name: "gemini-2.5-pro".to_string(),
@@ -255,12 +259,13 @@ mod agent_runner_conversation_tests {
             .process_narrative_event(
                 user_id,
                 chat_session_id,
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
-                None,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -313,8 +318,8 @@ mod agent_runner_conversation_tests {
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
                 user_id: user_id.into(),
-                prompt_tokens: Some(10),
-                completion_tokens: Some(0),
+                prompt_tokens: Some(scribe_backend::db::DbBigInt(10)),
+                completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
@@ -333,8 +338,8 @@ mod agent_runner_conversation_tests {
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
                 user_id: user_id.into(),
-                prompt_tokens: Some(8),
-                completion_tokens: Some(0),
+                prompt_tokens: Some(scribe_backend::db::DbBigInt(8)),
+                completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
@@ -356,8 +361,8 @@ mod agent_runner_conversation_tests {
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
                 user_id: user_id.into(),
-                prompt_tokens: Some(15),
-                completion_tokens: Some(12),
+                prompt_tokens: Some(scribe_backend::db::DbBigInt(15)),
+                completion_tokens: Some(scribe_backend::db::DbBigInt(12)),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
@@ -409,12 +414,13 @@ mod agent_runner_conversation_tests {
             .process_narrative_event(
                 user_id,
                 chat_session_id.into(),
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
-                None,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -460,8 +466,8 @@ mod agent_runner_conversation_tests {
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
                 user_id: user_id.into(),
-                prompt_tokens: Some(15),
-                completion_tokens: Some(0),
+                prompt_tokens: Some(scribe_backend::db::DbBigInt(15)),
+                completion_tokens: Some(scribe_backend::db::DbBigInt(0)),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
@@ -480,8 +486,8 @@ mod agent_runner_conversation_tests {
                 content_nonce: Some(vec![1, 2, 3, 4]),
                 created_at: Utc::now().into(),
                 user_id: user_id.into(),
-                prompt_tokens: Some(18),
-                completion_tokens: Some(20),
+                prompt_tokens: Some(scribe_backend::db::DbBigInt(18)),
+                completion_tokens: Some(scribe_backend::db::DbBigInt(20)),
                 raw_prompt_ciphertext: None,
                 raw_prompt_nonce: None,
                 model_name: "gemini-2.5-pro".to_string(),
@@ -533,12 +539,13 @@ mod agent_runner_conversation_tests {
             .process_narrative_event(
                 user_id,
                 chat_session_id.into(),
-                None,
+                None, // chronicle_id
+                None, // message_variant_id
                 &messages,
                 &session_dek,
-                None,
-                None,
-                None,
+                None, // persona_context
+                None, // game_state
+                None, // character_context
             )
             .await;
 
@@ -666,11 +673,12 @@ mod agent_runner_duplicate_prevention_tests {
                 user_id,
                 first_session_id.into(),
                 Some(chronicle_id),
+                None, // message_variant_id
                 &messages,
                 &session_dek,
                 None, // persona_context
-                None,
-                None,
+                None, // game_state
+                None, // character_context
             )
             .await
             .expect("First narrative processing should succeed");
@@ -725,11 +733,12 @@ mod agent_runner_duplicate_prevention_tests {
                 user_id,
                 second_session_id.into(),
                 Some(chronicle_id),
+                None, // message_variant_id
                 &similar_messages,
                 &session_dek,
                 None, // persona_context
-                None,
-                None,
+                None, // game_state
+                None, // character_context
             )
             .await
             .expect("Second narrative processing should succeed");

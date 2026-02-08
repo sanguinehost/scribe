@@ -1,13 +1,16 @@
 use super::metadata::{ChatMessageChunkMetadata, LorebookChunkMetadata};
-use super::utils::{extract_string_from_payload, extract_uuid_from_payload};
 use crate::auth::SessionDek;
+#[cfg(feature = "remote-vector")]
 use crate::errors::AppError;
+#[cfg(feature = "remote-vector")]
 use crate::llm::EmbeddingClient;
-use crate::vector_db::qdrant_client::QdrantClientServiceTrait;
-use qdrant_client::qdrant::Value as QdrantValue;
-use std::collections::HashMap;
+#[cfg(feature = "remote-vector")]
+use crate::vector_db::QdrantClientServiceTrait;
+#[cfg(feature = "remote-vector")]
 use std::sync::Arc;
-use tracing::{info, instrument, warn};
+use tracing::warn;
+#[cfg(feature = "remote-vector")]
+use tracing::{info, instrument};
 
 /// Helper function to decrypt lorebook content (encryption required)
 #[allow(deprecated)]
@@ -16,7 +19,7 @@ pub fn decrypt_lorebook_content(
     session_dek: Option<&SessionDek>,
 ) -> String {
     // Try to decrypt if we have encrypted content
-    if let (Some(ref encrypted_chunk), Some(ref nonce)) = (
+    if let (Some(encrypted_chunk), Some(nonce)) = (
         metadata.encrypted_chunk_text.as_ref(),
         metadata.chunk_text_nonce.as_ref(),
     ) {
@@ -53,7 +56,7 @@ pub fn decrypt_lorebook_title(
     session_dek: Option<&SessionDek>,
 ) -> String {
     // Try to decrypt if we have encrypted title
-    if let (Some(ref encrypted_title), Some(ref nonce)) = (
+    if let (Some(encrypted_title), Some(nonce)) = (
         metadata.encrypted_title.as_ref(),
         metadata.title_nonce.as_ref(),
     ) {
@@ -97,12 +100,12 @@ pub fn decrypt_lorebook_title(
 
 /// Helper function to decrypt chat message content (encryption required)
 #[allow(deprecated)]
-pub(super) fn decrypt_chat_content(
+pub fn decrypt_chat_content(
     metadata: &ChatMessageChunkMetadata,
     session_dek: Option<&SessionDek>,
 ) -> String {
     // Try to decrypt if we have encrypted content
-    if let (Some(ref encrypted_text), Some(ref nonce)) = (
+    if let (Some(encrypted_text), Some(nonce)) = (
         metadata.encrypted_text.as_ref(),
         metadata.text_nonce.as_ref(),
     ) {
@@ -132,45 +135,8 @@ pub(super) fn decrypt_chat_content(
     "[MISSING ENCRYPTION - SECURITY VIOLATION]".to_string()
 }
 
-#[derive(Debug, Clone)]
-pub struct ChronicleEventMetadata {
-    pub event_id: crate::db::DbId,
-    pub event_type: String,
-    pub chronicle_id: crate::db::DbId,
-    pub user_id: crate::db::DbId, // SECURITY: Added user_id for access control
-    pub created_at: crate::DbTimestamp,
-}
-
-impl TryFrom<HashMap<String, QdrantValue>> for ChronicleEventMetadata {
-    type Error = AppError;
-
-    fn try_from(payload: HashMap<String, QdrantValue>) -> Result<Self, Self::Error> {
-        let event_id = extract_uuid_from_payload(&payload, "event_id", "ChronicleEventMetadata")?;
-        let event_type =
-            extract_string_from_payload(&payload, "event_type", "ChronicleEventMetadata")?;
-        let chronicle_id =
-            extract_uuid_from_payload(&payload, "chronicle_id", "ChronicleEventMetadata")?;
-        let user_id = extract_uuid_from_payload(&payload, "user_id", "ChronicleEventMetadata")?;
-        let created_at_str =
-            extract_string_from_payload(&payload, "created_at", "ChronicleEventMetadata")?;
-
-        let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
-            .map_err(|e| {
-                AppError::SerializationError(format!(
-                    "Failed to parse 'created_at' in ChronicleEventMetadata: {e}"
-                ))
-            })
-            .map(|dt| dt.with_timezone(&chrono::Utc))?;
-
-        Ok(Self {
-            event_id,
-            event_type,
-            chronicle_id,
-            user_id,
-            created_at: created_at.into(),
-        })
-    }
-}
+// ChronicleEventMetadata moved to metadata.rs
+use super::metadata::ChronicleEventMetadata;
 
 #[derive(Debug, Clone)]
 pub enum RetrievedMetadata {
@@ -192,6 +158,7 @@ pub struct RetrievedChunk {
 #[allow(dead_code)]
 #[instrument(skip(qdrant_service, embedding_client), err)]
 #[allow(deprecated)]
+#[cfg(feature = "remote-vector")]
 async fn retrieve_relevant_chunks_standalone(
     qdrant_service: Arc<dyn QdrantClientServiceTrait>,
     embedding_client: Arc<dyn EmbeddingClient>,

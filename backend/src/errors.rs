@@ -16,7 +16,6 @@ use bcrypt; // Use bcrypt directly
 #[cfg(feature = "postgres-backend")]
 use deadpool_diesel::PoolError as DeadpoolDieselPoolError;
 use diesel::result::Error as DieselError;
-use std::time::Duration; // Add this import
 
 // AppError should automatically be Send + Sync if all its fields are.
 
@@ -170,7 +169,9 @@ pub enum AppError {
 
     // --- External Service Errors ---
     #[error("LLM API error: {0}")]
-    GeminiError(String), // Use String instead of GenAIError
+    LlmApiError(String),
+    #[error("AI API error: {0}")]
+    AiError(String),
 
     #[error("Image Processing Error: {0}")]
     ImageProcessingError(String), // Use String instead of ImageError
@@ -206,11 +207,11 @@ pub enum AppError {
     #[error("Internal Server Error: Password processing error.")]
     PasswordProcessingError, // New specific variant
 
-    #[error("LLM Generation Error: {0}")] // Maybe wrap specific GenAIError later
-    GenerationError(String), // Using String for now if GenAIError covers multiple cases
+    #[error("LLM Generation Error: {0}")]
+    GenerationError(String),
 
-    #[error("LLM Embedding Error: {0}")] // Maybe wrap specific GenAIError later
-    EmbeddingError(String), // Using String for now
+    #[error("LLM Embedding Error: {0}")]
+    EmbeddingError(String),
 
     #[error("Session Error: {0}")]
     Session(String), // Use String instead of tower_sessions::session::Error
@@ -395,11 +396,12 @@ impl AppError {
             Self::PasswordHashingFailed(_) => "PASSWORD_HASHING_FAILED",
 
             // AI/LLM Errors
-            Self::GeminiError(_) => "GEMINI_ERROR",
+            Self::LlmApiError(_) => "LLM_API_ERROR",
             Self::LlmClientError(_) => "LLM_CLIENT_ERROR",
             Self::GenerationError(_) => "GENERATION_ERROR",
             Self::EmbeddingError(_) => "EMBEDDING_ERROR",
             Self::AiServiceError(_) => "AI_SERVICE_ERROR",
+            Self::AiError(_) => "AI_ERROR",
 
             // Gateway/External Service Errors
             Self::BadGateway(_) => "BAD_GATEWAY",
@@ -578,6 +580,7 @@ impl AppError {
                 | Self::GenerationError(_)
                 | Self::EmbeddingError(_)
                 | Self::VectorDbError(_)
+                | Self::AiError(_)
         )
     }
 
@@ -776,6 +779,11 @@ impl AppError {
                 format!("Vector DB error: {e}"),
                 "Failed to process embeddings".to_string(),
             ),
+            Self::AiError(e) => (
+                StatusCode::BAD_GATEWAY,
+                format!("AI API error: {e}"),
+                "AI service request failed".to_string(),
+            ),
             _ => unreachable!("Non-gateway error passed to handle_gateway_error"),
         };
 
@@ -872,7 +880,10 @@ impl AppError {
     const fn is_ai_service_error(error: &Self) -> bool {
         matches!(
             error,
-            Self::GeminiError(_) | Self::LlmClientError(_) | Self::AiServiceError(_)
+            Self::LlmClientError(_)
+                | Self::AiServiceError(_)
+                | Self::LlmApiError(_)
+                | Self::AiError(_)
         )
     }
 
@@ -951,7 +962,14 @@ impl AppError {
         };
 
         error!("{}", log_msg);
-        (StatusCode::INTERNAL_SERVER_ERROR, user_msg.to_string())
+
+        let final_user_msg = if cfg!(feature = "desktop") {
+            format!("{}: {}", user_msg, log_msg)
+        } else {
+            user_msg.to_string()
+        };
+
+        (StatusCode::INTERNAL_SERVER_ERROR, final_user_msg)
     }
 
     fn handle_crypto_error(app_error: Self) -> (StatusCode, String) {
@@ -980,7 +998,7 @@ impl AppError {
 
     fn handle_ai_service_error(app_error: Self) -> (StatusCode, String) {
         let (log_msg, user_msg) = match app_error {
-            Self::GeminiError(e) => (
+            Self::LlmApiError(e) => (
                 format!("LLM API error: {e}"),
                 "AI service error".to_string(),
             ),
@@ -1199,69 +1217,6 @@ impl From<std::num::ParseIntError> for AppError {
 impl From<uuid::Error> for AppError {
     fn from(err: uuid::Error) -> Self {
         Self::UuidError(err.to_string())
-    }
-}
-
-impl From<genai::Error> for AppError {
-    fn from(err: genai::Error) -> Self {
-        // First, try to extract retryDelay from ChatResponse body if applicable
-        if let genai::Error::ChatResponse { body, .. } = &err {
-            if let Some(retry_info) = body["error"]["details"].as_array().and_then(|details| {
-                details
-                    .iter()
-                    .find(|d| d["@type"] == "type.googleapis.com/google.rpc.RetryInfo")
-            }) {
-                if let Some(delay_str) = retry_info["retryDelay"].as_str() {
-                    if let Some(seconds_str) = delay_str.strip_suffix('s') {
-                        if let Ok(seconds) = seconds_str.parse::<u64>() {
-                            tracing::info!(
-                                "Detected Gemini API rate limit from ChatResponse with retryDelay: {}s",
-                                seconds
-                            );
-                            return AppError::RateLimited(Some(Duration::from_secs(seconds)));
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fallback to parsing the error string if not a StreamEventError or parsing from body failed
-        let err_string = err.to_string();
-        if err_string.contains("429 Too Many Requests") {
-            if let Some(start_idx) = err_string.find("Response body:\n") {
-                let json_part = &err_string[start_idx + "Response body:\n".len()..];
-                if let Some(end_idx) = json_part.rfind('}') {
-                    let json_str = &json_part[..=end_idx];
-
-                    if let Ok(json_value) = serde_json::from_str::<crate::DbJson>(json_str) {
-                        if let Some(retry_info) = json_value["error"]["details"]
-                            .as_array()
-                            .and_then(|details| {
-                                details.iter().find(|d| {
-                                    d["@type"] == "type.googleapis.com/google.rpc.RetryInfo"
-                                })
-                            })
-                        {
-                            if let Some(delay_str) = retry_info["retryDelay"].as_str() {
-                                if let Some(seconds_str) = delay_str.strip_suffix('s') {
-                                    if let Ok(seconds) = seconds_str.parse::<u64>() {
-                                        tracing::info!(
-                                            "Detected Gemini API rate limit from error string with retryDelay: {}s",
-                                            seconds
-                                        );
-                                        return AppError::RateLimited(Some(Duration::from_secs(
-                                            seconds,
-                                        )));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // Final fallback - sanitize the error string to remove sensitive information
-        AppError::GeminiError(sanitize_error_message(&err_string))
     }
 }
 
@@ -1608,12 +1563,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_gemini_error_response() {
-        // Use the From<genai::Error> conceptual test path
-        let error = AppError::GeminiError("Simulated genai error".to_string());
+        // Use the conceptual test path
+        let error = AppError::AiError("Simulated AI error".to_string());
         let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
         let body = get_body_json(response).await;
-        assert_eq!(body["error"], "AI service error");
+        assert_eq!(body["error"], "AI service request failed");
     }
 
     #[tokio::test]
@@ -1855,18 +1810,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_genai_error_sanitization_integration() {
-        // Test that genai::Error conversion sanitizes the error
+    async fn test_ai_error_sanitization_integration() {
+        // Test that AI error conversion sanitizes the error
         let error_string = "error sending request for url (https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=AIzaSyTestKey123) network error";
-        let app_error = AppError::GeminiError(sanitize_error_message(error_string));
+        let app_error = AppError::AiError(sanitize_error_message(error_string));
 
         // Extract the error message that would be sent in response
         match app_error {
-            AppError::GeminiError(msg) => {
+            AppError::AiError(msg) => {
                 assert!(msg.contains("key=[API_KEY_REDACTED]"));
                 assert!(!msg.contains("AIzaSyTestKey123"));
             }
-            _ => panic!("Expected GeminiError variant"),
+            _ => panic!("Expected AiError variant"),
         }
     }
 }

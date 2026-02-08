@@ -17,7 +17,6 @@ use scribe_backend::auth::user_store::Backend as AuthBackend;
 use scribe_backend::db::DbPool;
 #[cfg(feature = "desktop")]
 use scribe_backend::desktop; // Desktop mode initialization
-use scribe_backend::errors::AppError;
 use scribe_backend::logging::init_subscriber;
 use scribe_backend::middleware::unified_login_required;
 use scribe_backend::routes::admin::admin_routes;
@@ -56,8 +55,8 @@ use hex::decode;
 use rcgen::generate_simple_self_signed;
 use rustls::crypto::ring;
 use scribe_backend::config::Config; // Import Config instead
-use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
-use scribe_backend::llm::gemini_embedding_client::build_gemini_embedding_client; // Add this
+                                    // use scribe_backend::llm::gemini_client::build_gemini_client; // Import the async builder
+use scribe_backend::llm::cloud_embedding_client::build_cloud_embedding_client; // Add this
 use scribe_backend::services::ai_client_factory::AiClientFactory;
 use scribe_backend::services::character_service::CharacterService;
 use scribe_backend::services::chat_override_service::ChatOverrideService;
@@ -66,22 +65,15 @@ use scribe_backend::services::embeddings::{
     EmbeddingPipelineService, EmbeddingPipelineServiceTrait,
 };
 use scribe_backend::services::encryption_service::EncryptionService;
-use scribe_backend::services::gemini_token_client::GeminiTokenClient; // Added
 use scribe_backend::services::hybrid_token_counter::HybridTokenCounter; // Added
 use scribe_backend::services::lorebook::LorebookService;
 use scribe_backend::services::narrative_intelligence_service::NarrativeIntelligenceService;
+use scribe_backend::services::token_client::TokenClient; // Added
 use scribe_backend::services::tokenizer_service::TokenizerService; // Added
 use scribe_backend::services::user_persona_service::UserPersonaService;
 use scribe_backend::text_processing::chunking::{ChunkConfig, ChunkingMetric}; // Import chunking config structs
 
-#[cfg(feature = "embedded-vector")]
-use scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait;
-#[cfg(feature = "embedded-vector")]
-use scribe_backend::vector_db::LanceDbClient;
-#[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
-use scribe_backend::vector_db::NoOpQdrantService;
-#[cfg(feature = "remote-vector")]
-use scribe_backend::vector_db::QdrantClientService;
+use scribe_backend::llm::UnifiedEmbeddingModel;
 use std::path::PathBuf;
 use std::sync::Arc;
 use time::Duration;
@@ -278,17 +270,17 @@ fn setup_database_pool(config: &Config) -> DbPool {
             // Enable WAL mode for better concurrency (allows concurrent reads during writes)
             diesel::sql_query("PRAGMA journal_mode = WAL;")
                 .execute(conn)
-                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+                .map_err(diesel::r2d2::Error::QueryError)?;
 
             // Set busy_timeout to 10 seconds (connections will wait instead of failing immediately)
             diesel::sql_query("PRAGMA busy_timeout = 10000;")
                 .execute(conn)
-                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+                .map_err(diesel::r2d2::Error::QueryError)?;
 
             // Enable foreign key constraints
             diesel::sql_query("PRAGMA foreign_keys = ON;")
                 .execute(conn)
-                .map_err(|e| diesel::r2d2::Error::QueryError(e))?;
+                .map_err(diesel::r2d2::Error::QueryError)?;
 
             Ok(())
         }
@@ -319,31 +311,38 @@ fn setup_database_pool(config: &Config) -> DbPool {
 
 // Initialize all services
 async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppStateServices> {
+    // --- Initialize MistralRs Service (if feature enabled) ---
     #[cfg(feature = "local-llm")]
-    let mut llamacpp_server_manager: Option<
-        Arc<scribe_backend::llm::llamacpp::LlamaCppServerManager>,
+    let mistralrs_service = {
+        // For now, we initialize with a default model if it exists, or None
+        // Real model loading will happen on-demand or via settings
+        None
+    };
+    #[cfg(not(feature = "local-llm"))]
+    let mistralrs_service: Option<
+        Arc<scribe_backend::services::ai::mistralrs_service::MistralRsService>,
     > = None;
-    // --- Initialize GenAI Client Asynchronously ---
-    let api_key = config
-        .gemini_api_key
-        .as_ref()
-        .ok_or_else(|| AppError::ConfigError("GEMINI_API_KEY is required".to_string()))?;
-    let ai_client = build_gemini_client(api_key, &config.gemini_api_base_url)?;
+
+    // Use RigClient instead of ScribeGeminiClient
+    let ai_client = scribe_backend::llm::rig_client::RigClient::new(
+        config.gemini_api_key.clone(),
+        mistralrs_service,
+        None,
+    );
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---
-    let embedding_client = build_gemini_embedding_client(config.clone())?;
+    let embedding_client = build_cloud_embedding_client(config.clone())?;
     let embedding_client_arc = Arc::new(embedding_client);
 
     // --- Initialize Tokenizer Service ---
     let tokenizer_service = setup_tokenizer_service(config)?;
 
-    // --- Initialize Gemini Token Client (Optional) ---
-    let gemini_token_client = setup_gemini_token_client(config);
+    // --- Initialize Token Client (Optional) ---
+    let token_client = setup_token_client(config);
 
     // --- Initialize Hybrid Token Counter ---
-    let hybrid_token_counter =
-        setup_hybrid_token_counter(config, tokenizer_service, gemini_token_client);
+    let hybrid_token_counter = setup_hybrid_token_counter(config, tokenizer_service, token_client);
 
     // --- Initialize Services ---
     let encryption_service = Arc::new(EncryptionService::new());
@@ -365,47 +364,14 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     let embedding_pipeline_service = Arc::new(EmbeddingPipelineService::new(chunk_config))
         as Arc<dyn EmbeddingPipelineServiceTrait>;
 
-    // --- Initialize Vector DB Service (Qdrant or No-Op) ---
-    #[cfg(feature = "remote-vector")]
-    let qdrant_service = {
-        tracing::info!("Initializing Qdrant client service (remote-vector mode)...");
-        let service = Arc::new(QdrantClientService::new(config.clone()).await?);
-        tracing::info!("Qdrant client service initialized.");
-        service
-            as Arc<
-                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
-                    + Send
-                    + Sync,
-            >
-    };
+    // --- Initialize Vector DB Service (Rig-based) ---
+    let embedding_model = UnifiedEmbeddingModel::Cloud((*embedding_client_arc).clone());
 
-    #[cfg(feature = "embedded-vector")]
-    let qdrant_service = {
-        tracing::info!("Initializing LanceDB vector service (embedded-vector mode)...");
-        let service = Arc::new(LanceDbClient::new(config.clone()).await?);
-        service.ensure_collection_exists().await?;
-        tracing::info!("LanceDB vector service initialized.");
-        service
-            as Arc<
-                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
-                    + Send
-                    + Sync,
-            >
-    };
-
-    // Fallback when neither remote-vector nor embedded-vector is enabled
-    #[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
-    let qdrant_service = {
-        tracing::info!("Initializing no-op vector service (no vector features enabled)...");
-        let service = Arc::new(NoOpQdrantService::new(config.clone()).await?);
-        tracing::info!("No-op vector service initialized.");
-        service
-            as Arc<
-                dyn scribe_backend::vector_db::qdrant_client::QdrantClientServiceTrait
-                    + Send
-                    + Sync,
-            >
-    };
+    tracing::info!("Initializing Vector DB service...");
+    let qdrant_service =
+        scribe_backend::vector_db::create_vector_service(config.clone(), embedding_model).await?;
+    qdrant_service.ensure_collection_exists().await?;
+    tracing::info!("Vector DB service initialized.");
 
     // --- Initialize Lorebook Service (needs qdrant_service) ---
     let lorebook_service = Arc::new(LorebookService::new(
@@ -444,61 +410,9 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     // --- Initialize Local LLM Server (if feature enabled) ---
     #[cfg(feature = "local-llm")]
     {
-        use scribe_backend::llm::llamacpp::{LlamaCppConfig, LlamaCppServerManager, ModelManager};
-        use tracing::{info, warn};
-
-        info!("Initializing local LLM server...");
-        let llm_config = LlamaCppConfig::from_env();
-
-        if llm_config.enabled {
-            match ModelManager::new(llm_config.clone()).await {
-                Ok(model_manager) => {
-                    let model_manager_arc = Arc::new(model_manager);
-
-                    // Check if there are any downloaded models
-                    let downloaded_models =
-                        model_manager_arc.list_models().await.unwrap_or_default();
-
-                    if downloaded_models.is_empty() {
-                        info!(
-                            "No models downloaded yet. Local LLM UI will be available for model downloads."
-                        );
-                    } else {
-                        info!(
-                            "Found {} downloaded models. Server will start on-demand when a model is activated.",
-                            downloaded_models.len()
-                        );
-                    }
-
-                    // Create server manager but don't start it - it will start on-demand
-                    match LlamaCppServerManager::new(llm_config, model_manager_arc).await {
-                        Ok(server_manager) => {
-                            let server_manager_arc: Arc<LlamaCppServerManager> =
-                                Arc::new(server_manager);
-                            info!(
-                                "Local LLM server manager initialized. Server will start when a model is activated."
-                            );
-                            // Store the server manager for UI management
-                            llamacpp_server_manager = Some(server_manager_arc);
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to initialize local LLM server manager: {}. Local LLM features will be unavailable.",
-                                e
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to initialize model manager: {}. Local LLM features will be unavailable.",
-                        e
-                    );
-                }
-            }
-        } else {
-            info!("Local LLM disabled in configuration");
-        }
+        use scribe_backend::services::ai::mistralrs_service::MistralRsService;
+        // TODO: Implement MistralRs equivalent of LlamaCppServerManager if needed
+        // For now, we've integrated MistralRs into RigClient
     }
 
     // --- Initialize Narrative Intelligence Service ---
@@ -536,7 +450,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         ),
         recall_pipeline,
         #[cfg(feature = "local-llm")]
-        llamacpp_server_manager: llamacpp_server_manager,
+        llamacpp_server_manager: None, // Removed LlamaCppServerManager
         #[cfg(feature = "local-llm")]
         security_audit_logger: None, // Will be set by the builder if needed
         #[cfg(feature = "local-llm")]
@@ -592,28 +506,33 @@ fn resolve_tokenizer_model_path(config: &Config) -> PathBuf {
     final_tokenizer_model_path
 }
 
-// Setup Gemini token client
-fn setup_gemini_token_client(config: &Config) -> Option<GeminiTokenClient> {
-    config.gemini_api_key.as_ref().map_or_else(|| {
-        tracing::warn!("GEMINI_API_KEY not set, GeminiTokenClient for token counting will not be available.");
-        None
-    }, |api_key| {
-        tracing::info!("Initializing GeminiTokenClient for token counting...");
-        Some(GeminiTokenClient::new(api_key.clone()))
-    })
+// Setup token client
+fn setup_token_client(config: &Config) -> Option<TokenClient> {
+    config.gemini_api_key.as_ref().map_or_else(
+        || {
+            tracing::warn!(
+                "GEMINI_API_KEY not set, TokenClient for token counting will not be available."
+            );
+            None
+        },
+        |api_key| {
+            tracing::info!("Initializing TokenClient for token counting...");
+            Some(TokenClient::new(api_key.clone()))
+        },
+    )
 }
 
 // Setup hybrid token counter
 fn setup_hybrid_token_counter(
     config: &Config,
     tokenizer_service: TokenizerService,
-    gemini_token_client: Option<GeminiTokenClient>,
+    token_client: Option<TokenClient>,
 ) -> Arc<HybridTokenCounter> {
     tracing::info!("Initializing HybridTokenCounter...");
     let token_counter_default_model = config.token_counter_default_model.clone();
     let hybrid_token_counter = HybridTokenCounter::new(
         tokenizer_service,
-        gemini_token_client,
+        token_client,
         token_counter_default_model.clone(),
     );
     tracing::info!(
@@ -965,8 +884,42 @@ async fn start_server(config: &Config, app: Router) -> Result<()> {
                 .await
                 .context("Failed to create RustlsConfig from desktop certificate")?
         }
-        "local" | _ => {
+        "local" => {
             // For local development, support environment variable override for certificate paths
+            let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) =
+                (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH"))
+            {
+                tracing::info!("Using TLS certificate paths from environment variables");
+                (PathBuf::from(cert_env), PathBuf::from(key_env))
+            } else {
+                // Default to .certs directory
+                tracing::info!(
+                    "Local environment detected, loading certificates from .certs directory"
+                );
+
+                let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                let project_root = manifest_dir
+                    .parent()
+                    .context("Failed to get project root from manifest dir")?;
+
+                (
+                    project_root.join(".certs-backend/cert.pem"),
+                    project_root.join(".certs-backend/key.pem"),
+                )
+            };
+
+            tracing::info!(
+                cert_path = %cert_path.display(),
+                key_path = %key_path.display(),
+                "Loading TLS certificates for local development"
+            );
+
+            RustlsConfig::from_pem_file(cert_path, key_path)
+                .await
+                .context("Failed to load TLS certificate/key for local development. Run 'scripts/dev-certs-local.sh' or 'scripts/init-certs.sh local init' to generate certificates.")?
+        }
+        _ => {
+            // For other environments, support environment variable override for certificate paths
             let (cert_path, key_path) = if let (Ok(cert_env), Ok(key_env)) =
                 (env::var("TLS_CERT_PATH"), env::var("TLS_KEY_PATH"))
             {

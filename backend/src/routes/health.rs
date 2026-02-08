@@ -41,16 +41,24 @@ pub struct HealthCheckResponse {
     pub version: String,
     pub components: HashMap<String, ComponentHealthInfo>,
     pub timestamp: crate::DbTimestamp,
+    pub uptime_seconds: u64,
 }
 
-impl HealthCheckResponse {
-    pub fn new() -> Self {
+impl Default for HealthCheckResponse {
+    fn default() -> Self {
         Self {
             status: ComponentStatus::Ok,
             version: env!("CARGO_PKG_VERSION").to_string(),
             components: HashMap::new(),
             timestamp: Utc::now().into(),
+            uptime_seconds: 0,
         }
+    }
+}
+
+impl HealthCheckResponse {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn add_component(&mut self, name: String, info: ComponentHealthInfo) {

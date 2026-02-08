@@ -296,6 +296,7 @@ fn validate_and_get_character(
     info!(%character_id, %user_id, "Verifying character ownership and fetching character details");
     let character: Character = characters::table
         .filter(characters::id.eq(character_id))
+        .select(Character::as_select())
         .first(transaction_conn)
         .map_err(|e| match e {
             DieselError::NotFound => AppError::NotFound("Character not found".into()),
@@ -488,60 +489,74 @@ fn insert_chat_session(
         use diesel::prelude::*;
         tracing::info!("Inserting new chat session with payment fields: total_credits_used=0, total_actual_cost=0.0, total_modified_cost=0.0, total_credit_cost=0, total_actual_charge=0.0");
 
-        let rows_inserted = diesel::insert_into(chat_sessions::table)
-            .values((
-                chat_sessions::id.eq(params.new_session_id),
-                chat_sessions::user_id.eq(params.user_id),
-                chat_sessions::character_id.eq(params.character_id),
-                chat_sessions::chat_mode.eq(params.chat_mode),
-                chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
-                chat_sessions::title_nonce.eq(params.title_nonce_bytes),
-                chat_sessions::system_prompt_ciphertext.eq(params.encrypted_system_prompt_bytes),
-                chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
-                chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
-                chat_sessions::model_name.eq(params.default_model_name),
-                chat_sessions::history_management_strategy
-                    .eq(params.default_history_management_strategy),
-                chat_sessions::history_management_limit.eq(params.default_history_management_limit),
-                chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
-                chat_sessions::prompt_template_id.eq(params.prompt_template_id),
-                // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
-                #[cfg(feature = "postgres-backend")]
-                chat_sessions::total_prompt_tokens.eq(0i32),
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                chat_sessions::total_prompt_tokens.eq(0i64),
-                #[cfg(feature = "postgres-backend")]
-                chat_sessions::total_completion_tokens.eq(0i32),
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                chat_sessions::total_completion_tokens.eq(0i64),
-                chat_sessions::estimated_cost_cents.eq(0),
-                chat_sessions::tokens_counted_at.eq(chrono::Utc::now().naive_utc()),
-                #[cfg(feature = "postgres-backend")]
-                chat_sessions::total_credits_used.eq(crate::db::DbDecimal::from_i64(0)),
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                chat_sessions::total_credits_used.eq(0.0),
-                #[cfg(feature = "postgres-backend")]
-                chat_sessions::total_actual_cost.eq(crate::db::DbDecimal::from_i64(0)),
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                chat_sessions::total_actual_cost.eq(0.0),
-                #[cfg(feature = "postgres-backend")]
-                chat_sessions::total_modified_cost.eq(crate::db::DbDecimal::from_i64(0)),
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                chat_sessions::total_modified_cost.eq(0.0),
-                chat_sessions::total_credit_cost.eq(0),
-                #[cfg(feature = "postgres-backend")]
-                chat_sessions::total_actual_charge.eq(crate::db::DbDecimal::from_i64(0)),
-                #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-                chat_sessions::total_actual_charge.eq(0.0),
-                chat_sessions::created_at.eq(chrono::Utc::now().naive_utc()),
-                chat_sessions::updated_at.eq(chrono::Utc::now().naive_utc()),
-                chat_sessions::stop_sequences.eq(crate::models::OptionalStringArray(None)),
-            ))
-            .execute(transaction_conn)
-            .map_err(|e| {
-                tracing::error!("Failed to insert chat session: {}", e);
-                AppError::DatabaseQueryError(e.to_string())
-            })?;
+        let rows_inserted = {
+            tracing::info!(
+                "ID: {:?}, UserID: {:?}, CharID: {:?}, Mode: {:?}, Model: {:?}",
+                params.new_session_id.clone(),
+                params.user_id.clone(),
+                params.character_id.clone(),
+                params.chat_mode.clone(),
+                params.default_model_name.clone()
+            );
+
+            diesel::insert_into(chat_sessions::table)
+                .values((
+                    chat_sessions::id.eq(params.new_session_id),
+                    chat_sessions::user_id.eq(params.user_id),
+                    chat_sessions::character_id.eq(params.character_id),
+                    chat_sessions::chat_mode.eq(params.chat_mode),
+                    chat_sessions::title_ciphertext.eq(params.encrypted_title_bytes),
+                    chat_sessions::title_nonce.eq(params.title_nonce_bytes),
+                    chat_sessions::system_prompt_ciphertext
+                        .eq(params.encrypted_system_prompt_bytes),
+                    chat_sessions::system_prompt_nonce.eq(params.sp_nonce_bytes),
+                    chat_sessions::active_custom_persona_id.eq(params.effective_active_persona_id),
+                    chat_sessions::model_name.eq(params.default_model_name),
+                    chat_sessions::history_management_strategy
+                        .eq(params.default_history_management_strategy),
+                    chat_sessions::history_management_limit
+                        .eq(params.default_history_management_limit),
+                    chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
+                    chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+                    // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
+                    #[cfg(feature = "postgres-backend")]
+                    chat_sessions::total_prompt_tokens.eq(0i32),
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                    chat_sessions::total_prompt_tokens.eq(0i64),
+                    #[cfg(feature = "postgres-backend")]
+                    chat_sessions::total_completion_tokens.eq(0i32),
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                    chat_sessions::total_completion_tokens.eq(0i64),
+                    chat_sessions::estimated_cost_cents.eq(0),
+                    chat_sessions::tokens_counted_at.eq(chrono::Utc::now().naive_utc()),
+                    #[cfg(feature = "postgres-backend")]
+                    chat_sessions::total_credits_used.eq(crate::db::DbDecimal::from_i64(0)),
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                    chat_sessions::total_credits_used.eq(0.0),
+                    #[cfg(feature = "postgres-backend")]
+                    chat_sessions::total_actual_cost.eq(crate::db::DbDecimal::from_i64(0)),
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                    chat_sessions::total_actual_cost.eq(0.0),
+                    #[cfg(feature = "postgres-backend")]
+                    chat_sessions::total_modified_cost.eq(crate::db::DbDecimal::from_i64(0)),
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                    chat_sessions::total_modified_cost.eq(0.0),
+                    chat_sessions::total_credit_cost.eq(0),
+                    #[cfg(feature = "postgres-backend")]
+                    chat_sessions::total_actual_charge.eq(crate::db::DbDecimal::from_i64(0)),
+                    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+                    chat_sessions::total_actual_charge.eq(0.0),
+                    chat_sessions::created_at.eq(chrono::Utc::now().naive_utc()),
+                    chat_sessions::updated_at.eq(chrono::Utc::now().naive_utc()),
+                    chat_sessions::stop_sequences.eq(None::<crate::models::OptionalStringArray>),
+                    chat_sessions::game_master_mode_enabled.eq(false),
+                ))
+                .execute(transaction_conn)
+                .map_err(|e| {
+                    tracing::error!("Failed to insert chat session: {}", e);
+                    AppError::DatabaseQueryError(e.to_string())
+                })?
+        };
 
         tracing::info!(
             "Successfully inserted chat session, rows affected: {}",
@@ -664,10 +679,11 @@ fn fetch_created_session(
     }
 
     // Check stop_sequences specifically
-    let stop_seq_check: Result<crate::models::OptionalStringArray, _> = chat_sessions::table
-        .filter(chat_sessions::id.eq(&new_session_id))
-        .select(chat_sessions::stop_sequences)
-        .first::<crate::models::OptionalStringArray>(transaction_conn);
+    let stop_seq_check: Result<Option<crate::models::OptionalStringArray>, _> =
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(&new_session_id))
+            .select(chat_sessions::stop_sequences)
+            .first::<Option<crate::models::OptionalStringArray>>(transaction_conn);
 
     if let Err(ref e) = stop_seq_check {
         tracing::error!("❌ STOP_SEQUENCES FIELD NULL OR INVALID: {:?}", e);
@@ -695,7 +711,7 @@ fn fetch_created_session(
 
     // Check token/cost tracking fields
     #[cfg(feature = "postgres-backend")]
-    let token_check: Result<(i32, i32, i32, crate::db::DbDecimal), _> = chat_sessions::table
+    let token_check: Result<(i64, i64, i32, crate::db::DbDecimal), _> = chat_sessions::table
         .filter(chat_sessions::id.eq(&new_session_id))
         .select((
             chat_sessions::total_prompt_tokens,
@@ -703,7 +719,7 @@ fn fetch_created_session(
             chat_sessions::estimated_cost_cents,
             chat_sessions::total_credits_used,
         ))
-        .first::<(i32, i32, i32, crate::db::DbDecimal)>(transaction_conn);
+        .first::<(i64, i64, i32, crate::db::DbDecimal)>(transaction_conn);
 
     #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     let token_check: Result<(i64, i64, i32, crate::db::DbDecimal), _> = chat_sessions::table
@@ -785,6 +801,7 @@ fn fetch_created_session(
 }
 
 /// Creates a new chat session in the database
+#[allow(clippy::too_many_arguments)]
 fn create_session_in_transaction(
     transaction_conn: &mut crate::DbConnection,
     user_id: crate::db::DbId,
@@ -891,7 +908,7 @@ fn create_session_in_transaction(
         }
     };
 
-    let new_session_id: crate::db::DbId = DbId::new().into();
+    let new_session_id: crate::db::DbId = DbId::new();
 
     // Chronicles are now created when the first message is sent, not at session creation
     let chronicle_id = None;
@@ -936,9 +953,8 @@ fn create_session_in_transaction(
         .map(|c| {
             let alt_greetings = c
                 .alternate_greetings
-                .0
-                .clone()
-                .map(|v| v.into_iter().flatten().collect::<Vec<String>>());
+                .as_ref()
+                .map(|ag| ag.0.iter().flatten().cloned().collect::<Vec<String>>());
             (c.first_mes, c.first_mes_nonce, alt_greetings)
         })
         .unwrap_or((None, None, None));
@@ -999,6 +1015,7 @@ async fn process_first_message(
                                             charge_credits: false, // Character's first message is not charged
                                             credits_cost_override: None, // Let save_message calculate from tokens
                                             game_time: None,
+                                            reasoning_content: None,
                                         })
                                         .await?;
                                     info!(session_id = %created_session.id, "Successfully called save_message for first_mes");
@@ -1025,6 +1042,7 @@ async fn process_first_message(
                                                     charge_credits: false,
                                                     credits_cost_override: None,
                                                     game_time: None,
+                                                    reasoning_content: None,
                                                 })
                                                 .await?;
                                             }
@@ -1115,9 +1133,9 @@ pub async fn create_session_and_maybe_first_message(
             default_top_p: None,
             default_top_k: None,
             default_seed: None,
-            default_gemini_thinking_budget: None,
-            default_gemini_thinking_level: None,
-            default_gemini_enable_code_execution: None,
+            default_thinking_budget: None,
+            default_thinking_level: None,
+            default_enable_code_execution: None,
             default_context_total_token_limit: Some(state.config.context_total_token_limit as i32),
             default_context_recent_history_budget: Some(state.config.context_recent_history_token_budget as i32),
             default_context_rag_budget: Some(state.config.context_rag_token_budget as i32),

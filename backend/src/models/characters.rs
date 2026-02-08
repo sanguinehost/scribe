@@ -9,7 +9,7 @@ use secrecy::{ExposeSecret, SecretBox}; // Corrected: SecretVec -> SecretBox
 use serde::{Deserialize, Serialize}; // For error handling
 
 use crate::models::users::User;
-use crate::models::OptionalStringArray;
+// use crate::models::OptionalStringArray;
 use crate::schema::characters;
 use crate::services::character_parser::ParsedCharacterCard;
 // For encryption/decryption
@@ -54,14 +54,14 @@ pub struct Character {
     pub creator_notes: Option<Vec<u8>>,
     pub system_prompt: Option<Vec<u8>>,
     pub post_history_instructions: Option<Vec<u8>>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<crate::models::OptionalStringArray>,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: crate::models::OptionalStringArray,
+    pub alternate_greetings: Option<crate::models::OptionalStringArray>,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<crate::db::DbJson>,
-    pub source: crate::models::OptionalStringArray,
-    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub source: Option<crate::models::OptionalStringArray>,
+    pub group_only_greetings: Option<crate::models::OptionalStringArray>,
     pub creation_date: Option<DbTimestamp>,
     pub modification_date: Option<DbTimestamp>,
     pub created_at: DbTimestamp,
@@ -94,7 +94,7 @@ pub struct Character {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: crate::models::OptionalStringArray,
+    pub system_tags: Option<crate::models::OptionalStringArray>,
     pub token_budget: Option<crate::db::DbInt>,
     pub usage_hints: Option<crate::db::DbJson>,
     pub user_persona: Option<Vec<u8>>,
@@ -775,27 +775,16 @@ impl Character {
             creator_notes: decrypted_fields.creator_notes,
             system_prompt: decrypted_fields.system_prompt,
             post_history_instructions: decrypted_fields.post_history_instructions,
-            tags: OptionalStringArray(self.tags.0.or_else(|| Some(Vec::new()))),
+            tags: self.tags.clone(),
             creator: default_empty_string_if_none(self.creator),
             character_version: default_empty_string_if_none(self.character_version),
-            alternate_greetings: self
-                .alternate_greetings
-                .0
-                .map(|greetings| {
-                    greetings
-                        .into_iter()
-                        .filter_map(|opt_greeting| opt_greeting)
-                        .collect()
-                })
-                .or_else(|| Some(Vec::new())),
+            alternate_greetings: self.alternate_greetings.clone(),
             nickname: default_empty_string_if_none(self.nickname),
             creator_notes_multilingual: self
                 .creator_notes_multilingual
                 .or_else(|| Some(crate::db::Json(serde_json::json!({})))),
-            source: OptionalStringArray(self.source.0.or_else(|| Some(Vec::new()))),
-            group_only_greetings: OptionalStringArray(
-                self.group_only_greetings.0.or_else(|| Some(Vec::new())),
-            ),
+            source: self.source.clone(),
+            group_only_greetings: self.group_only_greetings.clone(),
             creation_date: self.creation_date,
             modification_date: self.modification_date,
             created_at: self.created_at,
@@ -832,7 +821,7 @@ impl Character {
             sharing_visibility: default_empty_string_if_none(self.sharing_visibility),
             status: default_empty_string_if_none(self.status),
             system_prompt_visibility: default_empty_string_if_none(self.system_prompt_visibility),
-            system_tags: OptionalStringArray(self.system_tags.0.or_else(|| Some(Vec::new()))),
+            system_tags: self.system_tags.clone(),
             token_budget: self.token_budget,
             usage_hints: self
                 .usage_hints
@@ -872,14 +861,14 @@ pub struct CharacterDataForClient {
     pub creator_notes: Option<String>,
     pub system_prompt: Option<String>,
     pub post_history_instructions: Option<String>,
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<crate::models::OptionalStringArray>,
     pub creator: Option<String>,
     pub character_version: Option<String>,
-    pub alternate_greetings: Option<Vec<String>>,
+    pub alternate_greetings: Option<crate::models::OptionalStringArray>,
     pub nickname: Option<String>,
     pub creator_notes_multilingual: Option<DbJson>,
-    pub source: crate::models::OptionalStringArray,
-    pub group_only_greetings: crate::models::OptionalStringArray,
+    pub source: Option<crate::models::OptionalStringArray>,
+    pub group_only_greetings: Option<crate::models::OptionalStringArray>,
     pub creation_date: Option<DbTimestamp>,
     pub modification_date: Option<DbTimestamp>,
     pub created_at: DbTimestamp,
@@ -912,7 +901,7 @@ pub struct CharacterDataForClient {
     pub sharing_visibility: Option<String>,
     pub status: Option<String>,
     pub system_prompt_visibility: Option<String>,
-    pub system_tags: crate::models::OptionalStringArray,
+    pub system_tags: Option<crate::models::OptionalStringArray>,
     pub token_budget: Option<crate::db::DbInt>,
     pub usage_hints: Option<DbJson>,
     pub user_persona: Option<String>,
@@ -1272,14 +1261,14 @@ pub fn create_dummy_character() -> Character {
         creator_notes: None,
         system_prompt: None,
         post_history_instructions: None,
-        tags: None.into(),
+        tags: None,
         creator: None,
         character_version: None,
-        alternate_greetings: None.into(),
+        alternate_greetings: None,
         nickname: None,
         creator_notes_multilingual: None,
-        source: None.into(),
-        group_only_greetings: None.into(),
+        source: None,
+        group_only_greetings: None,
         creation_date: None,
         modification_date: None,
         created_at: now.into(),
@@ -1312,7 +1301,7 @@ pub fn create_dummy_character() -> Character {
         sharing_visibility: None,
         status: None,
         system_prompt_visibility: None,
-        system_tags: None.into(),
+        system_tags: None,
         token_budget: None,
         usage_hints: None,
         user_persona: None,
@@ -1563,7 +1552,7 @@ mod tests {
 
     // Helper function to create a dummy V3 card
     fn create_dummy_v3_card() -> ParsedCharacterCard {
-        ParsedCharacterCard::V3(CharacterCardV3 {
+        ParsedCharacterCard::V3(Box::new(CharacterCardV3 {
             spec: "chara_card_v3_spec".to_string(),
             spec_version: "1.0.0".to_string(),
             data: CharacterCardDataV3 {
@@ -1592,12 +1581,12 @@ mod tests {
                 extensions: HashMap::default(), // Keep extensions
             },
             ..Default::default()
-        })
+        }))
     }
 
     // Helper function to create a dummy V2 card
     fn create_dummy_v2_card() -> ParsedCharacterCard {
-        ParsedCharacterCard::V2Fallback(CharacterCardDataV3 {
+        ParsedCharacterCard::V2Fallback(Box::new(CharacterCardDataV3 {
             // V2 uses the V3 data struct as fallback
             name: Some("Test V2 Name".to_string()),
             description: "V2 Description".to_string(),
@@ -1618,7 +1607,7 @@ mod tests {
             // chat: None,
             // ... other V2 fields if they exist in the struct
             ..Default::default() // Use default for remaining fields in CharacterCardDataV3
-        })
+        }))
     }
 
     #[test]

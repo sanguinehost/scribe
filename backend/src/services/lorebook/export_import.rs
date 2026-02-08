@@ -173,7 +173,7 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id: user.id,
             name: payload.name,
             description: payload.description,
@@ -347,7 +347,7 @@ impl LorebookService {
             };
 
             let new_entry_db = NewLorebookEntry {
-                id: new_entry_id.into(),
+                id: new_entry_id,
                 lorebook_id: lorebook.id,
                 user_id: user.id,
                 entry_title_ciphertext,

@@ -56,8 +56,7 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
         description: Some("Test description".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now().into()),
-        updated_at: Some(Utc::now().into()),
+        ..Default::default()
     };
 
     // Insert lorebook into database
@@ -131,7 +130,7 @@ async fn test_lorebook_entry_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10, None)
+        .retrieve_points(Some(filter), 10, None, None)
         .await?;
 
     // Verify we got results
@@ -198,8 +197,7 @@ async fn test_search_without_dek_returns_placeholders() -> Result<()> {
         description: Some("Contains secrets".to_string()),
         source_format: "scribe_minimal".to_string(),
         is_public: false,
-        created_at: Some(Utc::now().into()),
-        updated_at: Some(Utc::now().into()),
+        ..Default::default()
     };
 
     let conn = test_app.db_pool.get().await?;
@@ -404,7 +402,7 @@ async fn test_chronicle_event_encryption_in_qdrant() -> Result<()> {
 
     let scroll_result = test_app
         .qdrant_service
-        .retrieve_points(Some(filter), 10, None)
+        .retrieve_points(Some(filter), 10, None, None)
         .await?;
 
     // Verify we got results

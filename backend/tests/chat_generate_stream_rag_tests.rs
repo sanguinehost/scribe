@@ -76,8 +76,8 @@ async fn setup_rag_test_context() -> TestContext {
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -117,14 +117,14 @@ async fn setup_rag_test_context() -> TestContext {
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray(None),
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                stop_sequences: Some(scribe_backend::db::unified_types::DbStringArray::empty()),
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
+                total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+                total_completion_tokens: scribe_backend::db::DbBigInt(0),
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now().into(),
                 total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -211,11 +211,7 @@ async fn assert_rag_response(
     ];
     let payload = GenerateChatRequest {
         history,
-        model: None,
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
+        ..Default::default()
     };
 
     let request = Request::builder()

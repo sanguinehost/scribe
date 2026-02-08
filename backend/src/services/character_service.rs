@@ -17,7 +17,6 @@ use crate::models::OptionalStringArray;
 use crate::schema::characters; // For characters::table, characters::id
 use crate::schema::characters::dsl::{id as character_dsl_id, user_id as character_dsl_user_id}; // for explicit column access
 use crate::services::encryption_service::EncryptionService;
-#[cfg(feature = "postgres-backend")]
 use diesel::SelectableHelper;
 use diesel::{
     result::Error as DieselError, BoolExpressionMethods, ExpressionMethods, QueryDsl, RunQueryDsl,
@@ -56,10 +55,11 @@ impl CharacterService {
             characters::table
                 .filter(characters::user_id.eq(user_id))
                 .filter(characters::name.eq(name))
-                .first::<Character>(conn)
+                .select(Character::as_select())
+                .first(conn)
                 .map_err(|e| {
                     if e == diesel::NotFound {
-                        AppError::NotFound(format!("Character not found"))
+                        AppError::NotFound("Character not found".to_string())
                     } else {
                         AppError::DatabaseQueryError(e.to_string())
                     }
@@ -209,11 +209,7 @@ impl CharacterService {
             system_prompt_nonce: system_prompt_nonce_enc,
             post_history_instructions: post_history_instructions_enc,
             post_history_instructions_nonce: post_history_instructions_nonce_enc,
-            tags: OptionalStringArray(if create_dto.tags.is_empty() {
-                None
-            } else {
-                Some(create_dto.tags.into_iter().map(Some).collect())
-            }),
+            tags: OptionalStringArray::from_strings(create_dto.tags),
             creator: if create_dto.creator.is_empty() {
                 None
             } else {
@@ -224,40 +220,15 @@ impl CharacterService {
             } else {
                 Some(create_dto.character_version)
             },
-            alternate_greetings: OptionalStringArray(
-                if create_dto.alternate_greetings.is_empty() {
-                    None
-                } else {
-                    Some(
-                        create_dto
-                            .alternate_greetings
-                            .into_iter()
-                            .map(Some)
-                            .collect(),
-                    )
-                },
-            ),
+            alternate_greetings: OptionalStringArray::from_strings(create_dto.alternate_greetings),
             creator_notes_multilingual: create_dto.creator_notes_multilingual,
             nickname: create_dto.nickname,
-            source: OptionalStringArray(create_dto.source.and_then(|s_vec| {
-                if s_vec.is_empty() {
-                    None
-                } else {
-                    Some(s_vec.into_iter().map(Some).collect())
-                }
-            })),
-            group_only_greetings: OptionalStringArray(
-                if create_dto.group_only_greetings.is_empty() {
-                    None
-                } else {
-                    Some(
-                        create_dto
-                            .group_only_greetings
-                            .into_iter()
-                            .map(Some)
-                            .collect(),
-                    )
-                },
+            source: create_dto
+                .source
+                .map(OptionalStringArray::from_strings)
+                .unwrap_or_default(),
+            group_only_greetings: OptionalStringArray::from_strings(
+                create_dto.group_only_greetings,
             ),
             creation_date: create_dto
                 .creation_date
@@ -297,7 +268,7 @@ impl CharacterService {
             sharing_visibility: None,
             status: None,
             system_prompt_visibility: None,
-            system_tags: OptionalStringArray(None),
+            system_tags: OptionalStringArray::default(),
             token_budget: None,
             usage_hints: None,
             user_persona: None,
@@ -318,9 +289,9 @@ impl CharacterService {
             world_ciphertext: None, // Will be encrypted below
             world_nonce: None,
             #[cfg(feature = "postgres-backend")]
-            created_at: Some(DbTimestamp::from(Utc::now())),
+            created_at: DbTimestamp::from(Utc::now()),
             #[cfg(feature = "postgres-backend")]
-            updated_at: Some(DbTimestamp::from(Utc::now())),
+            updated_at: DbTimestamp::from(Utc::now()),
             #[cfg(feature = "sqlite-backend")]
             created_at: Utc::now().into(),
             #[cfg(feature = "sqlite-backend")]
@@ -397,7 +368,8 @@ impl CharacterService {
             crate::db::with_conn(&self.db_pool, move |conn_select_block| {
                 characters::table
                     .find(returned_id)
-                    .get_result::<Character>(conn_select_block)
+                    .select(Character::as_select())
+                    .get_result(conn_select_block)
                     .map_err(|e| AppError::DatabaseQueryError(format!("Fetch DB error: {e}")))
             })
             .await?;
@@ -431,7 +403,7 @@ impl CharacterService {
 
                         let new_association = NewCharacterLorebook {
                             character_id: returned_id,
-                            lorebook_id: lorebook_uuid.into(),
+                            lorebook_id: lorebook_uuid,
                             user_id: user_id_val,
                             created_at: Some(DbTimestamp::from(Utc::now())),
                             updated_at: Some(DbTimestamp::from(Utc::now())),
@@ -446,7 +418,7 @@ impl CharacterService {
                         .await?;
 
                         info!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
-                        associated_lorebook_ids.push(lorebook_uuid.into());
+                        associated_lorebook_ids.push(lorebook_uuid);
                     } else {
                         warn!(character_id = %returned_id, lorebook_id = %lorebook_uuid, "Lorebook not found or not owned by user");
                     }
@@ -481,7 +453,8 @@ impl CharacterService {
                         .eq(character_id_to_update)
                         .and(character_dsl_user_id.eq(user_id_val)),
                 )
-                .get_result::<Character>(conn_select_block)
+                .select(Character::as_select())
+                .get_result(conn_select_block)
                 .map_err(|e| match e {
                     DieselError::NotFound => AppError::NotFound(format!(
                         "Character {character_id_to_update} not found or not owned by user {user_id_val}"
@@ -552,11 +525,7 @@ impl CharacterService {
 
         // Non-encrypted fields
         if let Some(tags_val) = update_dto.tags {
-            existing_character.tags = OptionalStringArray(if tags_val.is_empty() {
-                None
-            } else {
-                Some(tags_val.into_iter().map(Some).collect())
-            });
+            existing_character.tags = Some(OptionalStringArray::from_strings(tags_val));
         }
         if let Some(creator_val) = update_dto.creator {
             existing_character.creator = if creator_val.is_empty() {
@@ -573,11 +542,8 @@ impl CharacterService {
             };
         }
         if let Some(ag_val) = update_dto.alternate_greetings {
-            existing_character.alternate_greetings = OptionalStringArray(if ag_val.is_empty() {
-                None
-            } else {
-                Some(ag_val.into_iter().map(Some).collect())
-            });
+            existing_character.alternate_greetings =
+                Some(OptionalStringArray::from_strings(ag_val));
         }
         if let Some(cnm_val) = update_dto.creator_notes_multilingual {
             existing_character.creator_notes_multilingual = Some(cnm_val.clone());
@@ -586,18 +552,11 @@ impl CharacterService {
             existing_character.nickname = Some(nick_val);
         }
         if let Some(source_val) = update_dto.source {
-            existing_character.source = OptionalStringArray(if source_val.is_empty() {
-                None
-            } else {
-                Some(source_val.into_iter().map(Some).collect())
-            });
+            existing_character.source = Some(OptionalStringArray::from_strings(source_val));
         }
         if let Some(gog_val) = update_dto.group_only_greetings {
-            existing_character.group_only_greetings = OptionalStringArray(if gog_val.is_empty() {
-                None
-            } else {
-                Some(gog_val.into_iter().map(Some).collect())
-            });
+            existing_character.group_only_greetings =
+                Some(OptionalStringArray::from_strings(gog_val));
         }
         if let Some(cd_ts) = update_dto.creation_date {
             existing_character.creation_date =
@@ -624,7 +583,7 @@ impl CharacterService {
             // Also encrypt into world_ciphertext
             if !world_val.is_empty() {
                 let (ciphertext, nonce) =
-                    self.encrypt_string_field_with_nonce(&world_val, dek_key_bytes)?;
+                    self.encrypt_string_field_with_nonce(world_val, dek_key_bytes)?;
                 existing_character.world_ciphertext = ciphertext;
                 existing_character.world_nonce = nonce;
             } else {
@@ -675,7 +634,7 @@ impl CharacterService {
                     diesel::update(characters::table.find(character_id_to_update))
                         .set(&existing_character)
                         .returning(Character::as_returning())
-                        .get_result::<Character>(conn_update_block)
+                        .get_result(conn_update_block)
                         .map_err(|e| AppError::DatabaseQueryError(format!("Update DB error: {e}")))
                 }
 
@@ -692,7 +651,8 @@ impl CharacterService {
                     // Query back the updated row
                     characters::table
                         .find(character_id_to_update)
-                        .first::<Character>(conn_update_block)
+                        .select(Character::as_select())
+                        .first(conn_update_block)
                         .map_err(|e| {
                             AppError::DatabaseQueryError(format!("Query after update error: {e}"))
                         })
@@ -761,7 +721,7 @@ impl CharacterService {
 
                         let new_association = NewCharacterLorebook {
                             character_id: character_id_to_update,
-                            lorebook_id: lorebook_uuid.into(),
+                            lorebook_id: lorebook_uuid,
                             user_id: user_id_val,
                             created_at: Some(DbTimestamp::from(Utc::now())),
                             updated_at: Some(DbTimestamp::from(Utc::now())),
@@ -777,7 +737,7 @@ impl CharacterService {
                         {
                             Ok(_) => {
                                 info!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, "Successfully associated lorebook with character");
-                                associated_lorebook_ids.push(lorebook_uuid.into());
+                                associated_lorebook_ids.push(lorebook_uuid);
                             }
                             Err(e) => {
                                 warn!(character_id = %character_id_to_update, lorebook_id = %lorebook_uuid, error = %e, "Failed to associate lorebook with character");

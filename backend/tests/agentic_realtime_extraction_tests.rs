@@ -48,9 +48,12 @@ async fn create_test_user(
         scribe_backend::crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
+        id: Uuid::new_v4().into(),
         username,
         password_hash: hashed_password,
-        email,
+        email: email,
         kek_salt,
         encrypted_dek: scribe_backend::db::DbBlob::from(encrypted_dek),
         encrypted_dek_by_recovery: None,
@@ -132,11 +135,11 @@ fn create_chat_message(
         content_nonce: Some(nonce),
         created_at: Utc::now().into(),
         user_id,
-        prompt_tokens: Some(content.len() as i64 / 4), // Rough estimate
+        prompt_tokens: Some(scribe_backend::db::DbBigInt(content.len() as i64 / 4)), // Rough estimate
         completion_tokens: if matches!(role, MessageRole::Assistant) {
-            Some(20)
+            Some(scribe_backend::db::DbBigInt(20))
         } else {
-            Some(0)
+            None
         },
         model_name: model_name.to_string(),
         status: "completed".to_string(),
@@ -156,6 +159,12 @@ async fn create_test_app_state(test_app: TestAppGuard) -> Arc<scribe_backend::st
     ));
 
     let services = scribe_backend::state::AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone()
             as Arc<dyn scribe_backend::llm::EmbeddingClient + Send + Sync>,
@@ -280,7 +289,7 @@ mod realtime_extraction_tests {
 
         // Mock AI response for significant event detection
         let triage_response = json!({
-            "is_significant": true,
+            "should_create_event": true,
             "summary": "Character discovers treasure and encounters danger",
             "event_category": "WORLD",
             "event_type": "DISCOVERY",
@@ -288,6 +297,7 @@ mod realtime_extraction_tests {
             "primary_agent": "Hero",
             "primary_patient": "Ancient Treasure",
             "confidence": 0.85,
+            "significance_score": 0.85,
             "reasoning": "Treasure discovery is a significant narrative event that should be recorded",
             "actions": [
                 {
@@ -349,8 +359,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -433,14 +446,15 @@ mod realtime_extraction_tests {
 
         // Mock AI response for insignificant chat
         let triage_response = json!({
-            "is_significant": false,
+            "should_create_event": false,
             "summary": "General conversation and movement without meaningful events",
             "event_category": "CONVERSATION",
             "event_type": "CASUAL_CHAT",
             "narrative_action": "DISCUSSED",
             "primary_agent": "Player",
             "primary_patient": "Assistant",
-            "confidence": 0.2,
+            "confidence": 0.5,
+            "significance_score": 0.5,
             "reasoning": "Simple movement and casual conversation lacks narrative significance",
             "actions": []
         });
@@ -520,8 +534,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &mundane_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -585,7 +602,7 @@ mod realtime_extraction_tests {
 
         // Mock AI response for combat events
         let triage_response = json!({
-            "is_significant": true,
+            "should_create_event": true,
             "summary": "Intense combat with multiple actions and outcomes",
             "event_category": "CHARACTER",
             "event_type": "STATE_CHANGE",
@@ -593,6 +610,7 @@ mod realtime_extraction_tests {
             "primary_agent": "Hero",
             "primary_patient": "Dragon",
             "confidence": 0.9,
+            "significance_score": 0.9,
             "reasoning": "Epic dragon combat with spell casting and weapon strikes is highly significant",
             "actions": [
                 {
@@ -660,8 +678,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &rapid_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -732,7 +753,7 @@ mod realtime_extraction_tests {
 
         // Mock AI response for plot revelation
         let triage_response = json!({
-            "is_significant": true,
+            "should_create_event": true,
             "summary": "Major plot revelation about character's true identity",
             "event_category": "PLOT",
             "event_type": "REVELATION",
@@ -740,6 +761,7 @@ mod realtime_extraction_tests {
             "primary_agent": "Sage",
             "primary_patient": "Hero's Identity",
             "confidence": 0.95,
+            "significance_score": 0.95,
             "reasoning": "Major character identity revelation is a crucial plot turning point",
             "actions": [
                 {
@@ -807,8 +829,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &context_building_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;
@@ -885,7 +910,7 @@ mod realtime_extraction_tests {
 
         // Mock AI response
         let triage_response = json!({
-            "is_significant": true,
+            "should_create_event": true,
             "summary": "Epic battle with detailed descriptions and multiple participants",
             "event_category": "PLOT",
             "event_type": "TURNING_POINT",
@@ -893,6 +918,7 @@ mod realtime_extraction_tests {
             "primary_agent": "Alliance Forces",
             "primary_patient": "Dark Army",
             "confidence": 0.88,
+            "significance_score": 0.88,
             "reasoning": "Massive battlefield conflict with kingdom's fate at stake is a major turning point",
             "actions": [
                 {
@@ -970,8 +996,11 @@ mod realtime_extraction_tests {
                 user_id.into(),
                 chat_session_id.into(),
                 Some(chronicle.id),
+                None,
                 &long_messages,
                 &session_dek,
+                None,
+                None,
                 None,
             )
             .await;

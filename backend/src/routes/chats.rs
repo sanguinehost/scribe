@@ -33,7 +33,7 @@ use axum::{
     Json, Router,
 };
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper};
-use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole}; // Added genai imports
+use rig::message::Message as RigMessage;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::json;
 use std::sync::Arc;
@@ -284,7 +284,7 @@ pub async fn create_chat_handler(
     ))));
 
     info!(
-        %user.id,
+        user_id = %loggable_user_id(user.id),
         character_id=%payload.character_id,
         lorebook_ids=?payload.lorebook_ids,
         has_title = payload.title.is_some(),
@@ -305,7 +305,7 @@ pub async fn create_chat_handler(
     .await
     .map_err(|e| {
         error!(
-            user_id = %user.id,
+            user_id = %loggable_user_id(user.id),
             character_id = %payload.character_id,
             error = ?e,
             error_msg = %e,
@@ -555,7 +555,7 @@ pub async fn delete_chat_handler(
                 // Note: We don't clean up embeddings because events are preserved
             }
 
-            "delete_events" | _ => {
+            _ => {
                 info!("Strategy: Delete only events created by this chat (default)");
 
                 // Clean up embeddings for events from this specific chat
@@ -656,9 +656,7 @@ pub struct PaginatedMessagesResponse {
 ///
 /// Returns `AppError::BadRequest` if the provided string is not a valid UUID format
 fn parse_chat_id(id: &str) -> Result<crate::db::DbId, AppError> {
-    DbId::parse_str(id)
-        .map(Into::into)
-        .map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
+    DbId::parse_str(id).map_err(|_| AppError::BadRequest("Invalid UUID format in path".to_string()))
 }
 
 /// Helper function to get authenticated user
@@ -834,6 +832,7 @@ async fn get_default_variant_content(
 }
 
 /// Helper function to decrypt and transform messages for client response with variant support
+#[allow(clippy::too_many_arguments)]
 async fn process_messages_for_response(
     state: Arc<AppState>,
     messages_db: Vec<Message>,
@@ -901,7 +900,7 @@ async fn process_messages_for_response(
         // Parts are created inline with template substitution below
         let response_attachments = msg_db
             .attachments
-            .unwrap_or_else(|| crate::db::Json(json!([])).into());
+            .unwrap_or_else(|| crate::db::Json(json!([])));
 
         let response_role = msg_db
             .role
@@ -949,13 +948,12 @@ async fn process_messages_for_response(
                     character_name,
                     user_persona_name
                 )
-            }]))
-            .into(),
+            }])),
             attachments: response_attachments,
             created_at: msg_db.created_at,
             raw_prompt,
-            prompt_tokens: msg_db.prompt_tokens.map(|t| t as i64),
-            completion_tokens: msg_db.completion_tokens.map(|t| t as i64),
+            prompt_tokens: msg_db.prompt_tokens,
+            completion_tokens: msg_db.completion_tokens,
             model_name: Some(msg_db.model_name),
             status: msg_db.status,
             error_message: msg_db.error_message,
@@ -1037,7 +1035,7 @@ async fn process_messages_for_response(
 /// - Chat not found or access denied
 /// - Database operation fails
 /// - Decryption fails
-/// Retrieves paginated messages for a specific chat session.
+///   Retrieves paginated messages for a specific chat session.
 ///
 /// # Errors
 ///
@@ -1079,7 +1077,7 @@ pub async fn get_messages_by_chat_id_handler(
             use crate::schema::characters;
             characters::table
                 .filter(characters::id.eq(char_id))
-                .select(characters::name)
+                .select(characters::name) // <--- THIS is line 1083 (approx) in original file?
                 .first::<String>(conn)
                 .optional()
                 .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
@@ -1237,13 +1235,16 @@ pub async fn create_message_handler(
             charge_credits: false, // Manual message creation is not charged
             credits_cost_override: None, // Let save_message calculate from tokens
             game_time: None,
+            reasoning_content: None,
         },
     )
     .await?;
 
     // Track token usage for payment/quota tracking (for manually created user messages)
     #[cfg(feature = "payment")]
-    if message_role_enum == MessageRole::User && saved_db_message.prompt_tokens.unwrap_or(0) > 0 {
+    if message_role_enum == MessageRole::User
+        && saved_db_message.prompt_tokens.map(|t| t.0).unwrap_or(0) > 0
+    {
         use crate::services::encryption_service::EncryptionService;
         use crate::services::payment::UsageTrackingService;
 
@@ -1251,7 +1252,7 @@ pub async fn create_message_handler(
             UsageTrackingService::new((*state.config).clone(), EncryptionService::new());
 
         let user_id_for_payment = user_id;
-        let tokens_used = saved_db_message.prompt_tokens.unwrap_or(0) as i32; // Cast to i32 for payment tracking
+        let tokens_used = saved_db_message.prompt_tokens.map(|t| t.0).unwrap_or(0) as i32; // Cast to i32 for payment tracking
         let model_name_for_tracking = chat.model_name.clone();
 
         // Get a database connection for the usage tracking
@@ -1333,8 +1334,8 @@ pub async fn create_message_handler(
         .parts(payload.parts.clone()) // From the request payload
         .game_time(saved_db_message.game_time)
         .attachments(payload.attachments.clone()) // From the request payload
-        .prompt_tokens(saved_db_message.prompt_tokens.map(|t| t as i64))
-        .completion_tokens(saved_db_message.completion_tokens.map(|t| t as i64))
+        .prompt_tokens(saved_db_message.prompt_tokens)
+        .completion_tokens(saved_db_message.completion_tokens)
         .raw_prompt_ciphertext(saved_db_message.raw_prompt_ciphertext)
         .raw_prompt_nonce(saved_db_message.raw_prompt_nonce)
         .model_name(saved_db_message.model_name.clone())
@@ -1401,9 +1402,9 @@ pub async fn create_message_handler(
                         seed,
                         model_name,
                         model_provider,
-                        gemini_thinking_budget,
-                        _gemini_thinking_level,
-                        gemini_enable_code_execution,
+                        thinking_budget,
+                        _thinking_level,
+                        enable_code_execution,
                         _user_db_message_to_save, // We already saved the message
                         _actual_recent_history_tokens,
                         _rag_context_items,
@@ -1422,29 +1423,46 @@ pub async fn create_message_handler(
                         _rag_token_budget,
                     ) = data;
 
-                    // 2. Convert history to GenAiChatMessage
-                    let mut incoming_genai_messages = Vec::new();
+                    // 2. Convert history to RigMessage
+                    let mut incoming_messages = Vec::new();
 
                     // Add history
                     if let Some(dek_arc) = &user_dek_for_gen {
                         for msg in managed_recent_history {
-                            let role = match msg.message_type {
-                                crate::services::chat::types::MessageRole::User => ChatRole::User,
-                                crate::services::chat::types::MessageRole::Assistant => {
-                                    ChatRole::Assistant
-                                }
-                                crate::services::chat::types::MessageRole::System => {
-                                    ChatRole::System
-                                }
-                            };
-
-                            match msg.decrypt_content_field(&dek_arc) {
+                            match msg.decrypt_content_field(dek_arc) {
                                 Ok(content) => {
-                                    incoming_genai_messages.push(GenAiChatMessage {
-                                        role,
-                                        content: genai::chat::MessageContent::from(content),
-                                        options: None,
-                                    });
+                                    let role = match msg.message_type {
+                                        crate::services::chat::types::MessageRole::User => {
+                                            MessageRole::User
+                                        }
+                                        crate::services::chat::types::MessageRole::Assistant => {
+                                            MessageRole::Assistant
+                                        }
+                                        crate::services::chat::types::MessageRole::System => {
+                                            MessageRole::System
+                                        }
+                                    };
+
+                                    match role {
+                                        MessageRole::User => {
+                                            incoming_messages.push(RigMessage::User {
+                                                content: rig::one_or_many::OneOrMany::one(
+                                                    rig::message::UserContent::text(content),
+                                                ),
+                                            });
+                                        }
+                                        MessageRole::Assistant => {
+                                            incoming_messages.push(RigMessage::Assistant {
+                                                id: None,
+                                                content: rig::one_or_many::OneOrMany::one(
+                                                    rig::message::AssistantContent::text(content),
+                                                ),
+                                            });
+                                        }
+                                        MessageRole::System => {
+                                            // Handle system messages if needed, or skip
+                                        }
+                                    }
                                 }
                                 Err(e) => {
                                     error!(message_id = %msg.id, error = %e, "Failed to decrypt message for history, skipping");
@@ -1454,17 +1472,24 @@ pub async fn create_message_handler(
                     }
 
                     // Add the current user message
-                    let last_msg_content = incoming_genai_messages
-                        .last()
-                        .and_then(|m| m.content.first_text().map(|t| t.to_string()));
+                    let last_msg_content = incoming_messages.last().and_then(|m| match m {
+                        RigMessage::User { content } => content.iter().find_map(|c| match c {
+                            rig::message::UserContent::Text(t) => Some(t.text.clone()),
+                            _ => None,
+                        }),
+                        RigMessage::Assistant { content, .. } => {
+                            content.iter().find_map(|c| match c {
+                                rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                                _ => None,
+                            })
+                        }
+                    });
 
                     if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {
-                        incoming_genai_messages.push(GenAiChatMessage {
-                            role: ChatRole::User,
-                            content: genai::chat::MessageContent::from(
-                                user_message_content_for_gen,
+                        incoming_messages.push(RigMessage::User {
+                            content: rig::one_or_many::OneOrMany::one(
+                                rig::message::UserContent::text(user_message_content_for_gen),
                             ),
-                            options: None,
                         });
                     }
 
@@ -1475,7 +1500,7 @@ pub async fn create_message_handler(
                             state: state_for_gen,
                             session_id: session_id_for_gen,
                             user_id: user_id_for_gen,
-                            incoming_genai_messages,
+                            history: incoming_messages,
                             system_prompt,
                             temperature,
                             max_output_tokens,
@@ -1487,9 +1512,9 @@ pub async fn create_message_handler(
                             seed,
                             model_name,
                             model_provider,
-                            gemini_thinking_budget,
-                            gemini_thinking_level: None, // TODO: Fetch from settings if needed
-                            gemini_enable_code_execution,
+                            reasoning_budget: thinking_budget,
+                            thinking_level: None, // TODO: Fetch from settings if needed
+                            enable_code_execution,
                             request_thinking: false, // Default to false for now
                             user_dek: dek_arc,
                             character_name: None,
@@ -1528,8 +1553,8 @@ pub async fn create_message_handler(
         attachments: response_attachments,
         created_at: client_message.created_at,
         raw_prompt: client_message.raw_prompt,
-        prompt_tokens: saved_db_message.prompt_tokens.map(|t| t as i64),
-        completion_tokens: saved_db_message.completion_tokens.map(|t| t as i64),
+        prompt_tokens: saved_db_message.prompt_tokens,
+        completion_tokens: saved_db_message.completion_tokens,
         model_name: Some(saved_db_message.model_name),
         status: saved_db_message.status,
         error_message: saved_db_message.error_message,
@@ -1764,8 +1789,8 @@ pub async fn get_message_by_id_handler(
             .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: message_db.created_at,
         raw_prompt: decrypted_raw_prompt,
-        prompt_tokens: message_db.prompt_tokens.map(|t| t as i64),
-        completion_tokens: message_db.completion_tokens.map(|t| t as i64),
+        prompt_tokens: message_db.prompt_tokens,
+        completion_tokens: message_db.completion_tokens,
         model_name: Some(message_db.model_name),
         status: message_db.status,
         error_message: message_db.error_message,
@@ -2229,7 +2254,7 @@ pub async fn delete_message_handler(
     // We must delete chronicle events and their embeddings before deleting the message
     // because the message deletion will cascade to variants, and we need the variants to find the events.
     {
-        let message_id_val = id.clone();
+        let message_id_val = id;
         let pool_clone = pool.clone();
         let embedding_service = state.embedding_pipeline_service.clone();
         let state_arc = Arc::new(state.clone());
@@ -2270,7 +2295,7 @@ pub async fn delete_message_handler(
             // 3. Delete embeddings for each event
             for event_id in &event_ids {
                 if let Err(e) = embedding_service
-                    .delete_chronicle_event_chunks(state_arc.clone(), event_id.clone(), user_id_val)
+                    .delete_chronicle_event_chunks(state_arc.clone(), *event_id, user_id_val)
                     .await
                 {
                     error!("Failed to delete embeddings for event {}: {}", event_id, e);
@@ -2448,7 +2473,7 @@ pub async fn get_chat_settings_handler(
     )
     .await?;
 
-    info!(session_id = %id, user_id = %user.id,
+    info!(session_id = %id, user_id = %loggable_user_id(user.id),
           response_system_prompt_is_some = chat_settings_response.system_prompt.is_some(),
           response_system_prompt_len = chat_settings_response.system_prompt.as_ref().map(|s| s.len()).unwrap_or(0),
           "get_chat_settings_handler: Returning response to client");
@@ -2577,9 +2602,9 @@ async fn get_chat_token_usage_handler(
 
     let token_usage = ChatTokenUsage {
         chat_id: id,
-        total_prompt_tokens: chat.total_prompt_tokens as i32, // Cast to i32 for API compatibility
-        total_completion_tokens: chat.total_completion_tokens as i32, // Cast to i32 for API compatibility
-        total_tokens: total_tokens as i32, // Cast to i32 for API compatibility
+        total_prompt_tokens: chat.total_prompt_tokens.0 as i32, // Cast to i32 for API compatibility
+        total_completion_tokens: chat.total_completion_tokens.0 as i32, // Cast to i32 for API compatibility
+        total_tokens: total_tokens.0 as i32, // Cast to i32 for API compatibility
         estimated_cost_cents: chat.estimated_cost_cents,
         estimated_cost_dollars,
         tokens_counted_at: chat.tokens_counted_at,
@@ -2687,8 +2712,8 @@ pub async fn select_message_variant_handler(
             .unwrap_or_else(|| crate::db::Json(json!([]))),
         created_at: updated_message.created_at,
         raw_prompt: None, // Don't expose raw prompts in variant selection
-        prompt_tokens: updated_message.prompt_tokens.map(|t| t as i64),
-        completion_tokens: updated_message.completion_tokens.map(|t| t as i64),
+        prompt_tokens: updated_message.prompt_tokens,
+        completion_tokens: updated_message.completion_tokens,
         model_name: Some(updated_message.model_name),
         status: updated_message.status,
         error_message: updated_message.error_message,

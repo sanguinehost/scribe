@@ -379,6 +379,7 @@ pub struct NewAgentContextAnalysis {
 
 impl NewAgentContextAnalysis {
     /// Create a new agent context analysis with encrypted fields
+    #[allow(clippy::too_many_arguments)]
     pub fn new_encrypted(
         chat_session_id: crate::db::DbId,
         user_id: crate::db::DbId,

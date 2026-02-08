@@ -69,10 +69,12 @@ async fn create_test_user_with_dek(
     let kek_salt_str = BASE64.encode(&kek_salt);
 
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username,
         password_hash,
-        email,
+        email: email,
         kek_salt: kek_salt_str,
         encrypted_dek: encrypted_dek.into(),
         encrypted_dek_by_recovery: None,
@@ -81,9 +83,9 @@ async fn create_test_user_with_dek(
         dek_nonce: dek_nonce.into(),
         recovery_dek_nonce: None,
         account_status: AccountStatus::Active,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };
@@ -115,8 +117,8 @@ async fn create_test_chat_session(
         spec_version: "1.0".to_string(),
         name: "Test Variant Character".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now().into()),
-        updated_at: Some(chrono::Utc::now().into()),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         ..Default::default()
     };
 
@@ -269,8 +271,6 @@ async fn create_message_variant(
         None,
         None,
         None,
-        None,
-        None,
     )?;
 
     // Insert the variant
@@ -379,9 +379,9 @@ async fn test_variant_display_persistence() -> anyhow::Result<()> {
         updated_at: chrono::Utc::now().into(),
         account_status: Some("active".to_string()),
         default_persona_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_token_cost_cents: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
+        total_token_cost_cents: scribe_backend::db::DbBigInt(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
     };

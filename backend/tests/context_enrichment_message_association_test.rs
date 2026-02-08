@@ -54,8 +54,8 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         spec_version: "1.0".to_string(),
         name: "Test Character for Message Association".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(chrono::Utc::now().into()),
-        updated_at: Some(chrono::Utc::now().into()),
+        created_at: chrono::Utc::now().into(),
+        updated_at: chrono::Utc::now().into(),
         ..Default::default()
     };
 
@@ -96,14 +96,14 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: scribe_backend::models::OptionalStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        stop_sequences: Some(scribe_backend::db::DbStringArray::empty()),
+        thinking_budget: None,
+        enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
         estimated_cost_cents: 0,
         tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -200,6 +200,12 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
     };
 
     let app_state = Arc::new(AppState::new(
@@ -276,6 +282,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
             None,               // rag_chronicles_limit
             None,               // rag_lorebooks_limit
             None,               // rag_older_chat_limit
+            None,               // rag_cognitive_context_limit
         )
         .await;
 
@@ -343,6 +350,7 @@ async fn test_agent_analysis_message_association() -> anyhow::Result<()> {
             None,               // rag_chronicles_limit
             None,               // rag_lorebooks_limit
             None,               // rag_older_chat_limit
+            None,               // rag_cognitive_context_limit
         )
         .await;
 
@@ -460,8 +468,8 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         spec_version: "1.0".to_string(),
         name: "Test Character for Multiple Analyses".to_string(),
         visibility: Some("private".to_string()),
-        created_at: Some(scribe_backend::db::DbTimestamp::now()),
-        updated_at: Some(scribe_backend::db::DbTimestamp::now()),
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         ..Default::default()
     };
 
@@ -502,14 +510,14 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         top_k: None,
         top_p: None,
         seed: None,
-        stop_sequences: scribe_backend::db::DbStringArray(None),
-        gemini_thinking_budget: None,
-        gemini_enable_code_execution: None,
+        stop_sequences: Some(scribe_backend::db::DbStringArray::empty()),
+        thinking_budget: None,
+        enable_code_execution: None,
         system_prompt_ciphertext: None,
         system_prompt_nonce: None,
         player_chronicle_id: None,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
+        total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+        total_completion_tokens: scribe_backend::db::DbBigInt(0),
         estimated_cost_cents: 0,
         tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -641,6 +649,12 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
         security_audit_logger: None,
         #[cfg(feature = "local-llm")]
         model_integrity_verifier: None,
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
     };
 
     let recall_pipeline = services.recall_pipeline.clone();
@@ -684,6 +698,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -707,6 +722,7 @@ async fn test_multiple_analyses_per_message() -> anyhow::Result<()> {
             EnrichmentMode::PostProcessing,
             user_dek.0.expose_secret(),
             message_id.into(), // Required message ID // Same message ID
+            None,
             None,
             None,
             None,

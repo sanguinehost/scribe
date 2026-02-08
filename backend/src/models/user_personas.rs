@@ -46,18 +46,18 @@ struct DecryptedPersonaFields {
 pub struct UserPersona {
     pub id: DbId,
     pub user_id: DbId,
-    pub name: String,                              // In schema.rs: Varchar
-    pub description: DbBlob,                       // In schema.rs: Bytea (NOT NULL)
-    pub spec: Option<String>,                      // In schema.rs: Nullable<Varchar>
-    pub spec_version: Option<String>,              // In schema.rs: Nullable<Varchar>
-    pub personality: Option<DbBlob>,               // In schema.rs: Nullable<Bytea>
-    pub scenario: Option<DbBlob>,                  // In schema.rs: Nullable<Bytea>
-    pub first_mes: Option<DbBlob>,                 // In schema.rs: Nullable<Bytea>
-    pub mes_example: Option<DbBlob>,               // In schema.rs: Nullable<Bytea>
-    pub system_prompt: Option<DbBlob>,             // In schema.rs: Nullable<Bytea>
-    pub post_history_instructions: Option<DbBlob>, // In schema.rs: Nullable<Bytea>
-    pub tags: crate::models::OptionalStringArray,  // In schema.rs: Nullable<Array<Nullable<Text>>>
-    pub avatar: Option<String>,                    // In schema.rs: Nullable<Varchar>
+    pub name: String,                                     // In schema.rs: Varchar
+    pub description: DbBlob,                              // In schema.rs: Bytea (NOT NULL)
+    pub spec: Option<String>,                             // In schema.rs: Nullable<Varchar>
+    pub spec_version: Option<String>,                     // In schema.rs: Nullable<Varchar>
+    pub personality: Option<DbBlob>,                      // In schema.rs: Nullable<Bytea>
+    pub scenario: Option<DbBlob>,                         // In schema.rs: Nullable<Bytea>
+    pub first_mes: Option<DbBlob>,                        // In schema.rs: Nullable<Bytea>
+    pub mes_example: Option<DbBlob>,                      // In schema.rs: Nullable<Bytea>
+    pub system_prompt: Option<DbBlob>,                    // In schema.rs: Nullable<Bytea>
+    pub post_history_instructions: Option<DbBlob>,        // In schema.rs: Nullable<Bytea>
+    pub tags: Option<crate::models::OptionalStringArray>, // In schema.rs: Nullable<Array<Nullable<Text>>>
+    pub avatar: Option<String>,                           // In schema.rs: Nullable<Varchar>
 
     // Nonces
     pub description_nonce: Option<DbBlob>, // In schema.rs: Nullable<Bytea> - but tied to non-nullable description
@@ -167,7 +167,7 @@ pub struct UserPersonaDataForClient {
     pub mes_example: Option<String>,               // Decrypted
     pub system_prompt: Option<String>,             // Decrypted
     pub post_history_instructions: Option<String>, // Decrypted
-    pub tags: crate::models::OptionalStringArray,
+    pub tags: Option<crate::models::OptionalStringArray>,
     pub avatar: Option<String>,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
@@ -467,10 +467,10 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: crate::db::unified_types::DbStringArray::from_vec(vec![
+            tags: Some(crate::db::unified_types::DbStringArray::from_vec(vec![
                 Some("tag1".to_string()),
                 Some("tag2".to_string()),
-            ]),
+            ])),
             avatar: Some("avatar.png".to_string()),
             description_nonce: Some(DbBlob::from(vec![7, 8, 9])),
             personality_nonce: Some(DbBlob::from(vec![10, 11, 12])),
@@ -506,9 +506,9 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: crate::db::unified_types::DbStringArray::from_vec(vec![Some(
-                "client_tag1".to_string(),
-            )]),
+            tags: Some(crate::db::unified_types::DbStringArray::from_vec(vec![
+                Some("client_tag1".to_string()),
+            ])),
             avatar: Some("client_avatar.png".to_string()),
             created_at: DbTimestamp::now(),
             updated_at: DbTimestamp::now(),
@@ -554,7 +554,7 @@ mod tests {
             system_prompt_nonce: None,
             post_history_instructions: None,
             post_history_instructions_nonce: None,
-            tags: None.into(),
+            tags: Some(crate::db::unified_types::DbStringArray::empty()),
             avatar: None,
             created_at: DbTimestamp::now(),
             updated_at: DbTimestamp::now(),

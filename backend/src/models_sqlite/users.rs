@@ -187,7 +187,6 @@ impl<'de> Deserialize<'de> for SerializableSecretDek {
 // Helper struct for Diesel Querying - matches the DB schema exactly
 #[derive(Queryable, Selectable, Clone)] // Removed Debug for custom impl
 #[diesel(table_name = users)]
-
 pub struct UserDbQuery {
     pub id: DbId,
     pub username: String,
@@ -420,6 +419,7 @@ impl AuthUser for User {
 /// Represents data needed to create a new user.
 #[derive(Insertable, Default)]
 #[diesel(table_name = users)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewUser {
     // Always provide explicit ID (required for SQLite)
     pub id: DbId,
@@ -439,6 +439,8 @@ pub struct NewUser {
     pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewUser {

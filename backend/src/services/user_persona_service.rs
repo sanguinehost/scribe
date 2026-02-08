@@ -62,14 +62,11 @@ impl UserPersonaService {
     ) -> Result<UserPersona, diesel::result::Error> {
         use diesel::prelude::*;
 
-        let persona_id = new_persona.id;
         diesel::insert_into(user_personas_dsl::user_personas)
             .values(new_persona)
             .execute(conn)?;
 
-        user_personas_dsl::user_personas
-            .filter(user_personas_dsl::id.eq(persona_id))
-            .first::<UserPersona>(conn)
+        Ok(new_persona.clone())
     }
 
     /// Creates a new user persona with encrypted sensitive fields.
@@ -142,22 +139,32 @@ impl UserPersonaService {
             system_prompt_nonce: system_prompt_n,
             post_history_instructions: post_history_instructions_ct,
             post_history_instructions_nonce: post_history_instructions_n,
-            tags: create_dto
-                .tags
-                .map(OptionalStringArray::from_strings)
-                .unwrap_or_default(),
+            tags: Some(
+                create_dto
+                    .tags
+                    .map(OptionalStringArray::from_strings)
+                    .unwrap_or_default(),
+            ),
             avatar: create_dto.avatar,
             created_at: crate::db::DbTimestamp::now(),
             updated_at: crate::db::DbTimestamp::now(),
         };
 
+        tracing::info!("DEBUG: new_persona_db: id={:?}, user_id={:?}, name={}, description.len={}, description_nonce={:?}, personality_nonce={:?}, tags={:?}",
+            new_persona_db.id, new_persona_db.user_id, new_persona_db.name, new_persona_db.description.len(), new_persona_db.description_nonce, new_persona_db.personality_nonce, new_persona_db.tags);
         let pool = self.db_pool.clone();
         let inserted_persona = crate::db::with_conn(&pool, move |db_conn| {
             #[cfg(feature = "postgres-backend")]
             {
                 diesel::insert_into(user_personas_dsl::user_personas)
                     .values(&new_persona_db)
-                    .get_result::<UserPersona>(db_conn)
+                    .execute(db_conn)
+                    .map_err(AppError::from)?;
+
+                user_personas_dsl::user_personas
+                    .filter(user_personas_dsl::id.eq(new_persona_db.id))
+                    .select(UserPersona::as_select())
+                    .first::<UserPersona>(db_conn)
                     .map_err(AppError::from)
             }
 
@@ -314,9 +321,9 @@ impl UserPersonaService {
             }
         }
         if let Some(tags_val) = update_dto.tags {
-            let new_tags = OptionalStringArray(Some(tags_val.into_iter().map(Some).collect()));
-            if persona.tags != new_tags {
-                persona.tags = new_tags;
+            let new_tags = OptionalStringArray::from_vec(tags_val.into_iter().map(Some).collect());
+            if persona.tags != Some(new_tags.clone()) {
+                persona.tags = Some(new_tags);
                 changed = true;
             }
         }
@@ -487,7 +494,7 @@ impl UserPersonaService {
 
         #[cfg(feature = "postgres-backend")]
         let updated_user_db_query = {
-            let conn = crate::db::get_conn(&pool)
+            let conn = crate::db::get_conn(pool)
                 .await
                 .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 

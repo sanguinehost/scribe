@@ -10,16 +10,16 @@ use crate::{
         email_service::{create_email_service, EmailService},
         embeddings::{EmbeddingPipelineService, EmbeddingPipelineServiceTrait},
         encryption_service::EncryptionService,
-        gemini_token_client::GeminiTokenClient,
         hybrid_token_counter::HybridTokenCounter,
         lorebook::LorebookService,
         narrative_intelligence_service::NarrativeIntelligenceService,
+        token_client::TokenClient,
         tokenizer_service::TokenizerService,
         user_persona_service::UserPersonaService,
     },
     state::{AppState, AppStateServices, DbPool},
     text_processing::chunking::ChunkConfig,
-    vector_db::qdrant_client::QdrantClientServiceTrait,
+    vector_db::VectorService,
 };
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ pub struct AppStateServicesBuilder {
     // Service overrides - all optional
     ai_client: Option<Arc<dyn AiClient + Send + Sync>>,
     embedding_client: Option<Arc<dyn EmbeddingClient + Send + Sync>>,
-    qdrant_service: Option<Arc<dyn QdrantClientServiceTrait + Send + Sync>>,
+    qdrant_service: Option<Arc<VectorService>>,
     embedding_pipeline_service: Option<Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>>,
     chat_override_service: Option<Arc<ChatOverrideService>>,
     user_persona_service: Option<Arc<UserPersonaService>>,
@@ -84,10 +84,12 @@ impl AppStateServicesBuilder {
         self
     }
 
-    pub fn with_qdrant_service(
-        mut self,
-        service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
-    ) -> Self {
+    pub fn with_qdrant_service(mut self, service: Arc<VectorService>) -> Self {
+        self.qdrant_service = Some(service);
+        self
+    }
+
+    pub fn with_vector_service(mut self, service: Arc<VectorService>) -> Self {
         self.qdrant_service = Some(service);
         self
     }
@@ -187,7 +189,7 @@ impl AppStateServicesBuilder {
                 .config
                 .gemini_api_key
                 .as_ref()
-                .map(|api_key| GeminiTokenClient::new(api_key.clone()));
+                .map(|api_key| TokenClient::new(api_key.clone()));
 
             Arc::new(HybridTokenCounter::new(
                 tokenizer_service,
@@ -344,11 +346,13 @@ impl AppStateBuilder {
         self
     }
 
-    pub fn with_qdrant_service(
-        mut self,
-        service: Arc<dyn QdrantClientServiceTrait + Send + Sync>,
-    ) -> Self {
+    pub fn with_qdrant_service(mut self, service: Arc<VectorService>) -> Self {
         self.services_builder = self.services_builder.with_qdrant_service(service);
+        self
+    }
+
+    pub fn with_vector_service(mut self, service: Arc<VectorService>) -> Self {
+        self.services_builder = self.services_builder.with_vector_service(service);
         self
     }
 

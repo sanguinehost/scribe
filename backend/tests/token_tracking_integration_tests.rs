@@ -314,6 +314,7 @@ async fn test_token_accumulation_integration() {
         content: "Hello, this is a comprehensive test message for token counting functionality. This message contains multiple sentences and should generate enough tokens to result in a meaningful cost calculation. We want to verify that the token tracking system works correctly and accumulates tokens properly across both chat sessions and user accounts.".to_string(),
         parts: None,
         attachments: None,
+        parent_message_id: None,
     };
 
     let response = client
@@ -481,6 +482,7 @@ async fn test_multi_chat_token_accumulation() {
             content: format!("Test message {} for chat {}", idx + 1, idx + 1),
             parts: None,
             attachments: None,
+            parent_message_id: None,
         };
 
         let response = client
@@ -627,6 +629,7 @@ async fn test_concurrent_token_tracking() {
                 ),
                 parts: None,
                 attachments: None,
+                parent_message_id: None,
             };
 
             client_clone

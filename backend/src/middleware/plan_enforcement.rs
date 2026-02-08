@@ -63,7 +63,7 @@ pub async fn plan_enforcement_middleware(
         .extensions()
         .get::<EnforcementConfig>()
         .cloned()
-        .unwrap_or_else(|| EnforcementConfig::default());
+        .unwrap_or_else(EnforcementConfig::default);
 
     // Skip enforcement if disabled
     if !enforcement_config.enforce_limits {

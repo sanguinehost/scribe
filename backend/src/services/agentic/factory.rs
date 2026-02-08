@@ -7,6 +7,7 @@ use crate::{
     llm::AiClient,
     services::{ChronicleService, LorebookService},
     state::AppState,
+    vector_db::VectorService,
 };
 
 use super::{
@@ -70,9 +71,7 @@ impl AgenticNarrativeFactory {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<
-            dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync,
-        >,
+        qdrant_service: Arc<VectorService>,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
         config: Option<NarrativeWorkflowConfig>,
@@ -139,12 +138,15 @@ impl AgenticNarrativeFactory {
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            app_state.qdrant_service.clone(),
-            app_state.embedding_client.clone(),
-            app_state.clone(),
-        ));
-        registry.add_tool(search_tool);
+        #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+        {
+            let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
+                app_state.qdrant_service.clone(),
+                app_state.embedding_client.clone(),
+                app_state.clone(),
+            ));
+            registry.add_tool(search_tool);
+        }
 
         // Lorebook management tools
         let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(
@@ -176,9 +178,7 @@ impl AgenticNarrativeFactory {
         ai_client: Arc<dyn AiClient>,
         chronicle_service: Arc<ChronicleService>,
         lorebook_service: Arc<LorebookService>,
-        qdrant_service: Arc<
-            dyn crate::vector_db::qdrant_client::QdrantClientServiceTrait + Send + Sync,
-        >,
+        qdrant_service: Arc<VectorService>,
         embedding_client: Arc<dyn crate::llm::EmbeddingClient + Send + Sync>,
         app_state: Arc<AppState>,
     ) {
@@ -199,12 +199,15 @@ impl AgenticNarrativeFactory {
         registry.add_tool(create_lorebook_tool);
 
         // Knowledge search tools - using existing embeddings infrastructure
-        let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
-            qdrant_service,
-            embedding_client,
-            app_state.clone(),
-        ));
-        registry.add_tool(search_tool);
+        #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+        {
+            let search_tool = Arc::new(SearchKnowledgeBaseTool::new(
+                qdrant_service,
+                embedding_client,
+                app_state.clone(),
+            ));
+            registry.add_tool(search_tool);
+        }
 
         // Lorebook management tools
         let update_lorebook_tool = Arc::new(UpdateLorebookEntryTool::new(

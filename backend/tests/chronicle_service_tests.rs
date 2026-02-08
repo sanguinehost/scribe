@@ -126,10 +126,12 @@ mod integration_tests {
             .expect("Failed to encrypt DEK for test user");
 
         let new_user = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: Uuid::new_v4().into(),
             username: username.to_string(),
             password_hash: hashed_password,
-            email,
+            email: email,
             kek_salt,
             encrypted_dek: encrypted_dek.into(),
             encrypted_dek_by_recovery: None,

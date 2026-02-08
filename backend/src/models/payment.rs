@@ -140,7 +140,7 @@ pub struct NewSubscription {
 }
 
 /// Update subscription for database updates
-#[derive(Debug, Clone, AsChangeset)]
+#[derive(Debug, Clone, AsChangeset, Serialize, Deserialize, Default)]
 #[diesel(table_name = subscriptions)]
 pub struct UpdateSubscription {
     pub paddle_customer_id: Option<String>,

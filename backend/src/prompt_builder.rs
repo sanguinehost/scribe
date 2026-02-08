@@ -8,11 +8,8 @@ use crate::{
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
     },
 };
-use genai::chat::ChatMessage as GenAiChatMessage;
-use genai::chat::ContentPart as Part; // This is the Part type from the genai crate
-use genai::chat::MessageContent; // This is an enum from the genai crate
+use rig::message::{AssistantContent, Message as RigMessage, UserContent};
 use secrecy::ExposeSecret;
-use serde_json;
 use std::fmt::Write;
 use std::sync::Arc;
 use tracing::{debug, error, warn};
@@ -44,8 +41,6 @@ fn escape_xml(text: &str) -> String {
 /// # Returns
 /// A formatted XML string containing the complete game state
 pub fn build_scene_context_xml(game_state: &crate::models::game_state::GameState) -> String {
-    use std::fmt::Write;
-
     let mut xml = String::from("<game_context>\n");
 
     // ============= PLAYER VITALS =============
@@ -484,30 +479,37 @@ fn build_character_info_string(
     }
 }
 
-/// Counts tokens for a single `GenAiChatMessage`.
-async fn count_tokens_for_genai_message(
-    message: &GenAiChatMessage,
+/// Counts tokens for a single `RigMessage`.
+async fn count_tokens_for_rig_message(
+    message: &RigMessage,
     token_counter: &HybridTokenCounter,
     model_name: &str,
 ) -> Result<usize, AppError> {
     let mut total_tokens = 0;
-    // genai::chat::ChatMessage has a `content: MessageContent` field.
-    // genai::chat::MessageContent is an enum. We need to match its variants.
-    if let Some(text) = message.content.first_text() {
-        total_tokens += token_counter
-            .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
-            .await?
-            .total;
-    } else {
-        for part in message.content.parts() {
-            if let Part::Text(text) = part {
-                total_tokens += token_counter
-                    .count_tokens(text, CountingMode::LocalOnly, Some(model_name))
-                    .await?
-                    .total;
-            }
-        }
-    }
+    let text = match message {
+        RigMessage::User { content } => content
+            .iter()
+            .filter_map(|c| match c {
+                rig::message::UserContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        RigMessage::Assistant { content, .. } => content
+            .iter()
+            .filter_map(|c| match c {
+                rig::message::AssistantContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    };
+
+    total_tokens += token_counter
+        .count_tokens(&text, CountingMode::LocalOnly, Some(model_name))
+        .await?
+        .total;
+
     Ok(total_tokens)
 }
 
@@ -515,12 +517,12 @@ async fn count_tokens_for_genai_message(
 pub struct PromptBuildParams<'a> {
     pub config: Arc<Config>,
     pub token_counter: Arc<HybridTokenCounter>,
-    pub recent_history: Vec<GenAiChatMessage>,
+    pub recent_history: Vec<RigMessage>,
     pub rag_items: Vec<RetrievedChunk>,
     pub system_prompt_base: Option<String>, // From Persona/Override
     pub raw_character_system_prompt: Option<String>, // Directly from Character.system_prompt
     pub character_metadata: Option<&'a CharacterMetadata>, // For name/description
-    pub current_user_message: GenAiChatMessage,
+    pub current_user_message: RigMessage,
     pub model_name: String,
     pub user_dek: Option<&'a secrecy::SecretBox<Vec<u8>>>, // For decrypting character data
     pub user_persona_name: Option<String>,                 // For {{user}} template substitution
@@ -547,6 +549,7 @@ pub struct PromptBuildParams<'a> {
 ///
 /// # Errors
 /// Returns `AppError` if token counting fails
+#[allow(clippy::too_many_arguments)]
 async fn build_meta_system_prompt(
     character_metadata: Option<&CharacterMetadata>,
     has_rag_items: bool,
@@ -668,11 +671,12 @@ You will receive structured information in the following format:\\n\
 ///
 /// # Errors
 /// Returns `AppError` if token counting fails
+#[allow(clippy::too_many_arguments)]
 async fn calculate_component_tokens(
     system_prompt_base: Option<&str>,
     raw_character_system_prompt: Option<&str>,
     character_metadata: Option<&CharacterMetadata>,
-    current_user_message: &GenAiChatMessage,
+    current_user_message: &RigMessage,
     token_counter: &HybridTokenCounter,
     model_name: &str,
     user_dek: Option<&secrecy::SecretBox<Vec<u8>>>,
@@ -743,7 +747,7 @@ async fn calculate_component_tokens(
     };
 
     let current_user_message_tokens =
-        count_tokens_for_genai_message(current_user_message, token_counter, model_name).await?;
+        count_tokens_for_rig_message(current_user_message, token_counter, model_name).await?;
 
     let core_memory_str = core_memory.unwrap_or("").to_string();
     let core_memory_tokens = if core_memory_str.is_empty() {
@@ -776,10 +780,10 @@ async fn calculate_component_tokens(
 /// Returns `AppError` if token counting fails
 async fn calculate_content_tokens(
     rag_items: &[RetrievedChunk],
-    recent_history: &[GenAiChatMessage],
+    recent_history: &[RigMessage],
     token_counter: &HybridTokenCounter,
     model_name: &str,
-) -> Result<(Vec<(RetrievedChunk, usize)>, Vec<(GenAiChatMessage, usize)>), AppError> {
+) -> Result<(Vec<(RetrievedChunk, usize)>, Vec<(RigMessage, usize)>), AppError> {
     let mut rag_items_with_tokens: Vec<(RetrievedChunk, usize)> = Vec::new();
     for item in rag_items {
         let tokens = token_counter
@@ -789,9 +793,9 @@ async fn calculate_content_tokens(
         rag_items_with_tokens.push((item.clone(), tokens));
     }
 
-    let mut recent_history_with_tokens: Vec<(GenAiChatMessage, usize)> = Vec::new();
+    let mut recent_history_with_tokens: Vec<(RigMessage, usize)> = Vec::new();
     for msg in recent_history {
-        let tokens = count_tokens_for_genai_message(msg, token_counter, model_name).await?;
+        let tokens = count_tokens_for_rig_message(msg, token_counter, model_name).await?;
         recent_history_with_tokens.push((msg.clone(), tokens));
     }
 
@@ -809,7 +813,7 @@ pub(crate) struct TokenCalculation {
     character_details_tokens: usize,
     current_user_message_tokens: usize,
     rag_items_with_tokens: Vec<(RetrievedChunk, usize)>,
-    recent_history_with_tokens: Vec<(GenAiChatMessage, usize)>,
+    recent_history_with_tokens: Vec<(RigMessage, usize)>,
     cognitive_context: Option<String>,
     cognitive_context_tokens: usize,
     #[allow(dead_code)]
@@ -945,17 +949,24 @@ fn deduplicate_rag_items(items: Vec<RetrievedChunk>) -> Vec<RetrievedChunk> {
 /// Filters out RAG items of type Chat if their content is already present in recent history
 fn filter_rag_items_already_in_history(
     rag_items: Vec<RetrievedChunk>,
-    recent_history: &[GenAiChatMessage],
+    recent_history: &[RigMessage],
 ) -> Vec<RetrievedChunk> {
     let mut history_texts = std::collections::HashSet::new();
 
     for msg in recent_history {
-        if let Some(text) = msg.content.first_text() {
-            history_texts.insert(text.trim().to_string());
-        } else {
-            for part in msg.content.parts() {
-                if let Part::Text(t) = part {
-                    history_texts.insert(t.trim().to_string());
+        match msg {
+            RigMessage::User { content } => {
+                for part in content.iter() {
+                    if let UserContent::Text(t) = part {
+                        history_texts.insert(t.text.trim().to_string());
+                    }
+                }
+            }
+            RigMessage::Assistant { content, .. } => {
+                for part in content.iter() {
+                    if let AssistantContent::Text(t) = part {
+                        history_texts.insert(t.text.trim().to_string());
+                    }
                 }
             }
         }
@@ -1159,6 +1170,7 @@ fn enforce_hard_token_limit(
 }
 
 #[cfg_attr(test, allow(dead_code))]
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn apply_token_limits(
     mut calculation: TokenCalculation,
     config: &Arc<Config>,
@@ -1434,8 +1446,8 @@ fn build_rag_context_strings(
                 &rag_item.metadata
             {
                 let content = &rag_item.text;
-                let session_dek =
-                    user_dek.map(|d| crate::auth::SessionDek::new(d.expose_secret().clone()));
+                let session_dek = user_dek
+                    .map(|d| crate::auth::session_dek::SessionDek::new(d.expose_secret().clone()));
                 let title = decrypt_lorebook_title(lorebook_meta, session_dek.as_ref());
 
                 write!(lorebook_context, "<lorebook_entry").unwrap();
@@ -1542,9 +1554,10 @@ fn build_rag_context_strings(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_final_prompt_strings(
     calculation: &TokenCalculation,
-    current_user_message: &GenAiChatMessage,
+    current_user_message: &RigMessage,
     character_metadata: Option<&CharacterMetadata>,
     _token_counter: &HybridTokenCounter,
     _model_name: &str,
@@ -1556,7 +1569,7 @@ async fn build_final_prompt_strings(
     narrative_style: Option<&crate::prompt_templates::NarrativeStyle>,
     game_state: Option<&crate::models::game_state::GameState>,
     core_memory: Option<&str>,
-) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+) -> Result<(String, Vec<RigMessage>), AppError> {
     // Use the template system to build the final system prompt
     let template_id = template_id.unwrap_or("neutral_roleplay");
 
@@ -1604,11 +1617,11 @@ async fn build_final_prompt_strings(
         });
 
         if let Some(personality) = character_personality {
-            char_obj["personality"] = serde_json::Value::String(personality).into();
+            char_obj["personality"] = serde_json::Value::String(personality);
         }
 
         if let Some(description) = character_description {
-            char_obj["description"] = serde_json::Value::String(description).into();
+            char_obj["description"] = serde_json::Value::String(description);
         }
 
         template_context["char"] = char_obj;
@@ -1617,58 +1630,57 @@ async fn build_final_prompt_strings(
     // Add persona override if available
     if !calculation.persona_override_prompt_str.is_empty() {
         template_context["persona_override"] =
-            serde_json::Value::String(calculation.persona_override_prompt_str.clone()).into();
+            serde_json::Value::String(calculation.persona_override_prompt_str.clone());
     }
 
     // Add character definition if available
     if !calculation.character_definition_str.is_empty() {
         template_context["character_definition"] =
-            serde_json::Value::String(calculation.character_definition_str.clone()).into();
+            serde_json::Value::String(calculation.character_definition_str.clone());
     }
 
     // Add character details if available
     if !calculation.character_details_str.is_empty() {
         template_context["character_details"] =
-            serde_json::Value::String(calculation.character_details_str.clone()).into();
+            serde_json::Value::String(calculation.character_details_str.clone());
     }
 
     // Add Chronicle context if available
     if !chronicle_context.is_empty() {
-        template_context["chronicle_context"] = serde_json::Value::String(chronicle_context).into();
+        template_context["chronicle_context"] = serde_json::Value::String(chronicle_context);
     }
 
     // Add Lorebook RAG context if available
     if !lorebook_context.is_empty() {
-        template_context["lorebook_context"] = serde_json::Value::String(lorebook_context).into();
+        template_context["lorebook_context"] = serde_json::Value::String(lorebook_context);
     }
 
     // Add Older Chat RAG context if available
     if !older_chat_context.is_empty() {
-        template_context["older_chat_context"] =
-            serde_json::Value::String(older_chat_context).into();
+        template_context["older_chat_context"] = serde_json::Value::String(older_chat_context);
     }
 
     // Add agent context as separate template variable for sections list generation
     if let Some(agent_ctx) = agent_context {
-        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string()).into();
+        template_context["agent_context"] = serde_json::Value::String(agent_ctx.to_string());
     }
 
     // Add scene context for Game Master mode (if game_state is provided)
     if let Some(state) = game_state {
         let scene_context = build_scene_context_xml(state);
-        template_context["scene_context"] = serde_json::Value::String(scene_context).into();
+        template_context["scene_context"] = serde_json::Value::String(scene_context);
     }
 
     // Add cognitive context if available
     if let Some(ctx) = &calculation.cognitive_context {
         if !ctx.is_empty() {
-            template_context["cognitive_context"] = serde_json::Value::String(ctx.clone()).into();
+            template_context["cognitive_context"] = serde_json::Value::String(ctx.clone());
         }
     }
 
     if let Some(mem) = core_memory {
         if !mem.is_empty() {
-            template_context["core_memory"] = serde_json::Value::String(mem.to_string()).into();
+            template_context["core_memory"] = serde_json::Value::String(mem.to_string());
         }
     }
 
@@ -1688,18 +1700,27 @@ async fn build_final_prompt_strings(
     }
 
     // Format current user message with guidance if provided
+    // Format current user message with guidance if provided
     let mut final_user_message = current_user_message.clone();
     if let Some(guidance_text) = guidance {
         if !guidance_text.is_empty() {
-            // Extract text from the message content and append guidance
-            if let Some(existing_text) = final_user_message.content.first_text() {
-                let modified_text = format!(
-                    "{}\n\n(SYSTEM INSTRUCTION: {})\n",
-                    existing_text, guidance_text
-                );
-                final_user_message.content = MessageContent::from_text(modified_text);
+            if let RigMessage::User { content } = &mut final_user_message {
+                let mut found = false;
+                for part in content.iter_mut() {
+                    if let UserContent::Text(t) = part {
+                        t.text = format!("{}\n\n(SYSTEM INSTRUCTION: {})\n", t.text, guidance_text);
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    content.push(UserContent::text(format!(
+                        "(SYSTEM INSTRUCTION: {})\n",
+                        guidance_text
+                    )));
+                }
             } else {
-                warn!("User message is not plain text, guidance not applied.");
+                warn!("User message is not a User message, guidance not applied.");
             }
         }
     }
@@ -1715,7 +1736,7 @@ async fn build_final_prompt_strings(
 /// Returns `AppError` if token counting fails, prompt building encounters errors, or character metadata processing fails
 pub async fn build_final_llm_prompt(
     params: PromptBuildParams<'_>,
-) -> Result<(String, Vec<GenAiChatMessage>), AppError> {
+) -> Result<(String, Vec<RigMessage>), AppError> {
     debug!(
         max_allowed_total_tokens = params
             .context_total_token_limit
@@ -1952,27 +1973,27 @@ mod tests {
         use crate::errors::AppError;
         use crate::prompt_builder::{
             apply_token_limits, truncate_rag_context, truncate_recent_history_strategically,
-            TokenCalculation,
+            RigMessage, TokenCalculation,
         };
         use crate::services::embeddings::{
             ChatMessageChunkMetadata, RetrievedChunk, RetrievedMetadata,
         };
-        use genai::chat::{ChatMessage as GenAiChatMessage, ChatRole, MessageContent};
+        use rig::message::{AssistantContent, UserContent};
+        use rig::one_or_many::OneOrMany;
         use std::sync::Arc;
 
-        fn create_test_message(
-            role: ChatRole,
-            content: &str,
-            tokens: usize,
-        ) -> (GenAiChatMessage, usize) {
-            (
-                GenAiChatMessage {
-                    role,
-                    content: MessageContent::from(content.to_string()),
-                    options: None,
+        fn create_test_message(role: &str, content: &str, tokens: usize) -> (RigMessage, usize) {
+            let msg = match role {
+                "user" => RigMessage::User {
+                    content: OneOrMany::one(UserContent::text(content)),
                 },
-                tokens,
-            )
+                "assistant" => RigMessage::Assistant {
+                    content: OneOrMany::one(AssistantContent::text(content)),
+                    id: None,
+                },
+                _ => panic!("Invalid role"),
+            };
+            (msg, tokens)
         }
 
         fn create_test_calculation(
@@ -1982,7 +2003,7 @@ mod tests {
             details_tokens: usize,
             current_user_tokens: usize,
             rag_items: Vec<(RetrievedChunk, usize)>,
-            history_messages: Vec<(GenAiChatMessage, usize)>,
+            history_messages: Vec<(RigMessage, usize)>,
         ) -> TokenCalculation {
             TokenCalculation {
                 meta_system_prompt_tokens: meta_tokens,
@@ -2020,11 +2041,7 @@ mod tests {
             let mut history_messages = Vec::new();
             for i in 0..10 {
                 history_messages.push(create_test_message(
-                    if i % 2 == 0 {
-                        ChatRole::User
-                    } else {
-                        ChatRole::Assistant
-                    },
+                    if i % 2 == 0 { "user" } else { "assistant" },
                     &format!("Message {}", i),
                     1000,
                 ));
@@ -2065,7 +2082,18 @@ mod tests {
             // Verify tail preservation: the last messages should be preserved
             let preserved_messages = &calculation.recent_history_with_tokens;
             for (i, (message, _)) in preserved_messages.iter().enumerate() {
-                if let Some(content) = message.content.first_text() {
+                let content = match message {
+                    RigMessage::User { content } => content.iter().find_map(|c| match c {
+                        UserContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                    RigMessage::Assistant { content, .. } => content.iter().find_map(|c| match c {
+                        AssistantContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                };
+
+                if let Some(content) = content {
                     // The remaining messages should be the later ones (some from middle + tail)
                     // Due to middle-out truncation, we can't predict exact indices, but we know
                     // the last 4 should definitely be preserved
@@ -2082,8 +2110,8 @@ mod tests {
         fn test_strategic_truncation_insufficient_messages_fallback() {
             // Test with fewer messages than min_tail
             let history_messages = vec![
-                create_test_message(ChatRole::User, "Message 1", 5000),
-                create_test_message(ChatRole::Assistant, "Message 2", 5000),
+                create_test_message("user", "Message 1", 5000),
+                create_test_message("assistant", "Message 2", 5000),
             ];
 
             let mut calculation = create_test_calculation(
@@ -2120,8 +2148,8 @@ mod tests {
         fn test_strategic_truncation_exact_limit() {
             // Test when we're exactly at the limit
             let history_messages = vec![
-                create_test_message(ChatRole::User, "Message 1", 1000),
-                create_test_message(ChatRole::Assistant, "Message 2", 1000),
+                create_test_message("user", "Message 1", 1000),
+                create_test_message("assistant", "Message 2", 1000),
             ];
 
             let mut calculation = create_test_calculation(
@@ -2157,11 +2185,7 @@ mod tests {
             let mut history_messages = Vec::new();
             for i in 0..8 {
                 history_messages.push(create_test_message(
-                    if i % 2 == 0 {
-                        ChatRole::User
-                    } else {
-                        ChatRole::Assistant
-                    },
+                    if i % 2 == 0 { "user" } else { "assistant" },
                     &format!("Message {}", i),
                     1000,
                 ));
@@ -2200,7 +2224,18 @@ mod tests {
             let tail_start = preserved_messages.len() - min_tail;
 
             for (i, (message, _)) in preserved_messages[tail_start..].iter().enumerate() {
-                if let Some(content) = message.content.first_text() {
+                let content = match message {
+                    RigMessage::User { content } => content.iter().find_map(|c| match c {
+                        UserContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                    RigMessage::Assistant { content, .. } => content.iter().find_map(|c| match c {
+                        AssistantContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    }),
+                };
+
+                if let Some(content) = content {
                     // These should be messages 5, 6, 7 (the tail)
                     let expected_index = 8 - min_tail + i;
                     assert!(content.contains(&format!("Message {}", expected_index)));
@@ -2211,8 +2246,7 @@ mod tests {
         #[test]
         fn test_hard_limit_enforcement() {
             // Create a scenario where even after truncation, we're still over limit
-            let history_messages =
-                vec![create_test_message(ChatRole::User, "Huge message", 100_000)];
+            let history_messages = vec![create_test_message("user", "Huge message", 100_000)];
 
             let calculation = create_test_calculation(
                 50_000, // meta_tokens
@@ -2275,8 +2309,8 @@ mod tests {
             let rag_items = vec![(rag_chunk.clone(), 3000), (rag_chunk.clone(), 3000)];
 
             let history_messages = vec![
-                create_test_message(ChatRole::User, "Important message 1", 1000),
-                create_test_message(ChatRole::Assistant, "Important message 2", 1000),
+                create_test_message("user", "Important message 1", 1000),
+                create_test_message("assistant", "Important message 2", 1000),
             ];
 
             let mut calculation = create_test_calculation(
@@ -2472,9 +2506,9 @@ mod tests {
 
         let xml = super::build_scene_context_xml(&state);
 
-        assert!(xml.contains("<active_npcs>"));
+        assert!(xml.contains("<npcs_present>"));
         assert!(xml.contains("Friendly Bartender"));
-        assert!(xml.contains("</active_npcs>"));
+        assert!(xml.contains("</npcs_present>"));
     }
 
     #[test]

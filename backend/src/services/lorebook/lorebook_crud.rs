@@ -3,6 +3,9 @@ use super::*;
 #[cfg(feature = "sqlite-backend")]
 use crate::db::pool_helpers::SqliteInteractExt;
 use crate::db::DbId;
+use qdrant_client::qdrant::condition::ConditionOneOf;
+use qdrant_client::qdrant::r#match::MatchValue;
+use qdrant_client::qdrant::{Condition, FieldCondition, Filter, Match};
 
 impl LorebookService {
     /// Creates a new lorebook for the authenticated user.
@@ -25,7 +28,7 @@ impl LorebookService {
         let current_time = Utc::now();
 
         let new_lorebook_db = crate::models::NewLorebook {
-            id: new_lorebook_id.into(),
+            id: new_lorebook_id,
             user_id: user.id,
             name: payload.name,
             description: payload.description,
@@ -362,7 +365,7 @@ impl LorebookService {
             "Cleaning up vector embeddings for lorebook [REDACTED_UUID] for user [REDACTED_UUID]"
         );
 
-        let vector_filter = Filter {
+        let filter = Filter {
             must: vec![
                 Condition {
                     condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
@@ -396,11 +399,7 @@ impl LorebookService {
         };
 
         // Delete vector embeddings
-        if let Err(e) = self
-            .qdrant_service
-            .delete_points_by_filter(vector_filter)
-            .await
-        {
+        if let Err(e) = self.qdrant_service.delete_by_filter(filter).await {
             // Log the error but don't fail the entire operation since DB deletion succeeded
             error!(
                 error = %e,

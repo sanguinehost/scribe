@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use diesel::prelude::*;
-use scribe_backend::{config::Config, vector_db::qdrant_client::QdrantClientServiceTrait};
+use scribe_backend::config::Config;
 use std::sync::Arc;
 use tracing::{info, warn};
 
@@ -77,31 +77,13 @@ async fn main() -> Result<()> {
     };
 
     // Initialize vector database service
-    #[cfg(feature = "remote-vector")]
-    let qdrant_service = {
-        use scribe_backend::vector_db::qdrant_client::QdrantClientService;
-        info!("Initializing Qdrant client service (remote-vector mode)...");
-        let service = Arc::new(QdrantClientService::new(config.clone()).await?);
-        service as Arc<dyn QdrantClientServiceTrait + Send + Sync>
-    };
+    let embedding_model = scribe_backend::llm::UnifiedEmbeddingModel::Cloud(
+        scribe_backend::llm::cloud_embedding_client::build_cloud_embedding_client(config.clone())?,
+    );
 
-    #[cfg(feature = "embedded-vector")]
-    let qdrant_service = {
-        info!("Initializing LanceDB vector service (embedded-vector mode)...");
-        use scribe_backend::vector_db::lancedb_client::LanceDbClient;
-        let service = Arc::new(LanceDbClient::new(config.clone()).await?);
-        service.ensure_collection_exists().await?;
-        service as Arc<dyn QdrantClientServiceTrait + Send + Sync>
-    };
-
-    // Fallback when neither remote-vector nor embedded-vector is enabled
-    #[cfg(not(any(feature = "remote-vector", feature = "embedded-vector")))]
-    let qdrant_service = {
-        info!("Initializing no-op vector service (no vector features enabled)...");
-        use scribe_backend::vector_db::qdrant_client::NoOpQdrantService;
-        let service = Arc::new(NoOpQdrantService::new(config.clone()).await?);
-        service as Arc<dyn QdrantClientServiceTrait + Send + Sync>
-    };
+    let qdrant_service =
+        scribe_backend::vector_db::create_vector_service(config.clone(), embedding_model).await?;
+    qdrant_service.ensure_collection_exists().await?;
 
     info!("Starting embedding cleanup process...");
 
@@ -121,7 +103,7 @@ async fn main() -> Result<()> {
 
         // We use retrieve_points with no filter to get all points
         let points = qdrant_service
-            .retrieve_points(None, args.batch_size, Some(offset))
+            .retrieve_points(None, args.batch_size, Some(offset), None)
             .await?;
 
         if points.is_empty() {

@@ -847,6 +847,53 @@ impl ChronicleService {
         new_event.chronicle_id = chronicle_id;
         new_event.user_id = user_id;
 
+        // Create a temporary event for deduplication check using plaintext summary
+        let temp_event = ChronicleEvent {
+            id: new_event.id,
+            chronicle_id,
+            user_id,
+            event_type: new_event.event_type.clone(),
+            summary: new_event.summary.clone(), // Still plaintext here
+            source: new_event.source.clone(),
+            message_variant_id: new_event.message_variant_id,
+            created_at: new_event.timestamp_iso8601,
+            updated_at: new_event.timestamp_iso8601,
+            summary_encrypted: None,
+            summary_nonce: None,
+            timestamp_iso8601: new_event.timestamp_iso8601,
+            keywords: Some(new_event.keywords.clone()),
+            keywords_encrypted: None,
+            keywords_nonce: None,
+            chat_session_id: new_event.chat_session_id,
+            #[cfg(feature = "sqlite-backend")]
+            event_data: None,
+        };
+
+        // Check for duplicates
+        let dedup_service =
+            ChronicleDeduplicationService::new(self.db_pool.clone(), self.ai_client.clone(), None);
+        match dedup_service
+            .check_for_duplicates(&temp_event, session_dek)
+            .await
+        {
+            Ok(result) => {
+                if result.is_duplicate {
+                    tracing::info!(
+                        "Skipping duplicate event creation: {} is duplicate of {:?} (confidence: {:.2})",
+                        temp_event.id,
+                        result.duplicate_event_id,
+                        result.confidence
+                    );
+                    // Return the duplicate event if we can find it, or just the temp one marked as existing
+                    return Ok(temp_event);
+                }
+            }
+            Err(e) => {
+                error!("Failed to check for duplicates: {}", e);
+                // Continue with creation on error
+            }
+        }
+
         // Encrypt the summary and keywords if DEK is provided
         if let Some(dek) = session_dek {
             // Encrypt summary
@@ -869,7 +916,9 @@ impl ChronicleService {
             }
 
             // Encrypt keywords if present
-            if let Some(ref keywords_vec) = new_event.keywords.0 {
+            // Encrypt keywords if present
+            {
+                let keywords_vec = &new_event.keywords.0;
                 // Convert Vec<Option<String>> to Vec<String> for serialization
                 let keywords: Vec<String> =
                     keywords_vec.iter().filter_map(|opt| opt.clone()).collect();
@@ -884,8 +933,9 @@ impl ChronicleService {
                             new_event.keywords_encrypted = Some(ciphertext);
                             new_event.keywords_nonce = Some(nonce);
                             // Clear plaintext keywords - we MUST NOT store plaintext in the database
-                            new_event.keywords =
-                                OptionalStringArray(Some(vec![Some("[ENCRYPTED]".to_string())]));
+                            new_event.keywords = OptionalStringArray::from_vec(vec![Some(
+                                "[ENCRYPTED]".to_string(),
+                            )]);
                             tracing::debug!(event_type = %new_event.event_type, "Encrypted chronicle event keywords");
                         }
                         Err(e) => {
@@ -898,55 +948,7 @@ impl ChronicleService {
             }
         }
 
-        // Create a temporary event for deduplication check
-        let temp_event = ChronicleEvent {
-            id: new_event.id.unwrap_or_else(crate::db::DbId::new),
-            chronicle_id,
-            user_id,
-            event_type: new_event.event_type.clone(),
-            summary: new_event.summary.clone(),
-            source: new_event.source.clone(),
-            message_variant_id: new_event.message_variant_id.clone(),
-            event_data: None,
-            created_at: new_event.timestamp_iso8601, // Use timestamp as created_at for check
-            updated_at: new_event.timestamp_iso8601,
-            summary_encrypted: new_event.summary_encrypted.clone(),
-            summary_nonce: new_event.summary_nonce.clone(),
-            timestamp_iso8601: new_event.timestamp_iso8601,
-            keywords: new_event.keywords.clone(),
-            keywords_encrypted: new_event.keywords_encrypted.clone(),
-            keywords_nonce: new_event.keywords_nonce.clone(),
-            chat_session_id: new_event.chat_session_id,
-        };
-
-        // Check for duplicates
-        let dedup_service =
-            ChronicleDeduplicationService::new(self.db_pool.clone(), self.ai_client.clone(), None);
-        match dedup_service.check_for_duplicates(&temp_event).await {
-            Ok(result) => {
-                if result.is_duplicate {
-                    tracing::info!(
-                        "Skipping duplicate event creation: {} is duplicate of {:?} (confidence: {:.2})",
-                        temp_event.id,
-                        result.duplicate_event_id,
-                        result.confidence
-                    );
-                    // Return the duplicate event if we can find it, or just the temp one marked as existing
-                    // For now, we'll return the temp event but NOT insert it into the DB
-                    // This prevents the duplicate from being stored
-                    return Ok(temp_event);
-                }
-            }
-            Err(e) => {
-                error!("Failed to check for duplicates: {}", e);
-                // Continue with creation on error - better to have duplicate than missing data
-            }
-        }
-
-        // Generate ID if not present (required for SQLite and good practice)
-        if new_event.id.is_none() {
-            new_event.id = Some(crate::db::DbId::new());
-        }
+        // ID is now handled by NewChronicleEvent builder/default
 
         #[cfg(feature = "postgres-backend")]
         let event = {
@@ -965,7 +967,7 @@ impl ChronicleService {
 
         #[cfg(feature = "sqlite-backend")]
         let event = {
-            let event_id = new_event.id.expect("Event ID must be set before insert");
+            let event_id = new_event.id;
             crate::db::with_conn(&self.db_pool, move |conn| {
                 Self::insert_event_sync(conn, &new_event, event_id)
             })
@@ -1229,9 +1231,7 @@ impl ChronicleService {
                 event_type: update.event_type,
                 summary: update.summary,
                 source: update.source.map(|s| s.to_string()),
-                keywords: update
-                    .keywords
-                    .map(|k| OptionalStringArray(Some(k.into_iter().map(Some).collect()))),
+                keywords: update.keywords.map(OptionalStringArray::from_strings),
                 summary_encrypted,
                 summary_nonce,
                 keywords_encrypted,
@@ -1279,7 +1279,7 @@ impl ChronicleService {
                 source: update.source.map(|s| s.to_string()),
                 keywords: update
                     .keywords
-                    .map(|k| OptionalStringArray(Some(k.into_iter().map(Some).collect()))),
+                    .map(|k| OptionalStringArray(k.into_iter().map(Some).collect())),
                 summary_encrypted,
                 summary_nonce,
                 keywords_encrypted,
@@ -1749,6 +1749,7 @@ impl ChronicleService {
     }
 
     /// Process a cognitive update (Retain Pipeline)
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_cognitive_update(
         &self,
         user_id: DbId,
@@ -1775,20 +1776,22 @@ impl ChronicleService {
         }
 
         // 2. Create Chronicle Event (Episodic Memory)
-        if payload.should_create_event {
-            let event_request = CreateEventRequest {
-                event_type: "NARRATIVE.EVENT".to_string(),
-                summary: payload.summary.clone(),
-                source: EventSource::AiExtracted,
-                keywords: Some(payload.keywords.clone()),
-                timestamp_iso8601: None,
-                chat_session_id,
-                message_variant_id,
-            };
+        let event_request = CreateEventRequest {
+            event_type: if payload.should_create_event {
+                "NARRATIVE.EVENT".to_string()
+            } else {
+                "COGNITIVE.UPDATE".to_string()
+            },
+            summary: payload.summary.clone(),
+            source: EventSource::AiExtracted,
+            keywords: Some(payload.keywords.clone()),
+            timestamp_iso8601: None,
+            chat_session_id,
+            message_variant_id,
+        };
 
-            self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
-                .await?;
-        }
+        self.create_event(user_id, chronicle_id, event_request, Some(session_dek))
+            .await?;
 
         // 3. Process Facts (Hindsight Retain)
         for extraction in payload.facts {
@@ -1867,6 +1870,7 @@ impl ChronicleService {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn retain_character_opinion(
         &self,
         user_id: DbId,
@@ -2013,6 +2017,7 @@ impl ChronicleService {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn retain_entity_observation(
         &self,
         user_id: DbId,

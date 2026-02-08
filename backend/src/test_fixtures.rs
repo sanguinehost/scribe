@@ -5,9 +5,10 @@ use crate::{
     services::email_service::{create_email_service, EmailService},
     state::{AppState, DbPool},
     state_builder::AppStateServicesBuilder,
-    test_helpers::{MockAiClient, MockEmbeddingClient, MockQdrantClientService},
-    vector_db::qdrant_client::QdrantClientServiceTrait,
+    test_helpers::{MockAiClient, MockEmbeddingClient},
 };
+#[cfg(feature = "remote-vector")]
+use crate::{test_helpers::MockQdrantClientService, vector_db::QdrantClientServiceTrait};
 use std::sync::Arc;
 
 /// Factory for creating test fixtures with sensible defaults
@@ -23,15 +24,18 @@ impl TestFixtures {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> =
             Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync> =
-            Arc::new(MockQdrantClientService::new());
-
-        let services = AppStateServicesBuilder::new(pool.clone(), config.clone())
+        let mut builder = AppStateServicesBuilder::new(pool.clone(), config.clone())
             .with_ai_client(mock_ai_client)
-            .with_embedding_client(mock_embedding_client)
-            .with_qdrant_service(mock_qdrant_service)
-            .build()
-            .await?;
+            .with_embedding_client(mock_embedding_client);
+
+        #[cfg(feature = "remote-vector")]
+        {
+            let mock_qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait> =
+                Arc::new(MockQdrantClientService::new());
+            builder = builder.with_qdrant_service(mock_qdrant_service);
+        }
+
+        let services = builder.build().await?;
 
         Ok(AppState::new(pool, config, services))
     }
@@ -45,16 +49,19 @@ impl TestFixtures {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> =
             Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync> =
-            Arc::new(MockQdrantClientService::new());
-
         // All other services will be created with defaults by the builder
-        let services = AppStateServicesBuilder::new(pool.clone(), config.clone())
+        let mut builder = AppStateServicesBuilder::new(pool.clone(), config.clone())
             .with_ai_client(mock_ai_client)
-            .with_embedding_client(mock_embedding_client)
-            .with_qdrant_service(mock_qdrant_service)
-            .build()
-            .await?;
+            .with_embedding_client(mock_embedding_client);
+
+        #[cfg(feature = "remote-vector")]
+        {
+            let mock_qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait> =
+                Arc::new(MockQdrantClientService::new());
+            builder = builder.with_qdrant_service(mock_qdrant_service);
+        }
+
+        let services = builder.build().await?;
 
         Ok(AppState::new(pool, config, services))
     }
@@ -65,13 +72,18 @@ impl TestFixtures {
         let mock_ai_client: Arc<dyn AiClient + Send + Sync> = Arc::new(MockAiClient::new());
         let mock_embedding_client: Arc<dyn EmbeddingClient + Send + Sync> =
             Arc::new(MockEmbeddingClient::new());
-        let mock_qdrant_service: Arc<dyn QdrantClientServiceTrait + Send + Sync> =
-            Arc::new(MockQdrantClientService::new());
-
-        AppStateServicesBuilder::new(pool, config)
+        let mut builder = AppStateServicesBuilder::new(pool, config)
             .with_ai_client(mock_ai_client)
-            .with_embedding_client(mock_embedding_client)
-            .with_qdrant_service(mock_qdrant_service)
+            .with_embedding_client(mock_embedding_client);
+
+        #[cfg(feature = "remote-vector")]
+        {
+            let mock_qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait> =
+                Arc::new(MockQdrantClientService::new());
+            builder = builder.with_qdrant_service(mock_qdrant_service);
+        }
+
+        builder
     }
 
     /// Create a logging email service for tests

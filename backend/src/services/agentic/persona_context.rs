@@ -180,7 +180,7 @@ mod tests {
             mes_example: None,
             system_prompt: None,
             post_history_instructions: None,
-            tags: crate::db::unified_types::DbStringArray(None),
+            tags: Some(crate::db::unified_types::DbStringArray::empty()),
             avatar: None,
             created_at: chrono::Utc::now().into(),
             updated_at: chrono::Utc::now().into(),

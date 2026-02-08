@@ -43,6 +43,8 @@ export interface StreamingMessage {
 	variants?: import('$lib/types').MessageVariantResponse[] | null; // Array of variants for this message
 	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
 	game_state?: Record<string, unknown> | null; // Game state associated with this message
+	reasoningContent?: string; // Content of the reasoning/thinking block
+	isThinking?: boolean; // Whether the model is currently thinking
 }
 
 // Connection states following the architectural design
@@ -102,6 +104,8 @@ class StreamingService {
 			completion_tokens?: number;
 			model_name?: string;
 			backend_id?: string;
+			reasoningContent: string; // Buffer for reasoning content
+			isThinking: boolean; // Tracking reasoning state
 			isComplete: boolean;
 		}
 	>();
@@ -235,7 +239,38 @@ class StreamingService {
 		buffer.content = reconstructedContent;
 
 		// Update message progressively so TypewriterMessage can see content
+		const message = this.messages.find((msg) => msg.id === messageId);
+		if (message) {
+			message.isThinking = false;
+		}
+
 		this.updateMessageContentProgressive(messageId);
+	}
+
+	/**
+	 * Append reasoning content to buffer and update message
+	 */
+	private appendReasoningContent(messageId: string, content: string): void {
+		const buffer = this.messageBuffers.get(messageId);
+		if (!buffer) {
+			logger.warn('streaming-service', 'No buffer found for reasoning content', { messageId });
+			return;
+		}
+
+		buffer.reasoningContent = (buffer.reasoningContent || '') + content;
+		buffer.isThinking = true;
+
+		const message = this.messages.find((msg) => msg.id === messageId);
+		if (message) {
+			message.reasoningContent = buffer.reasoningContent;
+			message.isThinking = true;
+			// Increment content version for reactivity in Svelte 5
+			message.contentVersion = (message.contentVersion || 0) + 1;
+			logger.debug('streaming-service', 'Appended reasoning content to message', {
+				messageId,
+				totalLen: message.reasoningContent.length
+			});
+		}
 	}
 
 	/**
@@ -407,7 +442,7 @@ class StreamingService {
 		guidance?: string; // Optional guidance text for regeneration steering
 		targetMessageId?: string; // If provided, update this message instead of creating new
 		variantOf?: string; // If provided, create this response as a variant of the specified message ID
-		gemini_thinking_level?: string; // Optional thinking level for Gemini 3
+		thinking_level?: string; // Centralized thinking level
 	}): Promise<void> {
 		// Connect to streaming service
 		console.log('🌐 [WebStreamingService] Connecting to chat', params.chatId);
@@ -534,6 +569,8 @@ class StreamingService {
 		this.messageBuffers.set(assistantMessageId, {
 			content: '',
 			chunks: {},
+			reasoningContent: '',
+			isThinking: false,
 			isComplete: false
 		});
 
@@ -549,7 +586,7 @@ class StreamingService {
 					guidance: params.guidance,
 					variantOf: params.variantOf,
 					isRegeneration: params.isRegeneration,
-					gemini_thinking_level: params.gemini_thinking_level
+					thinking_level: params.thinking_level
 				},
 				assistantMessageId
 			);
@@ -572,7 +609,7 @@ class StreamingService {
 			guidance?: string;
 			variantOf?: string;
 			isRegeneration?: boolean;
-			gemini_thinking_level?: string;
+			thinking_level?: string;
 		},
 		assistantMessageId: string
 	): Promise<void> {
@@ -616,7 +653,7 @@ class StreamingService {
 			analysis_mode: params.analysisMode, // Pass analysis mode for regeneration
 			guidance: params.guidance, // Pass optional guidance for regeneration steering
 			variant_of: params.variantOf, // Pass variant_of for creating variants
-			gemini_thinking_level: params.gemini_thinking_level // Pass thinking level for Gemini 3
+			thinking_level: params.thinking_level // Pass centralized thinking level
 		};
 
 		logger.debug('streaming-service', 'Starting sveltekit-sse source', { url: apiUrl });
@@ -796,11 +833,16 @@ class StreamingService {
 					break;
 
 				case 'thinking':
-					logger.debug('streaming-service', 'Thinking event received', {
-						data: _event.data
+					console.log('🧠 [WebStreamingService] RECEIVED "thinking" event!', {
+						assistantMessageId,
+						dataLen: _event.data?.length,
+						dataPreview: _event.data?.slice(0, 50)
 					});
-					// TODO: Implement UI for thinking/reasoning content
-					// For now, we just log it to confirm receipt
+
+					if (_event.data) {
+						const messageId = this.currentAssistantMessageId || assistantMessageId;
+						this.appendReasoningContent(messageId, _event.data);
+					}
 					break;
 
 				case 'error':

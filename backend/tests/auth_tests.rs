@@ -190,7 +190,11 @@ async fn test_register_success() -> AnyhowResult<()> {
         auth_response.username, username,
         "Username in response should match"
     );
-    assert_eq!(auth_response.email, email, "Email in response should match");
+    assert_eq!(
+        auth_response.email,
+        Some(email),
+        "Email in response should match"
+    );
     assert_eq!(
         auth_response.role, "User",
         "Role in response should be 'User'"
@@ -363,7 +367,7 @@ async fn test_login_success() -> AnyhowResult<()> {
     .await?;
 
     guard.add_user(user.id);
-    info!(user_id = %user.id, %username, email = %user.email, "Test user created for login");
+    info!(user_id = %user.id, %username, email = ?user.email, "Test user created for login");
 
     // --- Use app.oneshot() ---
     // Use LoginPayload with username as identifier
@@ -391,7 +395,8 @@ async fn test_login_success() -> AnyhowResult<()> {
         "Username in response should match"
     );
     assert_eq!(
-        auth_response.email, user.email,
+        auth_response.email,
+        Some(user.email),
         "Email in response should match"
     );
     assert_eq!(
@@ -429,7 +434,7 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
     .await?;
 
     guard.add_user(user.id);
-    info!(user_id = %user.id, %username, email = %user.email, "Test user created for email login");
+    info!(user_id = %user.id, %username, email = ?user.email, "Test user created for email login");
 
     // Use LoginPayload with email as identifier
     let login_payload = json!({
@@ -456,7 +461,8 @@ async fn test_login_success_with_email() -> AnyhowResult<()> {
         "Username in response should match"
     );
     assert_eq!(
-        auth_response.email, user.email,
+        auth_response.email,
+        Some(user.email),
         "Email in response should match"
     );
     assert_eq!(
@@ -909,7 +915,7 @@ async fn test_me_success() -> AnyhowResult<()> {
 
     // Verify user data
     assert_eq!(auth_response.username, username);
-    assert_eq!(auth_response.email, user.email);
+    assert_eq!(auth_response.email, Some(user.email));
     assert_eq!(
         auth_response.role, "User",
         "Role in response should be 'User'"

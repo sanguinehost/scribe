@@ -73,7 +73,13 @@ async fn create_test_character(
         spec_version: "2.0.0".to_string(),
         name: name.to_string(),
         visibility: Some("private".to_string()),
+        #[cfg(feature = "postgres-backend")]
         created_at: Utc::now().into(),
+        #[cfg(feature = "postgres-backend")]
+        updated_at: Utc::now().into(),
+        #[cfg(feature = "sqlite-backend")]
+        created_at: Utc::now().into(),
+        #[cfg(feature = "sqlite-backend")]
         updated_at: Utc::now().into(),
         ..Default::default()
     };
@@ -107,6 +113,9 @@ async fn create_test_chat_session(
         model_name: Some("test-model".to_string()),
         visibility: Some("private".to_string()),
         prompt_template_id: "default".to_string(),
+        #[cfg(feature = "postgres-backend")]
+        tokens_counted_at: chrono::Utc::now().into(),
+        #[cfg(feature = "sqlite-backend")]
         tokens_counted_at: chrono::Utc::now().into(),
         total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
         ..Default::default()

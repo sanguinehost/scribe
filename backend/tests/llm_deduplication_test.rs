@@ -1,11 +1,9 @@
 #![cfg(feature = "postgres-backend")]
 use diesel::prelude::*;
-use genai::adapter::AdapterKind;
-use genai::chat::{ChatResponse, MessageContent, Usage};
-use genai::ModelIden;
 #[cfg(feature = "sqlite-backend")]
 use scribe_backend::db::SqliteInteractExt;
 use scribe_backend::db::{get_conn, DbBigInt, DbBlob, DbId, DbTimestamp};
+use scribe_backend::llm::RigChatResponse;
 use scribe_backend::models::chronicle::{CreateChronicleRequest, NewPlayerChronicle};
 use scribe_backend::models::chronicle_event::{CreateEventRequest, EventFilter, EventSource};
 use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
@@ -13,6 +11,7 @@ use scribe_backend::schema::{player_chronicles, users};
 use scribe_backend::services::chronicle_service::ChronicleService;
 use scribe_backend::test_helpers::{spawn_app, TestApp};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn test_llm_deduplication_solomon_example() {
@@ -21,6 +20,8 @@ async fn test_llm_deduplication_solomon_example() {
 
     // 2. Manually create User
     let new_user = NewUser {
+        created_at: scribe_backend::db::DbTimestamp::now(),
+        updated_at: scribe_backend::db::DbTimestamp::now(),
         id: Uuid::new_v4().into(),
         username: "testuser".to_string(),
         password_hash: "hash".to_string(),
@@ -117,13 +118,12 @@ async fn test_llm_deduplication_solomon_example() {
             "reasoning": "Both events describe Solomon transferring water to his backpack."
         });
 
-        let chat_response = ChatResponse {
-            content: MessageContent::from(json_response.to_string()),
+        let chat_response = RigChatResponse {
+            content: json_response.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
 
         mock_client.set_response(Ok(chat_response));
@@ -169,6 +169,8 @@ async fn test_llm_deduplication_elara_example() {
     {
         let mut conn = get_conn(&pool).await.expect("Failed to get connection");
         let new_user = NewUser {
+            created_at: scribe_backend::db::DbTimestamp::now(),
+            updated_at: scribe_backend::db::DbTimestamp::now(),
             id: Uuid::new_v4().into(),
             username: "test_elara".to_string(),
             email: "test_elara@example.com".to_string(),
@@ -259,13 +261,12 @@ async fn test_llm_deduplication_elara_example() {
             "reasoning": "Both events describe Solomon interacting with Elara and Mastema observing."
         });
 
-        let chat_response = ChatResponse {
-            content: MessageContent::from(json_response.to_string()),
+        let chat_response = RigChatResponse {
+            content: json_response.to_string(),
+            prompt_tokens: Some(10),
+            completion_tokens: Some(10),
+            total_tokens: Some(20),
             reasoning_content: None,
-            model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            provider_model_iden: ModelIden::new(AdapterKind::Gemini, "gemini-2.5-flash-lite"),
-            usage: Usage::default(),
-            captured_raw_body: None,
         };
 
         mock_client.set_response(Ok(chat_response));

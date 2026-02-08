@@ -16,14 +16,14 @@
 
 use super::CharacterContext;
 use crate::errors::AppError;
+use crate::llm::AiClient;
 use crate::models::game_state::{
     EnvironmentState, GameState, GameTime, InventoryItem, Location, NpcState, Quest,
     QuestObjective, QuestStatus, Vital,
 };
-use genai::chat::{ChatMessage, ChatOptions, ChatRequest, ThinkingLevel};
-use genai::Client;
 use regex::Regex;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 /// AI Provider enum for the State Manager
@@ -46,7 +46,7 @@ pub struct StateManagerConfig {
     pub max_output_tokens: Option<i32>,
     /// Temperature (lower = more deterministic)
     pub temperature: Option<f64>,
-    /// Gemini 3 thinking level
+    /// Gemini 3 thinking level (mapped to reasoning_budget)
     pub thinking_level: Option<String>,
 }
 
@@ -57,7 +57,7 @@ impl Default for StateManagerConfig {
             model_name: "gemini-3-flash-preview".to_string(),
             max_output_tokens: Some(4096),
             temperature: Some(1.0), // Google recommends temperature=1 for Gemini
-            thinking_level: Some("low".to_string()), // Low reasoning is sufficient for structured state output
+            thinking_level: None,   // Disabled temporarily - causes API error with reasoning_budget
         }
     }
 }
@@ -65,19 +65,21 @@ impl Default for StateManagerConfig {
 /// The State Manager Agent (Sidecar)
 pub struct StateManagerAgent {
     config: StateManagerConfig,
+    ai_client: Arc<dyn AiClient>,
 }
 
 impl StateManagerAgent {
     /// Create a new StateManagerAgent with default configuration
-    pub fn new() -> Self {
+    pub fn new(ai_client: Arc<dyn AiClient>) -> Self {
         Self {
             config: StateManagerConfig::default(),
+            ai_client,
         }
     }
 
     /// Create with custom configuration
-    pub fn with_config(config: StateManagerConfig) -> Self {
-        Self { config }
+    pub fn with_config(config: StateManagerConfig, ai_client: Arc<dyn AiClient>) -> Self {
+        Self { config, ai_client }
     }
 
     /// Generate a complete state update based on the current state and conversation
@@ -87,6 +89,7 @@ impl StateManagerAgent {
     /// 2. Calls the LLM to generate the complete new state
     /// 3. Parses the plaintext markdown response into a GameState
     /// 4. Returns the parsed state (caller handles reconciliation)
+    #[allow(clippy::too_many_arguments)]
     pub async fn generate_state_update(
         &self,
         current_state: Option<&GameState>,
@@ -116,47 +119,38 @@ impl StateManagerAgent {
             "Building state update request"
         );
 
-        // Build the chat request using genai crate
-        let chat_request = ChatRequest::default()
-            .with_system(system_prompt)
-            .append_message(ChatMessage::user(user_prompt));
+        use crate::llm::RigCompletionRequest;
 
-        // Create the genai client (uses environment variables for API keys)
-        let client = Client::default();
+        // Map thinking level to reasoning budget
+        let reasoning_budget = match self.config.thinking_level.as_deref() {
+            Some("minimal") => Some(1024),
+            Some("low") => Some(4096),
+            Some("medium") => Some(16384),
+            Some("high") => Some(32768),
+            _ => None,
+        };
 
-        // Build chat options - no structured output, just plain text
-        // The LLM will generate plaintext markdown which we parse with regex
-        let mut chat_options = ChatOptions::default();
-        if let Some(temp) = self.config.temperature {
-            chat_options = chat_options.with_temperature(temp);
-        }
-        if let Some(max_tokens) = self.config.max_output_tokens {
-            chat_options = chat_options.with_max_tokens(max_tokens as u32);
-        }
-        if let Some(level_str) = &self.config.thinking_level {
-            let thinking_level = match level_str.to_lowercase().as_str() {
-                "none" | "off" | "disabled" => Some(ThinkingLevel::None),
-                "minimal" => Some(ThinkingLevel::Minimal),
-                "low" => Some(ThinkingLevel::Low),
-                "medium" => Some(ThinkingLevel::Medium),
-                "high" => Some(ThinkingLevel::High),
-                _ => None,
-            };
-            if let Some(level) = thinking_level {
-                chat_options = chat_options.with_thinking_level(level);
-            }
-        }
+        // Create Rig completion request
+        let rig_req = RigCompletionRequest {
+            model_name: self.config.model_name.clone(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: user_prompt,
+            preamble: Some(system_prompt),
+            history: vec![],
+            temperature: self.config.temperature,
+            max_tokens: self.config.max_output_tokens,
+            reasoning_budget,
+            ..Default::default()
+        };
 
-        // Execute the request (no structured output - we use plaintext markdown format)
-        let response = client
-            .exec_chat(&self.config.model_name, chat_request, Some(&chat_options))
-            .await
-            .map_err(|e| AppError::GenerationError(format!("State generation failed: {}", e)))?;
+        // Execute the request
+        let response =
+            self.ai_client.completion(rig_req).await.map_err(|e| {
+                AppError::GenerationError(format!("State generation failed: {}", e))
+            })?;
 
         // Extract the response text
-        let response_text = response.first_text().ok_or_else(|| {
-            AppError::GenerationError("Empty response from state manager".to_string())
-        })?;
+        let response_text = response.content;
 
         info!(
             response_len = response_text.len(),
@@ -164,7 +158,7 @@ impl StateManagerAgent {
         );
 
         // Parse the JSON response into GameState
-        self.parse_state_response(response_text)
+        self.parse_state_response(&response_text)
     }
 
     /// Build the system prompt for the State Manager
@@ -393,6 +387,7 @@ CRITICAL - STATUS EFFECTS:
 
     /// Build the user prompt with context
     /// Provides current state and conversation context for the LLM
+    #[allow(clippy::too_many_arguments)]
     fn build_user_prompt(
         &self,
         current_state: Option<&GameState>,
@@ -1137,6 +1132,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
 
     /// Parse Inventory section - handles "On Person:", "Stored - [Location]:", "Assets:", "Removed:"
     /// Returns: (on_person_items, stored_items_by_location, assets, removed_ids)
+    #[allow(clippy::type_complexity)]
     fn parse_inventory_section(
         text: &str,
     ) -> (
@@ -1473,17 +1469,50 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
     }
 }
 
-impl Default for StateManagerAgent {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Default implementation removed as it requires an ai_client
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::models::game_state::{GameTime, InventoryItem, Location, Vital};
     use std::collections::HashMap;
+
+    struct MockAiClient;
+
+    #[async_trait::async_trait]
+    impl AiClient for MockAiClient {
+        async fn completion(
+            &self,
+            _req: crate::llm::RigCompletionRequest,
+        ) -> Result<crate::llm::RigChatResponse, anyhow::Error> {
+            Ok(crate::llm::RigChatResponse {
+                content: "".to_string(),
+                prompt_tokens: None,
+                completion_tokens: None,
+                total_tokens: None,
+                reasoning_content: None,
+            })
+        }
+
+        async fn completion_stream(
+            &self,
+            _req: crate::llm::RigCompletionRequest,
+        ) -> Result<
+            std::pin::Pin<
+                Box<
+                    dyn futures::Stream<Item = Result<crate::llm::RigStreamEvent, anyhow::Error>>
+                        + Send,
+                >,
+            >,
+            anyhow::Error,
+        > {
+            Err(anyhow::anyhow!("Not implemented"))
+        }
+    }
+
+    fn mock_client() -> Arc<dyn AiClient> {
+        Arc::new(MockAiClient)
+    }
 
     // ========================================================================
     // Configuration Tests
@@ -1505,7 +1534,7 @@ mod tests {
             temperature: Some(0.5),
             thinking_level: None,
         };
-        let agent = StateManagerAgent::with_config(config);
+        let agent = StateManagerAgent::with_config(config, mock_client());
         assert_eq!(agent.config.model_name, "custom-model");
         assert_eq!(agent.config.max_output_tokens, Some(8192));
     }
@@ -1516,7 +1545,7 @@ mod tests {
 
     #[test]
     fn test_parse_state_response_plain_text() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let text = r#"
 Location
 ---
@@ -1549,7 +1578,7 @@ Total Seconds Elapsed: 28800
 
     #[test]
     fn test_parse_state_response_markdown_wrapped() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let text = r#"```game-state
 Location
 ---
@@ -1567,7 +1596,7 @@ Hour: 8
 
     #[test]
     fn test_parse_state_response_with_complete_game_state() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let text = r#"```game-state
 Location
 ---
@@ -1634,7 +1663,7 @@ Tags: cozy, atmospheric
 
     #[test]
     fn test_parse_state_response_generic_code_block() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let text = r#"```
 Location
 ---
@@ -1647,7 +1676,7 @@ Name: Forest Edge
 
     #[test]
     fn test_parse_state_response_invalid_format_returns_error() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let invalid = r#"This is not a game state"#;
 
         let result = agent.parse_state_response(invalid);
@@ -1656,14 +1685,14 @@ Name: Forest Edge
 
     #[test]
     fn test_parse_state_response_empty_string_returns_error() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let result = agent.parse_state_response("");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_parse_state_response_partial_text_returns_error() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let partial = r#"Location: Forest Edge"#; // Missing headers/sections
 
         let result = agent.parse_state_response(partial);
@@ -1676,7 +1705,7 @@ Name: Forest Edge
 
     #[test]
     fn test_build_system_prompt() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let prompt = agent.build_system_prompt(None, None);
         assert!(prompt.contains("Game State Manager"));
         assert!(prompt.contains("game-state"));
@@ -1684,7 +1713,7 @@ Name: Forest Edge
 
     #[test]
     fn test_build_system_prompt_contains_schema() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let prompt = agent.build_system_prompt(None, None);
 
         // Verify schema elements are present
@@ -1699,7 +1728,7 @@ Name: Forest Edge
 
     #[test]
     fn test_build_system_prompt_contains_instructions() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let prompt = agent.build_system_prompt(None, None);
 
         // Verify key instructions
@@ -1713,7 +1742,7 @@ Name: Forest Edge
 
     #[test]
     fn test_build_user_prompt_with_no_current_state() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let prompt = agent.build_user_prompt(
             None,
             "The player just started their adventure.",
@@ -1732,7 +1761,7 @@ Name: Forest Edge
 
     #[test]
     fn test_build_user_prompt_with_existing_state() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
 
         let mut current_state = GameState::default();
         current_state.location = Some(Location {
@@ -1763,7 +1792,7 @@ Name: Forest Edge
 
     #[test]
     fn test_build_user_prompt_serializes_complex_state() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
 
         let mut current_state = GameState::default();
         current_state.location = Some(Location {
@@ -1828,7 +1857,7 @@ Name: Forest Edge
 
     #[test]
     fn test_full_prompt_to_parse_flow() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
 
         // Build prompts
         let system_prompt = agent.build_system_prompt(None, None);
@@ -1890,7 +1919,7 @@ Tags: nature, peaceful
 
     #[test]
     fn test_state_update_preserves_all_fields() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
 
         // Create initial complex state
         let mut initial_state = GameState::default();
@@ -1925,7 +1954,7 @@ Tags: nature, peaceful
 
     #[test]
     fn test_parse_vitals_section_dynamic() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
         let vitals_text = r#"
 - health: 80/100
 - stress: 25/50
@@ -1944,7 +1973,7 @@ Tags: nature, peaceful
 
     #[test]
     fn test_parse_inventory_item_with_descriptors() {
-        let agent = StateManagerAgent::new();
+        let agent = StateManagerAgent::new(mock_client());
 
         // Test item with multiple descriptors including equipped
         let item_text = "Silk robes (equipped, damaged, blood-stained, brittle)";

@@ -103,7 +103,6 @@ impl EmailService for LoggingEmailService {
         // Log with redacted information at debug level
         debug!(
             to_email = %masked_email,
-            username = %username,
             verification_link = %redacted_link,
             "📧 EMAIL VERIFICATION (DEV MODE) - Verification email would be sent (sensitive data redacted)"
         );
@@ -255,7 +254,6 @@ impl EmailService for SesEmailService {
             Ok(_) => {
                 info!(
                     to_email = %mask_email(to_email),
-                    username = %username,
                     "Successfully sent verification email via AWS SES"
                 );
                 Ok(())
@@ -263,7 +261,6 @@ impl EmailService for SesEmailService {
             Err(e) => {
                 error!(
                     to_email = %mask_email(to_email),
-                    username = %username,
                     error = %e,
                     error_debug = ?e,
                     error_source = ?e.source(),

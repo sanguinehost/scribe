@@ -449,6 +449,8 @@ pub struct NewUser {
     pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
+    pub created_at: DbTimestamp,
+    pub updated_at: DbTimestamp,
 }
 
 impl std::fmt::Debug for NewUser {
@@ -571,7 +573,7 @@ mod tests {
         });
 
         assert_eq!(user.username, "testuser");
-        assert_eq!(user.email, "test@example.com");
+        assert_eq!(user.email, "test@example.com".to_string());
         assert_eq!(user.password_hash, "hashed_password");
         assert_eq!(user.kek_salt, test_kek_salt);
         assert_eq!(
@@ -633,6 +635,8 @@ mod tests {
             total_completion_tokens: crate::db::DbBigInt::from(0),
             total_prompt_tokens: crate::db::DbBigInt::from(0),
             total_token_cost_cents: crate::db::DbBigInt::from(0),
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
         };
 
         assert_eq!(new_user.username, username);

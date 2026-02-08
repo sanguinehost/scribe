@@ -108,7 +108,8 @@ pub async fn stream_chat_response(
     analysis_mode: Option<String>,
     guidance: Option<String>,
     variant_of: Option<String>,
-    is_regeneration: bool,
+    thinking_level: Option<String>,
+    _is_regeneration: bool,
     channel: Channel<ChatStreamEvent>,
 ) -> Result<(), String> {
     log::info!(
@@ -116,10 +117,11 @@ pub async fn stream_chat_response(
         session_id
     );
     log::info!(
-        "🔥 [stream_chat_response] Parameters: user_message_len={}, history_len={}, model={:?}",
+        "🔥 [stream_chat_response] Parameters: user_message_len={}, history_len={}, model={:?}, thinking_level={:?}",
         user_message.len(),
         history.len(),
-        model
+        model,
+        thinking_level
     );
 
     // Get tokens from secure storage
@@ -168,6 +170,7 @@ pub async fn stream_chat_response(
         "analysis_mode": analysis_mode,
         "guidance": guidance,
         "variant_of": variant_of,
+        "thinking_level": thinking_level,
         // NOTE: Don't send is_regeneration - backend infers from history/variant_of
     });
 
@@ -242,9 +245,15 @@ pub async fn stream_chat_response(
                     "content" => ChatStreamEvent::Content {
                         payload: sse_event.data,
                     },
-                    "thinking" => ChatStreamEvent::Thinking {
-                        text: sse_event.data,
-                    },
+                    "thinking" => {
+                        log::info!(
+                            "🔥 [stream_chat_response] RECEIVED 'thinking' SSE event - len: {}",
+                            sse_event.data.len()
+                        );
+                        ChatStreamEvent::Thinking {
+                            text: sse_event.data,
+                        }
+                    }
                     "error" => ChatStreamEvent::Error {
                         message: sse_event.data,
                     },

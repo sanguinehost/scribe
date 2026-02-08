@@ -42,7 +42,7 @@ mod feature_flag_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let result = conn
             .interact(move |conn| {
-                service.add_credits(conn, user_id, 100, "test", "Should fail", None, None)
+                service.add_credits(conn, user_id.into(), 100, "test", "Should fail", None, None)
             })
             .await
             .expect("Failed to interact");
@@ -103,7 +103,7 @@ mod feature_flag_tests {
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(chrono::Utc::now().into())
             .execute(conn)?;
             Ok(())
         }).await.expect("Failed to interact").expect("Failed to create user");
@@ -113,7 +113,7 @@ mod feature_flag_tests {
 
         // Initialize and add credits should work
         let conn = app.db_pool.get().await.expect("Failed to get connection");
-        conn.interact(move |conn| service.initialize_user_credits(conn, user_id))
+        conn.interact(move |conn| service.initialize_user_credits(conn, user_id.into()))
             .await
             .expect("Failed to interact")
             .expect("Should initialize when enabled");
@@ -122,7 +122,15 @@ mod feature_flag_tests {
         let balance = conn
             .interact(move |conn| {
                 let service = CreditService::new(config);
-                service.add_credits(conn, user_id, 100, "test", "Test credits", None, None)
+                service.add_credits(
+                    conn,
+                    user_id.into(),
+                    100,
+                    "test",
+                    "Test credits",
+                    None,
+                    None,
+                )
             })
             .await
             .expect("Failed to interact")
@@ -166,7 +174,7 @@ mod feature_flag_tests {
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(chrono::Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await.expect("Failed to interact").expect("Failed to create user");
@@ -177,7 +185,9 @@ mod feature_flag_tests {
         // Should still track usage even when disabled
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let usage = conn
-            .interact(move |conn| service.record_usage(conn, user_id, "gemini-2.5-flash", 1000))
+            .interact(move |conn| {
+                service.record_usage(conn, user_id.into(), "gemini-2.5-flash", 1000)
+            })
             .await
             .expect("Failed to interact")
             .expect("Should track usage even when disabled");
@@ -189,7 +199,7 @@ mod feature_flag_tests {
         let throttle = conn
             .interact(move |conn| {
                 let service = SoftLimitService::new(config_clone);
-                service.should_throttle(conn, user_id)
+                service.should_throttle(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -201,7 +211,7 @@ mod feature_flag_tests {
         let remaining = conn
             .interact(move |conn| {
                 let service = SoftLimitService::new(config);
-                service.get_remaining_messages(conn, user_id)
+                service.get_remaining_messages(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -244,7 +254,7 @@ mod feature_flag_tests {
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
             .bind::<diesel::sql_types::Int8, _>(0i64)
-            .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now())
+            .bind::<diesel::sql_types::Timestamptz, scribe_backend::db::DbTimestamp>(chrono::Utc::now().into())
             .execute(conn)?;
             Ok::<_, diesel::result::Error>(())
         }).await.expect("Failed to interact").expect("Failed to create user");
@@ -258,7 +268,7 @@ mod feature_flag_tests {
         let remaining = conn
             .interact(move |conn| {
                 let service = SoftLimitService::new(config_clone);
-                service.get_remaining_messages(conn, user_id)
+                service.get_remaining_messages(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")
@@ -271,7 +281,7 @@ mod feature_flag_tests {
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             conn.interact(move |conn| {
                 let service = SoftLimitService::new(config_clone);
-                service.record_usage(conn, user_id, "gemini-2.5-flash", 100)
+                service.record_usage(conn, user_id.into(), "gemini-2.5-flash", 100)
             })
             .await
             .expect("Failed to interact")
@@ -283,7 +293,7 @@ mod feature_flag_tests {
         let throttle = conn
             .interact(move |conn| {
                 let service = SoftLimitService::new(config);
-                service.should_throttle(conn, user_id)
+                service.should_throttle(conn, user_id.into())
             })
             .await
             .expect("Failed to interact")

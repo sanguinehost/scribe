@@ -12,10 +12,10 @@ use scribe_backend::schema::{
 };
 use scribe_backend::services::chat::generation::get_session_data_for_generation;
 use scribe_backend::services::{
-    chat_override_service::ChatOverrideService, email_service::LoggingEmailService,
-    encryption_service::EncryptionService, hybrid_token_counter::HybridTokenCounter,
-    lorebook::LorebookService, tokenizer_service::TokenizerService,
-    user_persona_service::UserPersonaService,
+    character_service::CharacterService, chat_override_service::ChatOverrideService,
+    email_service::LoggingEmailService, encryption_service::EncryptionService,
+    hybrid_token_counter::HybridTokenCounter, lorebook::LorebookService,
+    tokenizer_service::TokenizerService, user_persona_service::UserPersonaService,
 };
 use scribe_backend::state::{AppState, AppStateServices};
 use scribe_backend::test_helpers;
@@ -46,8 +46,8 @@ async fn create_test_character_and_session(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -87,14 +87,14 @@ async fn create_test_character_and_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: scribe_backend::models::OptionalStringArray(None),
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                stop_sequences: Some(scribe_backend::db::unified_types::DbStringArray::empty()),
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
+                total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+                total_completion_tokens: scribe_backend::db::DbBigInt(0),
                 estimated_cost_cents: 0,
                 tokens_counted_at: scribe_backend::db::DbTimestamp::now(),
                 total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -172,6 +172,10 @@ async fn test_frontend_history_vs_database_history() {
     );
     let rate_limiter =
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
+    let character_service = Arc::new(CharacterService::new(
+        test_app.db_pool.clone(),
+        encryption_service.clone(),
+    ));
 
     let services = AppStateServices {
         ai_client: test_app.ai_client.clone(),
@@ -180,6 +184,7 @@ async fn test_frontend_history_vs_database_history() {
         embedding_pipeline_service: test_app.mock_embedding_pipeline_service.clone(),
         chat_override_service,
         user_persona_service,
+        character_service,
         token_counter: token_counter_service,
         encryption_service,
         lorebook_service,
@@ -360,6 +365,12 @@ async fn test_orphaned_message_exclusion_scenario() {
         Arc::new(scribe_backend::middleware::llm_security::LlmRateLimiter::new(10, 100));
 
     let services = AppStateServices {
+        character_service: Arc::new(
+            scribe_backend::services::character_service::CharacterService::new(
+                test_app.db_pool.clone(),
+                encryption_service.clone(),
+            ),
+        ),
         ai_client: test_app.ai_client.clone(),
         embedding_client: test_app.mock_embedding_client.clone(),
         qdrant_service: test_app.qdrant_service.clone(),

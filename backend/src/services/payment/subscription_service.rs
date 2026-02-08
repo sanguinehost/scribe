@@ -631,27 +631,6 @@ impl SubscriptionService {
 }
 
 #[cfg(feature = "payment")]
-impl Default for UpdateSubscription {
-    fn default() -> Self {
-        Self {
-            paddle_customer_id: None,
-            paddle_subscription_id: None,
-            plan_type: None,
-            status: None,
-            current_period_start: None,
-            current_period_end: None,
-            cancel_at_period_end: None,
-            trial_end: None,
-            credits_allocated_this_period: None,
-            soft_limit_override: None,
-            last_credit_grant: None,
-            grace_period_end: None,
-            scheduled_plan_change: None,
-            scheduled_change_date: None,
-        }
-    }
-}
-
 #[cfg(not(feature = "payment"))]
 pub struct SubscriptionService;
 

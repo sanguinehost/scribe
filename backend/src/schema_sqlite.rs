@@ -1,34 +1,9 @@
 // @generated automatically by Diesel CLI.
 
-pub mod sql_types {
-    // Re-export custom SQLite types for use in table definitions
-    pub use crate::db::sqlite_types::{SqliteBigDecimal, SqliteDateTime, SqliteJson, SqliteUuid};
-
-    // MessageType: SQLite doesn't have native enums, so we just use Text
-    // The application layer (models/chats.rs) handles the enum conversion
-    pub type MessageType = diesel::sql_types::Text;
-
-    // Binary: SQLite BLOB type for binary data (Vec<u8>)
-    pub type Binary = diesel::sql_types::Binary;
-}
-
-pub mod sql_types_unified {
-    pub use diesel::sql_types::Binary as DbBlobType;
-    pub use diesel::sql_types::Binary as DbBinaryType;
-    pub use diesel::sql_types::Double as DbNumericType;
-    pub use diesel::sql_types::Integer as DbCreditType;
-    pub use diesel::sql_types::Text as DbIdType;
-    pub use diesel::sql_types::Text as DbJsonType;
-    pub use diesel::sql_types::Text as DbStringArrayType;
-    pub use diesel::sql_types::Text as DbTextType;
-    pub use diesel::sql_types::Timestamp as DbTimestampType;
-
-    pub use super::sql_types::MessageType as DbMessageType;
-}
-
-pub use sql_types_unified::*;
-
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     agent_context_analysis (id) {
         id -> Text,
         chat_session_id -> Text,
@@ -48,7 +23,7 @@ diesel::table! {
         model_used -> Nullable<Text>,
         created_at -> Nullable<Timestamp>,
         updated_at -> Nullable<Timestamp>,
-        message_id -> Nullable<Text>,
+        message_id -> Text,
         assistant_message_id -> Nullable<Text>,
         status -> Text,
         error_message -> Nullable<Text>,
@@ -58,6 +33,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     character_assets (id) {
         id -> Text,
         character_id -> Text,
@@ -73,6 +51,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     character_lorebooks (character_id, lorebook_id) {
         character_id -> Text,
         lorebook_id -> Text,
@@ -83,6 +64,30 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    character_opinions (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        perspective_hash -> Text,
+        perspective_encrypted -> Binary,
+        perspective_nonce -> Binary,
+        opinion_encrypted -> Binary,
+        opinion_nonce -> Binary,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        message_variant_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     characters (id) {
         id -> Text,
         user_id -> Text,
@@ -176,24 +181,9 @@ diesel::table! {
 }
 
 diesel::table! {
-    character_opinions (id) {
-        id -> Text,
-        user_id -> Text,
-        chronicle_id -> Text,
-        perspective_hash -> Text,
-        perspective_encrypted -> Binary,
-        perspective_nonce -> Binary,
-        opinion_encrypted -> Binary,
-        opinion_nonce -> Binary,
-        confidence -> Float,
-        significance -> Float,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-        message_variant_id -> Nullable<Text>,
-    }
-}
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
 
-diesel::table! {
     chat_character_lorebook_overrides (id) {
         id -> Text,
         chat_session_id -> Text,
@@ -206,6 +196,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_character_overrides (id) {
         id -> Text,
         chat_session_id -> Text,
@@ -225,7 +218,7 @@ diesel::table! {
     chat_messages (id) {
         id -> Text,
         session_id -> Text,
-        message_type -> crate::schema::sql_types::MessageType,
+        message_type -> Text,
         content -> Binary,
         rag_embedding_id -> Nullable<Text>,
         created_at -> Timestamp,
@@ -251,11 +244,16 @@ diesel::table! {
         modified_cost -> Double,
         credit_cost -> Integer,
         actual_charge -> Double,
-        game_time -> Nullable<crate::schema::DbJsonType>,
+        game_time -> Nullable<Text>,
+        reasoning_content -> Nullable<Binary>,
+        reasoning_content_nonce -> Nullable<Binary>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_session_lorebooks (chat_session_id, lorebook_id) {
         chat_session_id -> Text,
         lorebook_id -> Text,
@@ -266,6 +264,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chat_sessions (id) {
         id -> Text,
         user_id -> Text,
@@ -286,9 +287,8 @@ diesel::table! {
         history_management_strategy -> Text,
         history_management_limit -> Integer,
         model_name -> Text,
-        gemini_thinking_budget -> Nullable<Integer>,
-        gemini_thinking_level -> Nullable<Text>,
-        gemini_enable_code_execution -> Nullable<Bool>,
+        thinking_budget -> Nullable<Integer>,
+        enable_code_execution -> Nullable<Bool>,
         visibility -> Nullable<Text>,
         active_custom_persona_id -> Nullable<Text>,
         active_impersonated_character_id -> Nullable<Text>,
@@ -313,9 +313,9 @@ diesel::table! {
         total_modified_cost -> Double,
         total_credit_cost -> Integer,
         total_actual_charge -> Double,
-        // Game Master Agent columns
         game_state -> Nullable<Text>,
         game_master_mode_enabled -> Bool,
+        thinking_level -> Nullable<Text>,
         rag_chronicles_limit -> Nullable<Integer>,
         rag_lorebooks_limit -> Nullable<Integer>,
         rag_older_chat_limit -> Nullable<Integer>,
@@ -324,6 +324,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     chronicle_events (id) {
         id -> Text,
         chronicle_id -> Text,
@@ -336,7 +339,7 @@ diesel::table! {
         updated_at -> Timestamp,
         summary_encrypted -> Nullable<Binary>,
         summary_nonce -> Nullable<Binary>,
-        timestamp_iso8601 -> Nullable<Timestamp>,
+        timestamp_iso8601 -> Timestamp,
         keywords -> Nullable<Text>,
         keywords_encrypted -> Nullable<Binary>,
         keywords_nonce -> Nullable<Binary>,
@@ -346,6 +349,50 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    cognitive_core_memory (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        memory_state_encrypted -> Binary,
+        memory_state_nonce -> Binary,
+        version -> Integer,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    cognitive_facts (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        who_encrypted -> Binary,
+        who_nonce -> Binary,
+        what_encrypted -> Binary,
+        what_nonce -> Binary,
+        where_encrypted -> Binary,
+        where_nonce -> Binary,
+        when_encrypted -> Binary,
+        when_nonce -> Binary,
+        why_encrypted -> Binary,
+        why_nonce -> Binary,
+        fact_type -> Text,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        message_variant_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     credit_packages (id) {
         id -> Text,
         package_id -> Text,
@@ -356,12 +403,15 @@ diesel::table! {
         paddle_price_id -> Nullable<Text>,
         active -> Nullable<Bool>,
         display_order -> Nullable<Integer>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     credit_transactions (id) {
         id -> Text,
         user_id -> Text,
@@ -379,20 +429,26 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     daily_usage_tracking (id) {
         id -> Text,
         user_id -> Text,
         date -> Date,
         message_count -> Integer,
-        token_count -> BigInt,
+        token_count -> Integer,
         model_breakdown -> Nullable<Text>,
         soft_limit_triggered_at -> Nullable<Integer>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     email_verification_tokens (id) {
         id -> Text,
         user_id -> Text,
@@ -403,6 +459,30 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    entity_observations (id) {
+        id -> Text,
+        user_id -> Text,
+        chronicle_id -> Text,
+        entity_name_hash -> Text,
+        entity_name_encrypted -> Binary,
+        entity_name_nonce -> Binary,
+        observation_encrypted -> Binary,
+        observation_nonce -> Binary,
+        confidence -> Float,
+        significance -> Float,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+        message_variant_id -> Nullable<Text>,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     lorebook_entries (id) {
         id -> Text,
         lorebook_id -> Text,
@@ -429,6 +509,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     lorebooks (id) {
         id -> Text,
         user_id -> Text,
@@ -442,6 +525,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     message_variants (id) {
         id -> Text,
         parent_message_id -> Text,
@@ -457,10 +543,15 @@ diesel::table! {
         raw_prompt_ciphertext -> Nullable<Binary>,
         raw_prompt_nonce -> Nullable<Binary>,
         game_state -> Nullable<Text>,
+        reasoning_content -> Nullable<Binary>,
+        reasoning_content_nonce -> Nullable<Binary>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_documents (id, created_at) {
         id -> Text,
         created_at -> Timestamp,
@@ -472,6 +563,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_suggestions (id) {
         id -> Text,
         document_id -> Text,
@@ -486,6 +580,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_votes (chat_id, message_id) {
         chat_id -> Text,
         message_id -> Text,
@@ -494,6 +591,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     payment_audit_logs (id) {
         id -> Text,
         user_id_hash -> Text,
@@ -508,6 +608,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     payment_transactions (id) {
         id -> Text,
         paddle_transaction_id -> Text,
@@ -527,65 +630,15 @@ diesel::table! {
         completed_at -> Nullable<Timestamp>,
         paddle_data_encrypted -> Nullable<Binary>,
         paddle_data_nonce -> Nullable<Binary>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
-    }
-}
-
-diesel::table! {
-    entity_observations (id) {
-        id -> Text,
-        user_id -> Text,
-        chronicle_id -> Text,
-        entity_name_hash -> Text,
-        entity_name_encrypted -> Binary,
-        entity_name_nonce -> Binary,
-        observation_encrypted -> Binary,
-        observation_nonce -> Binary,
-        confidence -> Float,
-        significance -> Float,
         created_at -> Timestamp,
         updated_at -> Timestamp,
-        message_variant_id -> Nullable<Text>,
     }
 }
 
 diesel::table! {
-    cognitive_facts (id) {
-        id -> Text,
-        user_id -> Text,
-        chronicle_id -> Text,
-        who_encrypted -> Binary,
-        who_nonce -> Binary,
-        what_encrypted -> Binary,
-        what_nonce -> Binary,
-        where_encrypted -> Binary,
-        where_nonce -> Binary,
-        when_encrypted -> Binary,
-        when_nonce -> Binary,
-        why_encrypted -> Binary,
-        why_nonce -> Binary,
-        fact_type -> Text,
-        confidence -> Float,
-        significance -> Float,
-        created_at -> Timestamp,
-        message_variant_id -> Nullable<Text>,
-    }
-}
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
 
-diesel::table! {
-    cognitive_core_memory (id) {
-        id -> Text,
-        user_id -> Text,
-        chronicle_id -> Text,
-        memory_state_encrypted -> Binary,
-        memory_state_nonce -> Binary,
-        version -> Integer,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     payment_usage_tracking (id) {
         id -> Text,
         user_id -> Text,
@@ -601,6 +654,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     payments (id) {
         id -> Text,
         user_id -> Text,
@@ -617,6 +673,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     plan_features (plan_type) {
         plan_type -> Nullable<Text>,
         monthly_token_limit -> Nullable<Integer>,
@@ -627,14 +686,17 @@ diesel::table! {
         features -> Nullable<Text>,
         display_name -> Text,
         description -> Nullable<Text>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         paddle_price_id_yearly -> Nullable<Text>,
         max_context_tokens -> Nullable<Integer>,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     player_chronicles (id) {
         id -> Text,
         user_id -> Text,
@@ -646,6 +708,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     sessions (id) {
         id -> Text,
         expires -> Nullable<Timestamp>,
@@ -654,6 +719,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     subscriptions (id) {
         id -> Text,
         user_id -> Text,
@@ -665,8 +733,8 @@ diesel::table! {
         current_period_end -> Timestamp,
         cancel_at_period_end -> Nullable<Bool>,
         trial_end -> Nullable<Timestamp>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         credits_allocated_this_period -> Nullable<Bool>,
         soft_limit_override -> Nullable<Integer>,
         last_credit_grant -> Nullable<Timestamp>,
@@ -698,6 +766,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     template_preferences (id) {
         id -> Text,
         user_id -> Text,
@@ -716,6 +787,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     usage_tracking (id) {
         id -> Text,
         user_id -> Text,
@@ -731,8 +805,11 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_assets (id) {
-        id -> Text,
+        id -> Integer,
         user_id -> Text,
         persona_id -> Nullable<Text>,
         asset_type -> Text,
@@ -747,19 +824,25 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_credits (user_id) {
         user_id -> Nullable<Text>,
         balance -> Integer,
         lifetime_earned -> Integer,
         lifetime_spent -> Integer,
         last_monthly_grant -> Nullable<Timestamp>,
-        created_at -> Nullable<Timestamp>,
-        updated_at -> Nullable<Timestamp>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
         version -> Integer,
     }
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_personas (id) {
         id -> Text,
         user_id -> Text,
@@ -788,6 +871,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     user_settings (id) {
         id -> Text,
         user_id -> Text,
@@ -799,9 +885,8 @@ diesel::table! {
         default_top_p -> Nullable<Double>,
         default_top_k -> Nullable<Integer>,
         default_seed -> Nullable<Integer>,
-        default_gemini_thinking_budget -> Nullable<Integer>,
-        default_gemini_thinking_level -> Nullable<Text>,
-        default_gemini_enable_code_execution -> Nullable<Bool>,
+        default_thinking_budget -> Nullable<Integer>,
+        default_enable_code_execution -> Nullable<Bool>,
         default_context_total_token_limit -> Nullable<Integer>,
         default_context_recent_history_budget -> Nullable<Integer>,
         default_context_rag_budget -> Nullable<Integer>,
@@ -814,6 +899,7 @@ diesel::table! {
         preferred_local_model -> Nullable<Text>,
         local_llm_enabled -> Nullable<Bool>,
         local_model_preferences -> Nullable<Text>,
+        default_thinking_level -> Nullable<Text>,
         default_rag_chronicles_limit -> Nullable<Integer>,
         default_rag_lorebooks_limit -> Nullable<Integer>,
         default_rag_older_chat_limit -> Nullable<Integer>,
@@ -821,6 +907,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     users (id) {
         id -> Text,
         username -> Text,
@@ -849,6 +938,9 @@ diesel::table! {
 }
 
 diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     webhook_events (id) {
         id -> Text,
         event_id -> Text,
@@ -867,32 +959,24 @@ diesel::joinable!(character_assets -> characters (character_id));
 diesel::joinable!(character_lorebooks -> characters (character_id));
 diesel::joinable!(character_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(character_lorebooks -> users (user_id));
-diesel::joinable!(character_opinions -> player_chronicles (chronicle_id));
-diesel::joinable!(character_opinions -> users (user_id));
+diesel::joinable!(character_opinions -> message_variants (message_variant_id));
 diesel::joinable!(characters -> users (user_id));
-diesel::joinable!(entity_observations -> player_chronicles (chronicle_id));
-diesel::joinable!(entity_observations -> users (user_id));
 diesel::joinable!(chat_character_lorebook_overrides -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_character_lorebook_overrides -> lorebooks (lorebook_id));
 diesel::joinable!(chat_character_lorebook_overrides -> users (user_id));
 diesel::joinable!(chat_character_overrides -> characters (original_character_id));
 diesel::joinable!(chat_character_overrides -> chat_sessions (chat_session_id));
-diesel::joinable!(chat_messages -> chat_sessions (session_id));
 diesel::joinable!(chat_session_lorebooks -> chat_sessions (chat_session_id));
 diesel::joinable!(chat_session_lorebooks -> lorebooks (lorebook_id));
 diesel::joinable!(chat_session_lorebooks -> users (user_id));
-diesel::joinable!(chat_sessions -> player_chronicles (player_chronicle_id));
-diesel::joinable!(chat_sessions -> user_personas (active_custom_persona_id));
-diesel::joinable!(chat_sessions -> users (user_id));
 diesel::joinable!(chronicle_events -> chat_sessions (chat_session_id));
-diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> message_variants (message_variant_id));
+diesel::joinable!(chronicle_events -> player_chronicles (chronicle_id));
 diesel::joinable!(chronicle_events -> users (user_id));
+diesel::joinable!(cognitive_facts -> message_variants (message_variant_id));
 diesel::joinable!(credit_transactions -> users (user_id));
 diesel::joinable!(daily_usage_tracking -> users (user_id));
 diesel::joinable!(email_verification_tokens -> users (user_id));
-diesel::joinable!(character_opinions -> message_variants (message_variant_id));
-diesel::joinable!(cognitive_facts -> message_variants (message_variant_id));
 diesel::joinable!(entity_observations -> message_variants (message_variant_id));
 diesel::joinable!(message_variants -> chat_messages (parent_message_id));
 diesel::joinable!(message_variants -> users (user_id));
@@ -929,6 +1013,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     chat_session_lorebooks,
     chat_sessions,
     chronicle_events,
+    cognitive_core_memory,
+    cognitive_facts,
     credit_packages,
     credit_transactions,
     daily_usage_tracking,

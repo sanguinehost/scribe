@@ -23,7 +23,7 @@ use arrow::datatypes::{DataType, Field, Schema};
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{Connection, Table};
 
-use super::qdrant_client::QdrantClientServiceTrait;
+use super::QdrantClientServiceTrait;
 
 /// Default table name for embeddings
 pub const DEFAULT_TABLE_NAME: &str = "scribe_embeddings";
@@ -343,6 +343,7 @@ impl LanceDbClient {
                     use qdrant_client::qdrant::vectors::VectorsOptions;
                     match &vectors_struct.vectors_options {
                         Some(VectorsOptions::Vector(v)) => {
+                            #[allow(deprecated)]
                             let data = v.data.clone();
                             if data.is_empty() {
                                 error!("CRITICAL: Qdrant point has an empty Vector (VectorsOptions::Vector). Point ID: {:?}", point.id);
@@ -634,11 +635,9 @@ impl LanceDbClient {
 
     /// Sanitize column name to prevent SQL injection
     fn sanitize_column_name(&self, name: &str) -> String {
-        // Handle nested paths like "metadata.user_id" by using only the leaf name
-        let leaf_name = name.rsplit('.').next().unwrap_or(name);
+        // Schema uses top-level columns for all filterable fields, no nesting
         // Only allow alphanumeric and underscore
-        leaf_name
-            .chars()
+        name.chars()
             .filter(|c| c.is_alphanumeric() || *c == '_')
             .collect()
     }
@@ -1294,6 +1293,15 @@ impl QdrantClientServiceTrait for LanceDbClient {
         }
 
         Ok(scored_points)
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        let table = self.get_table().await?;
+        table
+            .delete(&format!("id = '{}'", id))
+            .await
+            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to delete point: {}", e)))?;
+        Ok(())
     }
 
     async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {

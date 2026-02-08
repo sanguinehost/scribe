@@ -8,7 +8,7 @@ use axum::{
 use bigdecimal::BigDecimal;
 use chrono::Utc;
 use diesel::prelude::*;
-use genai::chat::{ChatStreamEvent, StreamChunk, StreamEnd};
+use scribe_backend::llm::RigStreamEvent;
 use secrecy::ExposeSecret;
 use std::env;
 use std::time::Duration;
@@ -104,8 +104,8 @@ async fn create_test_character(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator".to_string()),
                 persona: Some(b"Test persona".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -149,14 +149,14 @@ async fn create_test_chat_session(
                 top_k: None,
                 top_p: None,
                 seed: None,
-                stop_sequences: DbStringArray(None),
-                gemini_thinking_budget: None,
-                gemini_enable_code_execution: None,
+                stop_sequences: Some(scribe_backend::db::unified_types::DbStringArray::empty()),
+                thinking_budget: None,
+                enable_code_execution: None,
                 system_prompt_ciphertext: None,
                 system_prompt_nonce: None,
                 player_chronicle_id: None,
-                total_prompt_tokens: 0,
-                total_completion_tokens: 0,
+                total_prompt_tokens: scribe_backend::db::DbBigInt(0),
+                total_completion_tokens: scribe_backend::db::DbBigInt(0),
                 estimated_cost_cents: 0,
                 tokens_counted_at: chrono::Utc::now().into(),
                 total_credits_used: scribe_backend::db::DbDecimal(BigDecimal::from(0)),
@@ -184,10 +184,7 @@ async fn perform_empty_response_stream_test(
     user_dek: &scribe_backend::models::users::SerializableSecretDek,
 ) {
     // Mock the AI client stream: Start -> End
-    let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Start),
-        Ok(ChatStreamEvent::End(StreamEnd::default())),
-    ];
+    let mock_stream_items = vec![Ok(RigStreamEvent::Content("".to_string()))];
 
     // Prepare expected events before moving mock_stream_items
     let expected_events = vec![ParsedSseEvent {
@@ -211,11 +208,7 @@ async fn perform_empty_response_stream_test(
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("test-stream-empty-resp-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -361,14 +354,10 @@ async fn perform_reasoning_chunk_stream_test(
 ) {
     // Mock the AI client stream: Start -> Reasoning -> Chunk -> End
     let mock_stream_items = vec![
-        Ok(ChatStreamEvent::Start),
-        Ok(ChatStreamEvent::ReasoningChunk(StreamChunk {
-            content: "Thinking about the query...".to_string(),
-        })),
-        Ok(ChatStreamEvent::Chunk(StreamChunk {
-            content: "Final answer. ".to_string(), // Add trailing space to match expected implementation
-        })),
-        Ok(ChatStreamEvent::End(StreamEnd::default())),
+        Ok(RigStreamEvent::Reasoning(
+            "Thinking about the query...".to_string(),
+        )),
+        Ok(RigStreamEvent::Content("Final answer. ".to_string())),
     ];
 
     // Prepare expected events before moving mock_stream_items
@@ -425,11 +414,7 @@ async fn perform_reasoning_chunk_stream_test(
     }];
     let payload = GenerateChatRequest {
         history,
-        model: Some("test-stream-reasoning-model".to_string()),
-        query_text_for_rag: None,
-        analysis_mode: None,
-        guidance: None,
-        variant_of: None,
+        ..Default::default()
     };
 
     let request = Request::builder()
@@ -738,8 +723,8 @@ async fn create_real_client_test_character(
                 visibility: Some("private".to_string()),
                 creator: Some("test_creator_real".to_string()),
                 persona: Some(b"Test persona real fail".to_vec()),
-                created_at: Some(Utc::now().into()),
-                updated_at: Some(Utc::now().into()),
+                created_at: Utc::now().into(),
+                updated_at: Utc::now().into(),
                 ..Default::default()
             };
             diesel::insert_into(characters_dsl::characters)
@@ -843,6 +828,9 @@ async fn perform_real_client_stream_test_and_verify(
         analysis_mode: None,
         guidance: None,
         variant_of: None,
+        parent_message_id: None,
+        game_master_mode_enabled: None,
+        thinking_level: None,
     };
 
     let request = Request::builder()

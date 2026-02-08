@@ -71,9 +71,9 @@
 		top_p: 0.95, // Will be set from global or chat settings
 		top_k: 40, // Will be set from global or chat settings
 		seed: null as number | null, // Will be set from global or chat settings
-		gemini_thinking_budget: null as number | null, // Will be set from global or chat settings
-		gemini_thinking_level: null as string | null, // Will be set from global or chat settings
-		gemini_enable_code_execution: false, // Will be set from global or chat settings
+		thinking_budget: null as number | null, // Will be set from global or chat settings
+		thinking_level: null as string | null, // Will be set from global or chat settings
+		enable_code_execution: false, // Will be set from global or chat settings
 		context_total_token_limit: DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT, // Will be set from global or chat settings
 		context_recent_history_budget: DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET, // Will be set from global or chat settings
 		context_rag_budget: DEFAULT_CONTEXT_RAG_BUDGET, // Will be set from global or chat settings
@@ -139,9 +139,9 @@
 			localSettings.top_p !== 0.95 ||
 			localSettings.top_k !== 40 ||
 			localSettings.seed !== null ||
-			localSettings.gemini_thinking_budget !== null ||
-			localSettings.gemini_thinking_level !== null ||
-			localSettings.gemini_enable_code_execution !== false ||
+			localSettings.thinking_budget !== null ||
+			localSettings.thinking_level !== null ||
+			localSettings.enable_code_execution !== false ||
 			localSettings.model_name !== '' ||
 			localSettings.context_total_token_limit !== DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT ||
 			localSettings.context_recent_history_budget !== DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET ||
@@ -201,10 +201,10 @@
 				top_p: parseFloat(parseFloat(String(globalUserSettings.default_top_p ?? 0.95)).toFixed(2)),
 				top_k: globalUserSettings.default_top_k ?? 40,
 				seed: globalUserSettings.default_seed ?? null,
-				gemini_thinking_budget: globalUserSettings.default_gemini_thinking_budget ?? null,
-				gemini_thinking_level: globalUserSettings.default_gemini_thinking_level ?? null,
-				gemini_enable_code_execution:
-					globalUserSettings.default_gemini_enable_code_execution ?? false,
+				thinking_budget: globalUserSettings.default_thinking_budget ?? null,
+				thinking_level: globalUserSettings.default_thinking_level ?? null,
+				enable_code_execution:
+					globalUserSettings.default_enable_code_execution ?? false,
 				context_total_token_limit:
 					globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
 				context_recent_history_budget:
@@ -247,17 +247,17 @@
 				),
 				top_k: settings.top_k ?? globalUserSettings?.default_top_k ?? 40,
 				seed: settings.seed ?? globalUserSettings?.default_seed ?? null,
-				gemini_thinking_budget:
-					settings.gemini_thinking_budget ??
-					globalUserSettings?.default_gemini_thinking_budget ??
+				thinking_budget:
+					settings.thinking_budget ??
+					globalUserSettings?.default_thinking_budget ??
 					null,
-				gemini_thinking_level:
-					settings.gemini_thinking_level ??
-					globalUserSettings?.default_gemini_thinking_level ??
+				thinking_level:
+					settings.thinking_level ??
+					globalUserSettings?.default_thinking_level ??
 					null,
-				gemini_enable_code_execution:
-					settings.gemini_enable_code_execution ??
-					globalUserSettings?.default_gemini_enable_code_execution ??
+				enable_code_execution:
+					settings.enable_code_execution ??
+					globalUserSettings?.default_enable_code_execution ??
 					false,
 				context_total_token_limit:
 					settings.context_total_token_limit ??
@@ -491,9 +491,9 @@
 				seed: localSettings.seed,
 				active_custom_persona_id: localSettings.active_custom_persona_id,
 				model_name: localSettings.model_name,
-				gemini_thinking_budget: localSettings.gemini_thinking_budget,
-				gemini_thinking_level: localSettings.gemini_thinking_level,
-				gemini_enable_code_execution: localSettings.gemini_enable_code_execution,
+				thinking_budget: localSettings.thinking_budget,
+				thinking_level: localSettings.thinking_level,
+				enable_code_execution: localSettings.enable_code_execution,
 				// NOTE: context fields removed - backend doesn't have these (causes 422)
 				chronicle_id: currentChronicleId,
 				agent_mode: localSettings.agent_mode,
@@ -587,9 +587,9 @@
 			| 'top_p'
 			| 'top_k'
 			| 'seed'
-			| 'gemini_thinking_budget'
-			| 'gemini_thinking_level'
-			| 'gemini_enable_code_execution'
+			| 'thinking_budget'
+			| 'thinking_level'
+			| 'enable_code_execution'
 			| 'context_total_token_limit'
 			| 'context_recent_history_budget'
 			| 'context_rag_budget'
@@ -630,17 +630,17 @@
 			case 'seed':
 				localSettings.seed = globalUserSettings.default_seed ?? null;
 				break;
-			case 'gemini_thinking_budget':
-				localSettings.gemini_thinking_budget =
-					globalUserSettings.default_gemini_thinking_budget ?? null;
+			case 'thinking_budget':
+				localSettings.thinking_budget =
+					globalUserSettings.default_thinking_budget ?? null;
 				break;
-			case 'gemini_thinking_level':
-				localSettings.gemini_thinking_level =
-					globalUserSettings.default_gemini_thinking_level ?? null;
+			case 'thinking_level':
+				localSettings.thinking_level =
+					globalUserSettings.default_thinking_level ?? null;
 				break;
-			case 'gemini_enable_code_execution':
-				localSettings.gemini_enable_code_execution =
-					globalUserSettings.default_gemini_enable_code_execution ?? false;
+			case 'enable_code_execution':
+				localSettings.enable_code_execution =
+					globalUserSettings.default_enable_code_execution ?? false;
 				break;
 			case 'context_total_token_limit':
 				localSettings.context_total_token_limit =
@@ -687,11 +687,11 @@
 		);
 		localSettings.top_k = globalUserSettings.default_top_k ?? 40;
 		localSettings.seed = globalUserSettings.default_seed ?? null;
-		localSettings.gemini_thinking_budget =
-			globalUserSettings.default_gemini_thinking_budget ?? null;
-		localSettings.gemini_thinking_level = globalUserSettings.default_gemini_thinking_level ?? null;
-		localSettings.gemini_enable_code_execution =
-			globalUserSettings.default_gemini_enable_code_execution ?? false;
+		localSettings.thinking_budget =
+			globalUserSettings.default_thinking_budget ?? null;
+		localSettings.thinking_level = globalUserSettings.default_thinking_level ?? null;
+		localSettings.enable_code_execution =
+			globalUserSettings.default_enable_code_execution ?? false;
 		localSettings.model_name = globalUserSettings.default_model_name || DEFAULT_CHAT_MODEL;
 		localSettings.context_total_token_limit =
 			globalUserSettings.default_context_total_token_limit ?? DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT;
@@ -1547,11 +1547,11 @@
 								<div class="space-y-2">
 									<div class="flex items-center justify-between">
 										<Label for="thinking-budget">Thinking Budget</Label>
-										{#if localSettings.gemini_thinking_budget !== null}
+										{#if localSettings.thinking_budget !== null}
 											<ButtonComponent
 												variant="ghost"
 												size="sm"
-												onclick={() => clearOverride('gemini_thinking_budget')}
+												onclick={() => clearOverride('thinking_budget')}
 											>
 												Clear
 											</ButtonComponent>
@@ -1562,17 +1562,17 @@
 										type="number"
 										min="0"
 										placeholder="Default"
-										bind:value={localSettings.gemini_thinking_budget}
+										bind:value={localSettings.thinking_budget}
 									/>
 								</div>
 								<div class="space-y-2">
 									<div class="flex items-center justify-between">
 										<Label for="thinking-level">Thinking Level</Label>
-										{#if localSettings.gemini_thinking_level !== null}
+										{#if localSettings.thinking_level !== null}
 											<ButtonComponent
 												variant="ghost"
 												size="sm"
-												onclick={() => clearOverride('gemini_thinking_level')}
+												onclick={() => clearOverride('thinking_level')}
 											>
 												Clear
 											</ButtonComponent>
@@ -1581,7 +1581,7 @@
 									<select
 										id="thinking-level"
 										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={localSettings.gemini_thinking_level}
+										bind:value={localSettings.thinking_level}
 									>
 										<option value={null}>Default</option>
 										<option value="Low">Low</option>
@@ -1592,11 +1592,11 @@
 								<div class="col-span-2 space-y-2">
 									<div class="flex items-center justify-between">
 										<Label for="code-execution">Code Execution</Label>
-										{#if localSettings.gemini_enable_code_execution !== false}
+										{#if localSettings.enable_code_execution !== false}
 											<ButtonComponent
 												variant="ghost"
 												size="sm"
-												onclick={() => clearOverride('gemini_enable_code_execution')}
+												onclick={() => clearOverride('enable_code_execution')}
 											>
 												Clear
 											</ButtonComponent>
@@ -1605,7 +1605,7 @@
 									<select
 										id="code-execution"
 										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={localSettings.gemini_enable_code_execution}
+										bind:value={localSettings.enable_code_execution}
 									>
 										<option value={false}>Disabled</option>
 										<option value={true}>Enabled</option>

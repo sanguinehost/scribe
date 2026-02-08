@@ -8,10 +8,7 @@
 use crate::db::DbId;
 use chrono::Utc;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-use genai::chat::{
-    ChatMessage as GenAiChatMessage, ChatOptions, ChatRequest, ChatResponseFormat, ChatRole,
-    MessageContent,
-};
+use rig::message::Message as RigMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -19,12 +16,12 @@ use std::time::Instant;
 use tracing::{debug, info, warn};
 
 use crate::{
-    crypto,
-    errors::AppError,
-    services::cognitive::RecallPipeline,
-    services::{agentic::narrative_tools::SearchKnowledgeBaseTool, ChronicleService},
+    crypto, errors::AppError, services::cognitive::RecallPipeline, services::ChronicleService,
     AppState,
 };
+
+#[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+use crate::services::agentic::narrative_tools::SearchKnowledgeBaseTool;
 use secrecy::SecretBox;
 
 use super::tools::ScribeTool;
@@ -92,6 +89,7 @@ pub struct ToolCall {
 /// The lightweight context enrichment agent
 pub struct ContextEnrichmentAgent {
     state: Arc<AppState>,
+    #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
     search_tool: Arc<SearchKnowledgeBaseTool>,
     recall_pipeline: Arc<RecallPipeline>,
     _chronicle_service: Arc<ChronicleService>,
@@ -102,12 +100,15 @@ impl ContextEnrichmentAgent {
     /// Create a new context enrichment agent
     pub fn new(
         state: Arc<AppState>,
-        search_tool: Arc<SearchKnowledgeBaseTool>,
+        #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))] search_tool: Arc<
+            SearchKnowledgeBaseTool,
+        >,
         recall_pipeline: Arc<RecallPipeline>,
         chronicle_service: Arc<ChronicleService>,
     ) -> Self {
         Self {
             state,
+            #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
             search_tool,
             recall_pipeline,
             _chronicle_service: chronicle_service,
@@ -116,6 +117,7 @@ impl ContextEnrichmentAgent {
     }
 
     /// Main entry point: Enrich context for a chat session
+    #[allow(clippy::too_many_arguments)]
     pub async fn enrich_context(
         &self,
         session_id: crate::db::DbId,
@@ -151,6 +153,7 @@ impl ContextEnrichmentAgent {
             .await?;
 
         // Try to execute the enrichment, handling errors gracefully
+        #[allow(clippy::type_complexity)]
         let result: Result<
             (
                 String,
@@ -219,6 +222,7 @@ impl ContextEnrichmentAgent {
 
             // Step 2: Execute searches
             let mut all_search_results = Vec::new();
+            #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
             for search in &planned_searches {
                 let step_start = Instant::now();
 
@@ -447,10 +451,10 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
             };
 
             // Create chat messages with enhanced prefill on retries
-            let user_message = GenAiChatMessage {
-                role: ChatRole::User,
-                content: MessageContent::from(user_message_content.clone()),
-                options: None,
+            let user_message = RigMessage::User {
+                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                    user_message_content.clone(),
+                )),
             };
 
             // Use enhanced prefill on retries
@@ -460,39 +464,40 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
                 Self::create_enhanced_prefill()
             };
 
-            let prefill_message = GenAiChatMessage {
-                role: ChatRole::Assistant,
-                content: MessageContent::from(prefill_content),
-                options: None,
+            let prefill_message = RigMessage::Assistant {
+                id: None,
+                content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::Text(
+                    rig::message::Text {
+                        text: prefill_content,
+                    },
+                )),
             };
 
             let messages_vec = vec![user_message, prefill_message];
 
-            // Build chat options
-            let mut chat_options = ChatOptions::default();
-            chat_options = chat_options.with_temperature(1.0);
-            chat_options = chat_options.with_max_tokens(1024); // Don't need much for planning
+            use crate::llm::RigCompletionRequest;
 
-            // Enable structured output
-            chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
+            // Create Rig completion request
+            let rig_req = RigCompletionRequest {
+                model_name: self.model.clone(),
+                provider: "gemini".to_string(), // Default to gemini
+                prompt: "".to_string(),
+                preamble: Some(system_prompt),
+                history: messages_vec,
+                temperature: Some(1.0),
+                max_tokens: Some(1024),
+                ..Default::default()
+            };
 
-            // Create chat request
-            let chat_request = ChatRequest::new(messages_vec).with_system(&system_prompt);
-
-            match self
-                .state
-                .ai_client
-                .exec_chat(&self.model, chat_request, Some(chat_options.clone()))
-                .await
-            {
+            match self.state.ai_client.completion(rig_req).await {
                 Ok(response) => {
                     // Extract JSON from response
-                    let text = response.first_text().unwrap_or("");
+                    let text = response.content.as_str();
                     // info!("🔍 CONTEXT ENRICHMENT RAW RESPONSE: {}", text);
 
                     let json_result = serde_json::from_str::<Value>(text).map_err(|e| {
                         warn!("Failed to parse JSON from response: {}. Text: {}", e, text);
-                        AppError::GeminiError("Failed to extract JSON from response".to_string())
+                        AppError::AiError("Failed to extract JSON from response".to_string())
                     })?;
 
                     // Parse the structured response
@@ -579,18 +584,17 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
                             "Safety filter detected on attempt {}, retrying with enhanced prompt",
                             retry_count + 1
                         );
-                        _last_error = Some(AppError::GeminiError(format!(
+                        _last_error = Some(AppError::AiError(format!(
                             "Planning failed due to safety filter: {}",
                             e
                         )));
                         continue;
                     } else if retry_count < MAX_RETRIES {
-                        _last_error =
-                            Some(AppError::GeminiError(format!("Planning failed: {}", e)));
+                        _last_error = Some(AppError::AiError(format!("Planning failed: {}", e)));
                         continue;
                     }
 
-                    _last_error = Some(AppError::GeminiError(format!(
+                    _last_error = Some(AppError::AiError(format!(
                         "Planning failed after retries: {}",
                         e
                     )));
@@ -695,6 +699,8 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     }
 
     /// Step 2: Execute a single search
+    #[cfg(any(feature = "remote-vector", feature = "embedded-vector"))]
+    #[allow(clippy::too_many_arguments)]
     async fn execute_search(
         &self,
         search: &PlannedSearch,
@@ -866,50 +872,44 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         });
 
         // Create chat messages
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(user_message_content),
-            options: None,
+        let user_message = RigMessage::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                user_message_content,
+            )),
         };
 
-        let prefill_message = GenAiChatMessage {
-            role: ChatRole::Assistant,
-            content: MessageContent::from(
-                "I'll synthesize the search results into relevant context for the roleplay:"
-                    .to_string(),
-            ),
-            options: None,
+        let prefill_message = RigMessage::Assistant {
+            id: None,
+            content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::Text(
+                rig::message::Text {
+                    text:
+                        "I'll synthesize the search results into relevant context for the roleplay:"
+                            .to_string(),
+                },
+            )),
         };
 
         let messages_vec = vec![user_message, prefill_message];
 
-        // Build chat options
-        let mut chat_options = ChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(1024);
+        use crate::llm::RigCompletionRequest;
 
-        // Enable structured output
-        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
-        // System prompt
-        let system_prompt = "You are a context synthesis agent for a roleplay assistant. Your role is to take search results from chronicles and lorebooks and create a coherent summary that provides relevant background context.";
-
-        // Create chat request
-        let chat_request = ChatRequest::new(messages_vec).with_system(system_prompt);
+        // Create Rig completion request
+        let rig_req = RigCompletionRequest {
+            model_name: self.model.clone(),
+            provider: "gemini".to_string(), // Default to gemini
+            prompt: "".to_string(),
+            preamble: Some(Self::create_jailbreak_system_prompt()),
+            history: messages_vec,
+            temperature: Some(1.0),
+            max_tokens: Some(1024),
+            ..Default::default()
+        };
 
         // Try to get AI synthesis
-        match self
-            .state
-            .ai_client
-            .exec_chat(&self.model, chat_request, Some(chat_options))
-            .await
-        {
+        match self.state.ai_client.completion(rig_req).await {
             Ok(response) => {
                 // Extract JSON from response
-                if let Some(json_result) = response
-                    .first_text()
-                    .and_then(|text| serde_json::from_str::<Value>(text).ok())
-                {
+                if let Ok(json_result) = serde_json::from_str::<Value>(&response.content) {
                     let synthesis_text = json_result
                         .get("summary")
                         .and_then(|s| s.as_str())
@@ -1085,6 +1085,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
     }
 
     /// Update an existing analysis with results
+    #[allow(clippy::too_many_arguments)]
     async fn update_analysis(
         &self,
         analysis_id: crate::db::DbId,
@@ -1105,7 +1106,7 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
 
         // Convert planned searches to JSON (Value for PostgreSQL, String for SQLite)
         #[cfg(feature = "postgres-backend")]
-        let planned_searches_json = serde_json::to_value(&planned_searches)?;
+        let planned_searches_json = serde_json::to_value(planned_searches)?;
 
         #[cfg(feature = "sqlite-backend")]
         let planned_searches_json = serde_json::to_string(&planned_searches)?;

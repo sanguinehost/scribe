@@ -1,3 +1,4 @@
+use crate::privacy::logging::loggable_user_id;
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -56,7 +57,7 @@ async fn get_template_preferences_handler(
         .cloned()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, ?query.character_id, "Getting template preferences");
+    debug!(user_id = %loggable_user_id(user.id), ?query.character_id, "Getting template preferences");
 
     let preferences = TemplatePreferenceService::get_template_preferences(
         &app_state.pool,
@@ -84,7 +85,7 @@ async fn update_template_preferences_handler(
         .cloned()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, ?query.character_id, ?update_request, "Updating template preferences");
+    debug!(user_id = %loggable_user_id(user.id), ?query.character_id, ?update_request, "Updating template preferences");
 
     let updated_preferences = TemplatePreferenceService::update_template_preferences(
         &app_state.pool,
@@ -110,7 +111,7 @@ async fn delete_template_preferences_handler(
         .cloned()
         .ok_or_else(|| AppError::Unauthorized("User not authenticated".to_string()))?;
 
-    debug!(user_id = %user.id, ?query.character_id, "Deleting template preferences");
+    debug!(user_id = %loggable_user_id(user.id), ?query.character_id, "Deleting template preferences");
 
     TemplatePreferenceService::delete_template_preferences(
         &app_state.pool,

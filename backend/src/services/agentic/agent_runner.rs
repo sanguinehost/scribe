@@ -198,6 +198,7 @@ impl NarrativeAgentRunner {
     }
 
     /// Deterministically create a cognitive update for every message exchange
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_narrative_event(
         &self,
         user_id: crate::db::DbId,
@@ -408,9 +409,13 @@ RULES:
 
         Ok(NarrativeWorkflowResult {
             triage_result: TriageResult {
-                is_significant: payload.should_create_event,
+                is_significant: true,
                 summary: payload.summary.clone(),
-                event_type: "COGNITIVE.UPDATE".to_string(),
+                event_type: if payload.should_create_event {
+                    "NARRATIVE.EVENT".into()
+                } else {
+                    "COGNITIVE.UPDATE".into()
+                },
                 confidence: 1.0,
             },
             actions_taken: vec![],
@@ -430,10 +435,7 @@ RULES:
         session_dek: &SessionDek,
         persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<TriageResult, AppError> {
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, MessageContent,
-        };
+        use crate::llm::RigCompletionRequest;
 
         debug!(
             "Processing conversation for chronicle generation - {} messages",
@@ -459,35 +461,23 @@ CONVERSATION:
             persona_section, conversation_text
         );
 
-        // Create the user message
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(triage_prompt),
-            options: None,
-        };
-
-        // Build chat options with structured output
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(2048);
-
-        // Apply structured output schema
-        // Note: genai now uses ChatResponseFormat::JsonMode for structured output
-        let response_format = ChatResponseFormat::JsonMode;
-        chat_options = chat_options.with_response_format(response_format);
-
-        // Create system prompt
-        let system_prompt = r#"You are analyzing fictional roleplay conversations. Provide a clear summary of what happened in the conversation."#;
+        // Create the user message content
+        let user_content = triage_prompt;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let req = RigCompletionRequest {
+            model_name: self.config.triage_model.clone(),
+            provider: "gemini".to_string(),
+            prompt: user_content,
+            preamble: None,
+            history: vec![], // Triage only needs the summary prompt which includes the conversation text
+            temperature: Some(1.0),
+            max_tokens: Some(2048),
+            ..Default::default()
+        };
 
         // Call AI with structured output
-        let response = match self
-            .ai_client
-            .exec_chat(&self.config.triage_model, chat_req, Some(chat_options))
-            .await
-        {
+        let response = match self.ai_client.completion(req).await {
             Ok(resp) => resp,
             Err(e) => {
                 warn!("Triage AI call failed: {}, using fallback summary", e);
@@ -501,9 +491,10 @@ CONVERSATION:
             }
         };
 
-        // Parse structured response - no cleanup needed with structured outputs!
-        let content = response.first_text().unwrap_or("{}");
-        let parsed: Result<crate::DbJson, _> = serde_json::from_str(content);
+        // Parse structured response - strip markdown fences if present
+        let content = response.content;
+        let json_content = crate::llm::response_utils::strip_markdown_fences(&content);
+        let parsed: Result<crate::DbJson, _> = serde_json::from_str(json_content);
 
         let summary = match parsed {
             Ok(json) => json
@@ -571,10 +562,7 @@ CONVERSATION:
         _chronicle_was_just_created: bool,
         persona_context: Option<&super::UserPersonaContext>,
     ) -> Result<ActionPlan, AppError> {
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, MessageContent,
-        };
+        use crate::llm::RigCompletionRequest;
 
         debug!("Generating chronicle event for: {}", triage_result.summary);
 
@@ -619,41 +607,31 @@ IMPORTANT RULES:
             persona_section, previous_chronicles, triage_result.summary
         );
 
-        // Create the user message
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(planning_prompt),
-            options: None,
-        };
-
-        // Build chat options with structured output
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(4096);
-
-        // Apply structured output schema
-        let response_format = ChatResponseFormat::JsonMode;
-        chat_options = chat_options.with_response_format(response_format);
-
         // Create system prompt
         let system_prompt = r#"You are a planning agent for a narrative intelligence system analyzing fictional roleplay. Generate a structured action plan for creating chronicle events."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let req = RigCompletionRequest {
+            model_name: self.config.planning_model.clone(),
+            provider: "gemini".to_string(),
+            prompt: planning_prompt,
+            preamble: Some(system_prompt.to_string()),
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some(4096),
+            ..Default::default()
+        };
 
         // Call AI with structured output
-        let response = self
-            .ai_client
-            .exec_chat(&self.config.planning_model, chat_req, Some(chat_options))
-            .await
-            .map_err(|e| {
-                error!("Action plan generation failed: {}", e);
-                AppError::LlmClientError(format!("Failed to generate action plan: {e}"))
-            })?;
+        let response = self.ai_client.completion(req).await.map_err(|e| {
+            error!("Action plan generation failed: {}", e);
+            AppError::LlmClientError(format!("Failed to generate action plan: {e}"))
+        })?;
 
-        // Parse structured response - no cleanup needed with structured outputs!
-        let content = response.first_text().unwrap_or("{}");
-        let parsed: crate::DbJson = serde_json::from_str(content).map_err(|e| {
+        // Parse structured response - strip markdown fences if present
+        let content = response.content;
+        let json_content = crate::llm::response_utils::strip_markdown_fences(&content);
+        let parsed: crate::DbJson = serde_json::from_str(json_content).map_err(|e| {
             error!("Failed to parse action plan response: {}", e);
             AppError::InternalServerErrorGeneric(format!("Invalid action plan response: {e}"))
         })?;
@@ -979,11 +957,7 @@ Your task is to generate an appropriate chronicle name that captures the essence
         session_dek: &SessionDek,
         character_name: Option<String>,
     ) -> Result<String, AppError> {
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, JsonSpec,
-            MessageContent,
-        };
+        use crate::llm::RigCompletionRequest;
 
         // Build conversation context - includes first_mes (system message) and any user messages
         // Even with just first_mes + one user message, we have enough context for AI generation
@@ -1041,49 +1015,31 @@ Example: {{ "name": "The Crimson Empress Chronicles" }}"#,
             character_section, conversation_text
         );
 
-        // Create the user message
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(naming_prompt),
-            options: None,
-        };
-
-        // Build chat options with structured output
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(1.0);
-        chat_options = chat_options.with_max_tokens(512);
-
-        // Apply structured output schema
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "The generated chronicle name"
-                }
-            },
-            "required": ["name"]
-        });
-        let response_format = ChatResponseFormat::JsonSpec(JsonSpec::new("chronicle_name", schema));
-        chat_options = chat_options.with_response_format(response_format);
-
         // Create system prompt
         let system_prompt = r#"You are a narrative naming agent for fictional roleplay. Generate meaningful chronicle names that capture the overarching narrative."#;
 
         // Create chat request
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let req = RigCompletionRequest {
+            model_name: self.config.triage_model.clone(),
+            provider: "gemini".to_string(),
+            prompt: naming_prompt,
+            preamble: Some(system_prompt.to_string()),
+            history: vec![],
+            temperature: Some(1.0),
+            max_tokens: Some(512),
+            ..Default::default()
+        };
 
         // Call AI with structured output
-        match self
-            .ai_client
-            .exec_chat(&self.config.triage_model, chat_req, Some(chat_options))
-            .await
-        {
+        match self.ai_client.completion(req).await {
             Ok(response) => {
-                // Parse structured response - no cleanup needed with structured outputs!
-                let content = response.first_text().unwrap_or("{}");
+                // Parse structured response - strip markdown code fences if present
+                let content = response.content;
                 info!("Chronicle name AI response content: '{}'", content);
-                let parsed: Result<crate::DbJson, _> = serde_json::from_str(content);
+
+                // Use shared utility to strip markdown code fences
+                let json_content = crate::llm::response_utils::strip_markdown_fences(&content);
+                let parsed: Result<crate::DbJson, _> = serde_json::from_str(json_content);
 
                 let generated_name = match parsed {
                     Ok(json) => json
@@ -1242,43 +1198,37 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
     /// Generate chronicle event with AI using retry logic like chat generation
     /// Generate a cognitive payload using structured output (JsonMode)
     async fn generate_cognitive_payload(&self, prompt: &str) -> Result<CognitivePayload, AppError> {
-        use genai::chat::{
-            ChatMessage as GenAiChatMessage, ChatOptions as GenAiChatOptions,
-            ChatRequest as GenAiChatRequest, ChatResponseFormat, ChatRole, MessageContent,
-        };
+        use crate::llm::RigCompletionRequest;
 
         let model = "gemini-2.5-flash-lite"; // Use flash-lite for cost efficiency
 
-        let user_message = GenAiChatMessage {
-            role: ChatRole::User,
-            content: MessageContent::from(prompt.to_string()),
-            options: None,
-        };
-
-        let mut chat_options = GenAiChatOptions::default();
-        chat_options = chat_options.with_temperature(0.0); // Low temperature for extraction
-        chat_options = chat_options.with_max_tokens(4096);
-        chat_options = chat_options.with_response_format(ChatResponseFormat::JsonMode);
-
         let system_prompt = "You are a cognitive engine for a roleplay application. Extract narrative events, character opinions, and entity observations from the conversation.";
 
-        let chat_req = GenAiChatRequest::new(vec![user_message]).with_system(system_prompt);
+        let req = RigCompletionRequest {
+            model_name: model.to_string(),
+            provider: "gemini".to_string(),
+            prompt: prompt.to_string(),
+            preamble: Some(system_prompt.to_string()),
+            history: vec![],
+            temperature: Some(0.0),
+            max_tokens: Some(4096),
+            ..Default::default()
+        };
 
-        let response = self
-            .ai_client
-            .exec_chat(model, chat_req, Some(chat_options))
-            .await
-            .map_err(|e| {
-                AppError::GenerationError(format!("Failed to generate cognitive payload: {}", e))
-            })?;
-
-        let content = response.first_text().ok_or_else(|| {
-            AppError::GenerationError(
-                "LLM returned empty response for cognitive payload".to_string(),
-            )
+        let response = self.ai_client.completion(req).await.map_err(|e| {
+            AppError::GenerationError(format!("Failed to generate cognitive payload: {}", e))
         })?;
 
-        let payload: CognitivePayload = match serde_json::from_str(content) {
+        let content = if response.content.is_empty() {
+            return Err(AppError::GenerationError(
+                "LLM returned empty response for cognitive payload".to_string(),
+            ));
+        } else {
+            &response.content
+        };
+
+        let json_content = crate::llm::response_utils::strip_markdown_fences(content);
+        let payload: CognitivePayload = match serde_json::from_str(json_content) {
             Ok(p) => p,
             Err(e) => {
                 error!(
@@ -1311,6 +1261,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
     ///
     /// # Returns
     /// A `Result` containing the reconciled game state and a list of changes
+    #[allow(clippy::too_many_arguments)]
     pub async fn process_game_state_update(
         &self,
         current_state: Option<&crate::models::game_state::GameState>,
@@ -1331,7 +1282,7 @@ Your task is to analyze fictional roleplay content and create CONCISE chronicle 
         );
 
         // Create the State Manager Agent (Sidecar)
-        let state_manager = StateManagerAgent::new();
+        let state_manager = StateManagerAgent::new(self.ai_client.clone());
 
         // Generate the LLM's suggested complete state
         let suggested_state = state_manager

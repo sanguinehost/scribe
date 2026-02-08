@@ -101,7 +101,10 @@ impl FromSql<Text, Sqlite> for SqliteUuid {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes).map_err(|e| {
+            tracing::debug!("SqliteUuid (String) failed to deserialize: {}", e);
+            e
+        })?;
         let db_id =
             DbId::parse_str(&text).map_err(|e| format!("Failed to parse UUID from TEXT: {}", e))?;
         Ok(SqliteUuid(db_id.into_uuid()))
@@ -115,13 +118,19 @@ impl ToSql<Text, Sqlite> for SqliteUuid {
         Ok(IsNull::No)
     }
 }
-
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteUuid {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+        let text =
+            <Option<String> as FromSql<diesel::sql_types::Nullable<Text>, Sqlite>>::from_sql(
+                bytes,
+            )?;
+        let text = text.ok_or_else(|| {
+            tracing::debug!("SqliteUuid encountered NULL in a Nullable<Text> column");
+            "Unexpected NULL for SqliteUuid column"
+        })?;
         let db_id =
             DbId::parse_str(&text).map_err(|e| format!("Failed to parse UUID from TEXT: {}", e))?;
         Ok(SqliteUuid(db_id.into_uuid()))
@@ -209,18 +218,6 @@ impl ToSql<Timestamp, Sqlite> for SqliteDateTime {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
-impl FromSql<diesel::sql_types::Nullable<Timestamp>, Sqlite> for SqliteDateTime {
-    fn from_sql(
-        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        let timestamp = <i64 as FromSql<diesel::sql_types::BigInt, Sqlite>>::from_sql(bytes)?;
-        let dt = DateTime::from_timestamp(timestamp, 0)
-            .ok_or_else(|| format!("Invalid timestamp: {}", timestamp))?;
-        Ok(SqliteDateTime(dt))
-    }
-}
-
 // Additional FromSql/ToSql implementations for BigInt (used by unified types)
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<BigInt, Sqlite> for SqliteDateTime {
@@ -239,18 +236,6 @@ impl ToSql<BigInt, Sqlite> for SqliteDateTime {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.timestamp());
         Ok(IsNull::No)
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl FromSql<diesel::sql_types::Nullable<BigInt>, Sqlite> for SqliteDateTime {
-    fn from_sql(
-        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        let timestamp = <i64 as FromSql<BigInt, Sqlite>>::from_sql(bytes)?;
-        let dt = DateTime::from_timestamp(timestamp, 0)
-            .ok_or_else(|| format!("Invalid timestamp: {}", timestamp))?;
-        Ok(SqliteDateTime(dt))
     }
 }
 
@@ -522,14 +507,17 @@ impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteJson {
 #[serde(transparent)]
 pub struct SqliteBigDecimal(pub bigdecimal::BigDecimal);
 
+impl std::str::FromStr for SqliteBigDecimal {
+    type Err = bigdecimal::ParseBigDecimalError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        bigdecimal::BigDecimal::from_str(s).map(Self)
+    }
+}
+
 impl SqliteBigDecimal {
     pub fn new(value: bigdecimal::BigDecimal) -> Self {
         Self(value)
-    }
-
-    pub fn from_str(s: &str) -> Result<Self, bigdecimal::ParseBigDecimalError> {
-        use std::str::FromStr;
-        bigdecimal::BigDecimal::from_str(s).map(Self)
     }
 
     pub fn into_inner(self) -> bigdecimal::BigDecimal {
@@ -591,17 +579,6 @@ impl ToSql<diesel::sql_types::Double, Sqlite> for SqliteBigDecimal {
 }
 
 #[cfg(feature = "sqlite-backend")]
-impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Double>, Sqlite> for SqliteBigDecimal {
-    fn from_sql(
-        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        let value = <f64 as FromSql<diesel::sql_types::Double, Sqlite>>::from_sql(bytes)?;
-        let decimal = bigdecimal::BigDecimal::try_from(value)
-            .map_err(|e| format!("Failed to convert f64 to BigDecimal: {}", e))?;
-        Ok(SqliteBigDecimal(decimal))
-    }
-}
-#[cfg(feature = "sqlite-backend")]
 impl FromSql<Numeric, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
@@ -624,24 +601,17 @@ impl ToSql<Numeric, Sqlite> for SqliteBigDecimal {
     }
 }
 
-#[cfg(feature = "sqlite-backend")]
-impl FromSql<diesel::sql_types::Nullable<Numeric>, Sqlite> for SqliteBigDecimal {
-    fn from_sql(
-        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        let value = <f64 as FromSql<diesel::sql_types::Double, Sqlite>>::from_sql(bytes)?;
-        let decimal = bigdecimal::BigDecimal::try_from(value)
-            .map_err(|e| format!("Failed to convert f64 to BigDecimal: {}", e))?;
-        Ok(SqliteBigDecimal(decimal))
-    }
-}
 // Additional FromSql implementation for Integer (used for credit/payment fields in SQLite)
 #[cfg(feature = "sqlite-backend")]
 impl FromSql<diesel::sql_types::Integer, Sqlite> for SqliteBigDecimal {
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let value = <i32 as FromSql<diesel::sql_types::Integer, Sqlite>>::from_sql(bytes)?;
+        let value =
+            <i32 as FromSql<diesel::sql_types::Integer, Sqlite>>::from_sql(bytes).map_err(|e| {
+                tracing::debug!("SqliteBigDecimal (i32) failed to deserialize: {}", e);
+                e
+            })?;
         let decimal = bigdecimal::BigDecimal::from(value);
         Ok(SqliteBigDecimal(decimal))
     }
@@ -652,7 +622,14 @@ impl FromSql<diesel::sql_types::Nullable<diesel::sql_types::Integer>, Sqlite> fo
     fn from_sql(
         bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let value = <i32 as FromSql<diesel::sql_types::Integer, Sqlite>>::from_sql(bytes)?;
+        let value = <Option<i32> as FromSql<
+            diesel::sql_types::Nullable<diesel::sql_types::Integer>,
+            Sqlite,
+        >>::from_sql(bytes)?;
+        let value = value.ok_or_else(|| {
+            tracing::debug!("SqliteBigDecimal encountered NULL in a Nullable<Integer> column");
+            "Unexpected NULL value for non-optional SqliteBigDecimal (Integer)"
+        })?;
         let decimal = bigdecimal::BigDecimal::from(value);
         Ok(SqliteBigDecimal(decimal))
     }
@@ -688,19 +665,6 @@ impl ToSql<Text, Sqlite> for SqliteBigDecimal {
     fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Sqlite>) -> serialize::Result {
         out.set_value(self.0.to_string());
         Ok(IsNull::No)
-    }
-}
-
-#[cfg(feature = "sqlite-backend")]
-impl FromSql<diesel::sql_types::Nullable<Text>, Sqlite> for SqliteBigDecimal {
-    fn from_sql(
-        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
-    ) -> deserialize::Result<Self> {
-        use std::str::FromStr;
-        let text = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-        let decimal = bigdecimal::BigDecimal::from_str(&text)
-            .map_err(|e| format!("Failed to parse BigDecimal from TEXT: {}", e))?;
-        Ok(SqliteBigDecimal(decimal))
     }
 }
 

@@ -5,6 +5,7 @@ mod subscription_cancellation_tests {
     use deadpool_diesel::Manager as DeadpoolManager;
     use deadpool_diesel::Pool;
     use diesel::prelude::*;
+    use scribe_backend::db::DbId;
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::{subscriptions, users};
     use scribe_backend::services::payment::{CreditService, SubscriptionService};
@@ -71,18 +72,18 @@ mod subscription_cancellation_tests {
 
             // Create a cancelled trial that expired 1 hour ago
             let subscription = Subscription {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(7),
-                current_period_end: Utc::now() + Duration::days(23),
-                created_at: Some(Utc::now() - Duration::days(7)),
-                updated_at: Some(Utc::now() - Duration::hours(1)),
+                current_period_start: (Utc::now() - Duration::days(7)).into(),
+                current_period_end: (Utc::now() + Duration::days(23)).into(),
+                created_at: Some((Utc::now() - Duration::days(7)).into()),
+                updated_at: Some((Utc::now() - Duration::hours(1)).into()),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::hours(1)), // Expired 1 hour ago
+                trial_end: Some((Utc::now() - Duration::hours(1)).into()), // Expired 1 hour ago
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -113,18 +114,18 @@ mod subscription_cancellation_tests {
 
             // Create a cancelled trial that expires in the future
             let subscription = Subscription {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
-                created_at: Some(Utc::now() - Duration::days(5)),
-                updated_at: Some(Utc::now()),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
+                created_at: Some((Utc::now() - Duration::days(5)).into()),
+                updated_at: Some(Utc::now().into()),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() + Duration::days(2)), // Expires in 2 days
+                trial_end: Some((Utc::now() + Duration::days(2)).into()), // Expires in 2 days
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -155,18 +156,18 @@ mod subscription_cancellation_tests {
 
             // Create an active subscription (not cancelled)
             let subscription = Subscription {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "active".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
-                created_at: Some(Utc::now() - Duration::days(5)),
-                updated_at: Some(Utc::now()),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
+                created_at: Some((Utc::now() - Duration::days(5)).into()),
+                updated_at: Some(Utc::now().into()),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::days(1)), // Trial already ended
+                trial_end: Some((Utc::now() - Duration::days(1)).into()), // Trial already ended
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -197,16 +198,16 @@ mod subscription_cancellation_tests {
 
             // Create a cancelled subscription with no trial_end (regular subscription)
             let subscription = Subscription {
-                id: Uuid::new_v4(),
+                id: Uuid::new_v4().into(),
                 user_id: DbId::new(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
-                created_at: Some(Utc::now() - Duration::days(5)),
-                updated_at: Some(Utc::now()),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
+                created_at: Some((Utc::now() - Duration::days(5)).into()),
+                updated_at: Some(Utc::now().into()),
                 cancel_at_period_end: Some(false),
                 trial_end: None, // No trial
                 credits_allocated_this_period: Some(false),
@@ -242,16 +243,16 @@ mod subscription_cancellation_tests {
 
             // Create expired cancelled trial in database
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(7),
-                current_period_end: Utc::now() + Duration::days(23),
+                current_period_start: (Utc::now() - Duration::days(7)).into(),
+                current_period_end: (Utc::now() + Duration::days(23)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::hours(12)), // Expired 12 hours ago
+                trial_end: Some((Utc::now() - Duration::hours(12)).into()), // Expired 12 hours ago
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -281,7 +282,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -304,16 +305,16 @@ mod subscription_cancellation_tests {
 
             // Create non-expired cancelled trial in database
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() + Duration::days(2)), // Expires in 2 days
+                trial_end: Some((Utc::now() + Duration::days(2)).into()), // Expires in 2 days
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -343,7 +344,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -373,16 +374,16 @@ mod subscription_cancellation_tests {
 
             // Create active trial
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "trialing".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() + Duration::days(2)), // Active trial
+                trial_end: Some((Utc::now() + Duration::days(2)).into()), // Active trial
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -411,7 +412,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -434,16 +435,16 @@ mod subscription_cancellation_tests {
 
             // Create trial that transitioned to cancelled and then expired
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(), // Trial was cancelled/expired
-                current_period_start: Utc::now() - Duration::days(7),
-                current_period_end: Utc::now() + Duration::days(23),
+                current_period_start: (Utc::now() - Duration::days(7)).into(),
+                current_period_end: (Utc::now() + Duration::days(23)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::days(1)), // Trial ended yesterday
+                trial_end: Some((Utc::now() - Duration::days(1)).into()), // Trial ended yesterday
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -472,7 +473,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -495,16 +496,16 @@ mod subscription_cancellation_tests {
 
             // Create subscription that converted from trial to paid
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "active".to_string(), // Now active (converted from trial)
-                current_period_start: Utc::now() - Duration::days(7),
-                current_period_end: Utc::now() + Duration::days(23),
+                current_period_start: (Utc::now() - Duration::days(7)).into(),
+                current_period_end: (Utc::now() + Duration::days(23)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::days(1)), // Trial ended, converted to paid
+                trial_end: Some((Utc::now() - Duration::days(1)).into()), // Trial ended, converted to paid
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -533,7 +534,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -567,18 +568,18 @@ mod subscription_cancellation_tests {
 
             // Create immediately cancelled subscription
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25), // Still in billing period
-                cancel_at_period_end: Some(false),                   // Immediate cancellation
-                trial_end: None, // Regular subscription, no trial
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(), // Still in billing period
+                cancel_at_period_end: Some(false), // Immediate cancellation
+                trial_end: None,                   // Regular subscription, no trial
                 credits_allocated_this_period: Some(true),
-                last_credit_grant: Some(Utc::now() - Duration::days(5)),
+                last_credit_grant: Some((Utc::now() - Duration::days(5)).into()),
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
                 first_payment_date: None,
@@ -605,7 +606,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -630,18 +631,18 @@ mod subscription_cancellation_tests {
 
             // Create subscription set to cancel at period end
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "premium".to_string(),
                 status: "active".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
                 cancel_at_period_end: Some(true), // Will cancel at end of period
                 trial_end: None,
                 credits_allocated_this_period: Some(true),
-                last_credit_grant: Some(Utc::now() - Duration::days(5)),
+                last_credit_grant: Some((Utc::now() - Duration::days(5)).into()),
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
                 first_payment_date: None,
@@ -668,7 +669,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -695,18 +696,18 @@ mod subscription_cancellation_tests {
 
             // Create subscription that was cancelled and period has ended
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "premium".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(35),
-                current_period_end: Utc::now() - Duration::days(5), // Period ended 5 days ago
+                current_period_start: (Utc::now() - Duration::days(35)).into(),
+                current_period_end: (Utc::now() - Duration::days(5)).into(), // Period ended 5 days ago
                 cancel_at_period_end: Some(true),
                 trial_end: None,
                 credits_allocated_this_period: Some(true),
-                last_credit_grant: Some(Utc::now() - Duration::days(35)),
+                last_credit_grant: Some((Utc::now() - Duration::days(35)).into()),
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
                 first_payment_date: None,
@@ -733,7 +734,7 @@ mod subscription_cancellation_tests {
             let service = SubscriptionService::new((*app.config).clone(), encryption_service);
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             let result = conn
-                .interact(move |conn| service.get_user_subscription_sync(conn, user_id))
+                .interact(move |conn| service.get_user_subscription_sync(conn, user_id.into()))
                 .await
                 .expect("Failed to interact")
                 .expect("Failed to get subscription");
@@ -766,17 +767,17 @@ mod subscription_cancellation_tests {
 
             // Create subscription that just converted from trial to paid
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "active".to_string(),
-                current_period_start: Utc::now() - Duration::days(1),
-                current_period_end: Utc::now() + Duration::days(29),
+                current_period_start: (Utc::now() - Duration::days(1)).into(),
+                current_period_end: (Utc::now() + Duration::days(29)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::days(1)), // Trial just ended
-                credits_allocated_this_period: Some(false),      // Haven't allocated credits yet
+                trial_end: Some((Utc::now() - Duration::days(1)).into()), // Trial just ended
+                credits_allocated_this_period: Some(false), // Haven't allocated credits yet
                 last_credit_grant: None,
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
@@ -805,8 +806,8 @@ mod subscription_cancellation_tests {
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             conn.interact(move |conn| {
                 let credit_service = CreditService::new(config_clone);
-                credit_service.initialize_user_credits(conn, user_id)?;
-                credit_service.grant_monthly_credits(conn, user_id, "basic")
+                credit_service.initialize_user_credits(conn, user_id.into())?;
+                credit_service.grant_monthly_credits(conn, user_id.into(), "basic")
             })
             .await
             .expect("Failed to interact")
@@ -818,7 +819,7 @@ mod subscription_cancellation_tests {
             let balance = conn
                 .interact(move |conn| {
                     let credit_service = CreditService::new(config_clone);
-                    credit_service.get_balance(conn, user_id)
+                    credit_service.get_balance(conn, user_id.into())
                 })
                 .await
                 .expect("Failed to interact")
@@ -855,10 +856,10 @@ mod subscription_cancellation_tests {
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             conn.interact(move |conn| {
                 let credit_service = CreditService::new(config_clone);
-                credit_service.initialize_user_credits(conn, user_id)?;
+                credit_service.initialize_user_credits(conn, user_id.into())?;
                 credit_service.add_credits(
                     conn,
-                    user_id,
+                    user_id.into(),
                     500,
                     "purchase",
                     "Credit package",
@@ -872,18 +873,18 @@ mod subscription_cancellation_tests {
 
             // Create active subscription
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "premium".to_string(),
                 status: "active".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
                 cancel_at_period_end: Some(false),
                 trial_end: None,
                 credits_allocated_this_period: Some(true),
-                last_credit_grant: Some(Utc::now() - Duration::days(5)),
+                last_credit_grant: Some((Utc::now() - Duration::days(5)).into()),
                 soft_limit_override: None,
                 paddle_sync_attempted: false,
                 first_payment_date: None,
@@ -924,7 +925,7 @@ mod subscription_cancellation_tests {
             let balance = conn
                 .interact(move |conn| {
                     let credit_service = CreditService::new(config_clone);
-                    credit_service.get_balance(conn, user_id)
+                    credit_service.get_balance(conn, user_id.into())
                 })
                 .await
                 .expect("Failed to interact")
@@ -954,16 +955,16 @@ mod subscription_cancellation_tests {
 
             // Create expired cancelled trial
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(7),
-                current_period_end: Utc::now() + Duration::days(23),
+                current_period_start: (Utc::now() - Duration::days(7)).into(),
+                current_period_end: (Utc::now() + Duration::days(23)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() - Duration::hours(1)), // Expired 1 hour ago
+                trial_end: Some((Utc::now() - Duration::hours(1)).into()), // Expired 1 hour ago
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -994,8 +995,8 @@ mod subscription_cancellation_tests {
             let result = conn
                 .interact(move |conn| {
                     let credit_service = CreditService::new(config_clone);
-                    credit_service.initialize_user_credits(conn, user_id)?;
-                    credit_service.grant_monthly_credits(conn, user_id, "basic")
+                    credit_service.initialize_user_credits(conn, user_id.into())?;
+                    credit_service.grant_monthly_credits(conn, user_id.into(), "basic")
                 })
                 .await
                 .expect("Failed to interact");
@@ -1010,7 +1011,7 @@ mod subscription_cancellation_tests {
             let balance = conn
                 .interact(move |conn| {
                     let credit_service = CreditService::new(config_clone);
-                    credit_service.get_balance(conn, user_id)
+                    credit_service.get_balance(conn, user_id.into())
                 })
                 .await
                 .expect("Failed to interact")
@@ -1045,16 +1046,16 @@ mod subscription_cancellation_tests {
 
             // Step 1: User starts with active trial
             let trial_sub = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
                 status: "trialing".to_string(),
-                current_period_start: Utc::now() - Duration::days(5),
-                current_period_end: Utc::now() + Duration::days(25),
+                current_period_start: (Utc::now() - Duration::days(5)).into(),
+                current_period_end: (Utc::now() + Duration::days(25)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() + Duration::days(2)), // Trial ends in 2 days
+                trial_end: Some((Utc::now() + Duration::days(2)).into()), // Trial ends in 2 days
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -1088,7 +1089,7 @@ mod subscription_cancellation_tests {
                     move |conn| {
                         let encryption_service = EncryptionService::new();
                         let service = SubscriptionService::new(config, encryption_service);
-                        service.get_user_subscription_sync(conn, user_id)
+                        service.get_user_subscription_sync(conn, user_id.into())
                     }
                 })
                 .await
@@ -1117,7 +1118,7 @@ mod subscription_cancellation_tests {
                     move |conn| {
                         let encryption_service = EncryptionService::new();
                         let service = SubscriptionService::new(config, encryption_service);
-                        service.get_user_subscription_sync(conn, user_id)
+                        service.get_user_subscription_sync(conn, user_id.into())
                     }
                 })
                 .await
@@ -1134,7 +1135,11 @@ mod subscription_cancellation_tests {
             let conn = app.db_pool.get().await.expect("Failed to get connection");
             conn.interact(move |conn| {
                 diesel::update(subscriptions::table.find(sub_id))
-                    .set(subscriptions::trial_end.eq(Some(Utc::now() - Duration::hours(1))))
+                    .set(
+                        subscriptions::trial_end.eq(Some::<scribe_backend::db::DbTimestamp>(
+                            (Utc::now() - Duration::hours(1)).into(),
+                        )),
+                    )
                     .execute(conn)
             })
             .await
@@ -1149,7 +1154,7 @@ mod subscription_cancellation_tests {
                     move |conn| {
                         let encryption_service = EncryptionService::new();
                         let service = SubscriptionService::new(config, encryption_service);
-                        service.get_user_subscription_sync(conn, user_id)
+                        service.get_user_subscription_sync(conn, user_id.into())
                     }
                 })
                 .await
@@ -1174,16 +1179,16 @@ mod subscription_cancellation_tests {
 
             // Step 1: User starts with active trial
             let trial_sub = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "premium".to_string(),
                 status: "trialing".to_string(),
-                current_period_start: Utc::now() - Duration::days(6),
-                current_period_end: Utc::now() + Duration::days(24),
+                current_period_start: (Utc::now() - Duration::days(6)).into(),
+                current_period_end: (Utc::now() + Duration::days(24)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now() + Duration::days(1)), // Trial ends in 1 day
+                trial_end: Some((Utc::now() + Duration::days(1)).into()), // Trial ends in 1 day
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -1215,9 +1220,12 @@ mod subscription_cancellation_tests {
                 diesel::update(subscriptions::table.find(sub_id))
                     .set((
                         subscriptions::status.eq("active"),
-                        subscriptions::trial_end.eq(Some(Utc::now() - Duration::hours(1))),
+                        subscriptions::trial_end.eq(Some::<scribe_backend::db::DbTimestamp>(
+                            (Utc::now() - Duration::hours(1)).into(),
+                        )),
                         subscriptions::credits_allocated_this_period.eq(true),
-                        subscriptions::last_credit_grant.eq(Some(Utc::now())),
+                        subscriptions::last_credit_grant
+                            .eq(Some::<scribe_backend::db::DbTimestamp>(Utc::now().into())),
                     ))
                     .execute(conn)
             })
@@ -1233,7 +1241,7 @@ mod subscription_cancellation_tests {
                     move |conn| {
                         let encryption_service = EncryptionService::new();
                         let service = SubscriptionService::new(config, encryption_service);
-                        service.get_user_subscription_sync(conn, user_id)
+                        service.get_user_subscription_sync(conn, user_id.into())
                     }
                 })
                 .await
@@ -1260,16 +1268,16 @@ mod subscription_cancellation_tests {
 
             // Test subscription that expires exactly now
             let subscription = NewSubscription {
-                id: Uuid::new_v4(),
-                user_id,
+                id: Uuid::new_v4().into(),
+                user_id: user_id.into(),
                 paddle_customer_id: Some("cus_test".to_string()),
                 paddle_subscription_id: Some("sub_test".to_string()),
                 plan_type: "basic".to_string(),
-                status: "cancelled".to_string(),
-                current_period_start: Utc::now() - Duration::days(7),
-                current_period_end: Utc::now() + Duration::days(23),
+                status: "trialing".to_string(),
+                current_period_start: (Utc::now() - Duration::days(7)).into(),
+                current_period_end: (Utc::now() + Duration::days(23)).into(),
                 cancel_at_period_end: Some(false),
-                trial_end: Some(Utc::now()), // Expires right now (edge case)
+                trial_end: Some(Utc::now().into()), // Expires right now (edge case)
                 credits_allocated_this_period: Some(false),
                 last_credit_grant: None,
                 soft_limit_override: None,
@@ -1302,7 +1310,7 @@ mod subscription_cancellation_tests {
                     move |conn| {
                         let encryption_service = EncryptionService::new();
                         let service = SubscriptionService::new(config, encryption_service);
-                        service.get_user_subscription_sync(conn, user_id)
+                        service.get_user_subscription_sync(conn, user_id.into())
                     }
                 })
                 .await

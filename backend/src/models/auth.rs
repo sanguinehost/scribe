@@ -95,7 +95,7 @@ impl serde::Serialize for LoginPayload {
 pub struct AuthResponse {
     pub user_id: crate::db::DbId,
     pub username: String,
-    pub email: String,
+    pub email: Option<String>,
     pub role: String,                 // Added role field
     pub recovery_key: Option<String>, // Added recovery key field
     pub default_persona_id: Option<crate::db::DbId>,
