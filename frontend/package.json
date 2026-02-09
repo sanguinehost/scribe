@@ -30,7 +30,7 @@
 		"@sveltejs/kit": "^2.50.1",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",
 		"@tauri-apps/api": "^2.9.0",
-		"@tauri-apps/plugin-shell": "^2.3.3",
+		"@tauri-apps/plugin-shell": "^2.3.5",
 		"@testing-library/jest-dom": "^6.9.1",
 		"@testing-library/svelte": "^5.3.1",
 		"@types/lodash-es": "^4.17.12",
