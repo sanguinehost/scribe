@@ -150,7 +150,7 @@ clap = { version = "4.5.26", features = ["derive"] }
 tokio-stream = { version = "0.1", optional = true }
 
 # Tokenization
-tokenizers = { version = "0.21.0" }
+tokenizers = { version = "0.22.2" }
 strsim = "0.11.1"
 
 # Template engine for prompt templates
