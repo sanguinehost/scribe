@@ -11492,38 +11492,6 @@ checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
 
 [[package]]
 name = "rig-core"
-version = "0.29.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7207790134ee24d87ac3d022c308e1a7c871219d139acf70d13be76c1f6919c5"
-dependencies = [
- "as-any",
- "async-stream",
- "base64 0.22.1",
- "bytes",
- "eventsource-stream",
- "fastrand",
- "futures",
- "futures-timer",
- "glob",
- "http 1.4.0",
- "mime",
- "mime_guess",
- "ordered-float 5.1.0",
- "pin-project-lite",
- "reqwest 0.12.28",
- "rig-derive",
- "schemars 1.2.1",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-futures",
- "url",
-]
-
-[[package]]
-name = "rig-core"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f7a3f0c7c00eaced15a68ee16e1bd6bb709ff598d11b9aedac8b628217dc09"
@@ -11544,6 +11512,7 @@ dependencies = [
  "ordered-float 5.1.0",
  "pin-project-lite",
  "reqwest 0.12.28",
+ "rig-derive",
  "schemars 1.2.1",
  "serde",
  "serde_json",
@@ -11579,7 +11548,7 @@ dependencies = [
  "deranged 0.4.0",
  "futures",
  "lancedb",
- "rig-core 0.30.0",
+ "rig-core",
  "serde",
  "serde_json",
 ]
@@ -11591,7 +11560,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "489a2edf2f585fdb5f3d6377c8cf15b093cf7abc3780e6174c62665768be74e3"
 dependencies = [
  "qdrant-client",
- "rig-core 0.30.0",
+ "rig-core",
  "serde",
  "serde_json",
  "uuid 1.20.0",
@@ -12221,7 +12190,7 @@ dependencies = [
  "reqwest 0.13.2",
  "reqwest-middleware",
  "reqwest-retry",
- "rig-core 0.29.0",
+ "rig-core",
  "rig-lancedb",
  "rig-qdrant",
  "ring",

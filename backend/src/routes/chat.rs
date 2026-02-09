@@ -11,7 +11,7 @@ use crate::models::agent_context_analysis::{AgentContextAnalysis, AnalysisType};
 use crate::models::characters::{Character, CharacterMetadata}; // Added Character
 use crate::models::chat_override::{CharacterOverrideDto, ChatCharacterOverride};
 use crate::models::chats::CreateChatSessionPayload;
-#[cfg(feature = "cloud")]
+#[cfg(feature = "payment")]
 use crate::models::chats::GenerationCost;
 use crate::models::chats::{
     ChatMode,
@@ -60,7 +60,7 @@ use axum::{
 };
 use bigdecimal::ToPrimitive;
 use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
-use futures_util::StreamExt;
+use futures::StreamExt;
 use rig::message::Message as RigMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;

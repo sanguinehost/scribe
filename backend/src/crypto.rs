@@ -11,7 +11,6 @@ use secrecy::{ExposeSecret, SecretBox, SecretString};
 use sha2::Sha256;
 use std::string::FromUtf8Error;
 use thiserror::Error;
-use tracing::error;
 
 type HmacSha256 = Hmac<Sha256>;
 

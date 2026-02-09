@@ -1,7 +1,5 @@
-/// Utilities for handling LLM responses
-///
 /// This module provides helpers for parsing and cleaning AI-generated responses.
-
+///
 /// Strip markdown code fences from AI-generated JSON responses
 ///
 /// AI models often wrap JSON in markdown code blocks like:

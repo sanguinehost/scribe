@@ -12,7 +12,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{SecurityAuditLogger, SecurityEventType};

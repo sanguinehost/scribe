@@ -13,7 +13,6 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use url::Url;
 
-use serde::{Deserialize, Serialize};
 use tauri_plugin_store::StoreBuilder;
 
 mod storage;
@@ -37,9 +36,6 @@ const PRIVATE_KEY: &str = "ecdsa_private_key"; // P-256 ECDSA private key (PKCS#
 const DEK_KEY: &str = "dek"; // ChaCha20Poly1305 Data Encryption Key (base64)
 
 // Shared state for managing backend process and token storage
-
-// Shared state for managing backend process
-struct BackendProcess(Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>);
 
 // Embed SQLite migrations
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!("../backend/migrations_sqlite");
@@ -752,7 +748,7 @@ fn terminate_backend_process(
     backend_process: &Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>,
 ) {
     if let Ok(mut process_guard) = backend_process.lock() {
-        if let Some(mut child) = process_guard.take() {
+        if let Some(child) = process_guard.take() {
             let pid = child.pid();
             log::info!("Terminating backend process with PID: {}", pid);
 
@@ -853,7 +849,6 @@ pub fn run() {
 
             // Store backend process in app state for cleanup
             let backend_process = Arc::new(Mutex::new(Some(backend_child)));
-            app.manage(BackendProcess(Arc::clone(&backend_process)));
 
             // Register window-level cleanup handlers
             // Listen for both CloseRequested and Destroyed to ensure cleanup

@@ -38,6 +38,7 @@ impl StoredTokens {
     /// * `access_token` - JWT access token string
     /// * `refresh_token` - JWT refresh token string
     /// * `expires_at` - Unix timestamp in milliseconds when token expires
+    #[allow(dead_code)]
     pub fn new(access_token: String, refresh_token: String, expires_at: i64) -> Self {
         Self {
             access_token,

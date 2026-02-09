@@ -10,7 +10,7 @@ use crate::{
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 #[cfg(feature = "local-llm")]
 use crate::llm::llamacpp::{
