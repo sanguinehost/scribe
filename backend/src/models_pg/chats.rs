@@ -1613,12 +1613,10 @@ impl ChatMessage {
                     None
                 }
             }
+        } else if self.reasoning_content.is_some() {
+            Some("[Reasoning encrypted, DEK not available]".to_string())
         } else {
-            if self.reasoning_content.is_some() {
-                Some("[Reasoning encrypted, DEK not available]".to_string())
-            } else {
-                None
-            }
+            None
         };
 
         Ok(ChatMessageForClient {
@@ -4773,6 +4771,7 @@ impl MessageVariant {
 
 impl NewMessageVariant {
     /// Create a new message variant with encrypted content
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         parent_message_id: crate::db::DbId,
         variant_index: i32,

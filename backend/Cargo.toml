@@ -5,8 +5,8 @@ edition = "2021"
 
 [features]
 default = ["cloud"]  # Cloud mode is default for backward compatibility
-desktop = ["sqlite-backend", "embedded-vector"]
-cloud = ["postgres-backend", "remote-vector"]
+desktop = ["sqlite-backend", "embedded-vector", "otel"]
+cloud = ["postgres-backend", "remote-vector", "otel"]
 sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "diesel_migrations/sqlite", "diesel-derive-enum/sqlite"]
 postgres-backend = ["diesel/postgres", "dep:deadpool-diesel", "deadpool-diesel?/postgres", "diesel_migrations/postgres", "diesel-derive-enum/postgres", "dep:diesel_json"]
 embedded-vector = ["dep:lancedb", "dep:arrow", "dep:tokio-stream", "dep:rig-lancedb", "dep:datafusion", "dep:datafusion-expr"]

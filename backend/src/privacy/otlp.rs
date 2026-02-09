@@ -1,10 +1,10 @@
 #![cfg(feature = "otel")]
 
+use crate::privacy::logging::{is_email_pattern, is_uuid_pattern};
+use opentelemetry_sdk::error::OTelSdkError;
+use opentelemetry_sdk::trace::{SpanData, SpanExporter};
 use std::borrow::Cow;
 use std::fmt::Debug;
-use opentelemetry_sdk::trace::{SpanData, SpanExporter};
-use opentelemetry_sdk::error::OTelSdkError;
-use crate::privacy::logging::{is_uuid_pattern, is_email_pattern};
 
 /// A SpanExporter wrapper that redacts PII from span attributes and events before they are exported.
 /// Implements a "Fail-Closed" policy: if redaction fails, the span data is discarded.
@@ -80,16 +80,25 @@ mod tests {
     struct MockExporter;
 
     impl SpanExporter for MockExporter {
-        fn export(&self, _batch: Vec<SpanData>) -> impl futures_util::Future<Output = Result<(), OTelSdkError>> + Send {
+        fn export(
+            &self,
+            _batch: Vec<SpanData>,
+        ) -> impl futures_util::Future<Output = Result<(), OTelSdkError>> + Send {
             async { Ok(()) }
         }
-        fn shutdown(&mut self) -> Result<(), OTelSdkError> { Ok(()) }
-        fn force_flush(&mut self) -> Result<(), OTelSdkError> { Ok(()) }
+        fn shutdown(&mut self) -> Result<(), OTelSdkError> {
+            Ok(())
+        }
+        fn force_flush(&mut self) -> Result<(), OTelSdkError> {
+            Ok(())
+        }
     }
 
     #[test]
     fn test_pii_redaction_logic() {
-        let exporter = PrivacyMaskExporter { inner: MockExporter };
+        let exporter = PrivacyMaskExporter {
+            inner: MockExporter,
+        };
 
         let uuid = "550e8400-e29b-41d4-a716-446655440000";
         let email = "user@example.com";

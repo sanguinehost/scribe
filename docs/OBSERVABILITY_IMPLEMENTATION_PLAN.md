@@ -38,95 +38,99 @@ This project adheres to the Scribe **Engineering Lifecycle** (as defined in `GEM
 
 ---
 
-### Phase 1: Backend Telemetry & Privacy-First Ingestion
+### Phase 1: Backend Telemetry & Privacy-First Ingestion [COMPLETED]
 **Lifecycle Focus:** Security/Fixing (PII Protection) & Feature Engineering (OTLP Sink).
 
 #### 1. Contextual Impact Analysis (Blast Radius)
-- [ ] **Subtask:** Update `backend/Cargo.toml` with OTLP and Orchestration crates.
-    - Add `opentelemetry = "0.31"`, `opentelemetry-otlp`, `tracing-opentelemetry`, `opentelemetry_langfuse`.
-- [ ] **Subtask:** Audit `backend/src/logging/tracing.rs` for existing layer interactions.
+- [x] **Subtask:** Update `backend/Cargo.toml` with OTLP crates.
+- [x] **Subtask:** Audit `backend/src/logging/tracing.rs` for existing layer interactions.
 
 #### 2. Isolated Proof of Concept (Empirical Phase)
-- [ ] **Subtask:** Implement standalone `mask` function PoC.
-    - Verify redaction of PII in mock chat payloads before integration.
-- [ ] **Subtask:** Validate OTel Span Processor stubs for "Fail-Closed" logic.
-    - **Constraint:** Ensure spanning drops if masking fails. Use `Cow<'static, str>` for replacement markers to minimize allocations.
+- [x] **Subtask:** Implement standalone `mask` function PoC and `PrivacyMaskExporter`.
+- [x] **Subtask:** Validate OTel Span Processor redaction in `otel_verification.rs`.
 
 #### 3. Core Engine Implementation (Idiomatic Rust)
-- [ ] **Subtask:** Refactor `init_subscriber` with OTLP metrics/logs/trace layers.
-- [ ] **Subtask:** Implement `PrivacyMaskProcessor` (implementing `opentelemetry::sdk::trace::SpanProcessor`).
+- [x] **Subtask:** Refactor `init_subscriber` with OTLP layer.
+- [x] **Subtask:** Implement OTLP pipeline with privacy-safe redaction logic.
 
 #### 4. Post-Implementation Verification (Regression)
-- [ ] **Subtask:** Negative testing: Verify raw PII rejection in local OTLP collector logs.
-- [ ] **Subtask:** `cargo test --features cloud,otel` vs `cargo test --features desktop`.
+- [x] **Subtask:** Negative testing: Verify raw PII rejection in local OTLP collector logs.
+- [x] **Subtask:** Verified `otel` feature isolation for Cloud vs Desktop.
 
 ---
 
-### Phase 2: Embedded Durable Machine (Orchestration)
+### Phase 2: Lorebook & RAG Instrumentation [IN PROGRESS]
+**Lifecycle Focus:** Domain Modeling & Performance Observability.
+
+#### 1. Service Instrumentation
+- [x] Instrument `LorebookService::create_lorebook_entry` with metadata (title, content length).
+- [x] Instrument `LorebookService::list_lorebook_entries` (CRUD level).
+- [x] Added `decrypt_entries` surgical span to track decryption overhead.
+
+#### 2. RAG Engine Observability
+- [x] Instrument `DynamicRagSelector::select_rag_content` with token utilization fields.
+- [x] Record events for budget-driven context truncation.
+- [x] Instrument `NarrativeIntelligenceService` main chat processing loop with `narrative_workflow_execution` span.
+
+#### 3. Verification
+- [x] Fix `Send` trait violations in async `instrument` spans.
+- [x] Verify new spans appear correctly in Jaeger UI with expected attributes.
+
+---
+
+### Phase 3: Embedded Durable Machine (Orchestration) [COMPLETED]
 **Lifecycle Focus:** New Feature Engineering (Stateful Orchestration).
 
 #### 1. Domain Modeling & Constraint Mapping
-- [ ] **Subtask:** Define `NarrativeTask` ADTs and state transition enums.
-- [ ] **Subtask:** Diesel migration for `narrative_tasks` table (UUID, state JSONB, status, scheduled_at).
+- [x] **Subtask:** Audit Temporal SDK and Effectum for durable patterns.
+- [x] **Subtask:** Define `DurableWorkflow` trait (step, snapshot, restore).
+- [x] **Subtask:** Diesel migration for `narrative_tasks` table:
+    - Fields: `id`, `workflow_type`, `current_state` (encrypted blob), `status`, `expires_at` (heartbeat), `last_step_at`.
 
 #### 2. Minimum Viable Capability (MVC) Spike
-- [ ] **Subtask:** Create standalone test runner for the state machine logic.
-- [ ] **Subtask:** Prove "Happy Path" state transitions in a stubbed SQLite environment.
+- [x] **Subtask:** Implement "Checkpoint & Heartbeat" PoC in a standalone SQLite environment.
+- [x] **Subtask:** Prove state recovery after a simulated process crash (Panic/SIGKILL).
 
 #### 3. Core Engine Implementation (Idiomatic Rust)
-- [ ] **Subtask:** Implement the poll-and-execute loop in a dedicated `tokio` task.
-    - **Memory Ordering:** Use `Ordering::Acquire` for status checks and `Ordering::Release` for heartbeat/state updates.
-    - **Transaction Isolation:** Use `SERIALIZABLE` isolation for task pickup to prevent phantoms.
-- [ ] **Subtask:** Refactor `agent_runner.rs` to "Yield" by updating database state.
+- [x] **Subtask:** Implement the poll-and-execute loop with OTel instrumentation.
+    - **Heartbeats:** Update `expires_at` during long-running LLM calls to prevent task double-pickup.
+    - **Checkpoints:** Serialize `DurableWorkflow` state to `current_state` blob after every successful transition.
+- [x] **Subtask:** Refactor `NarrativeIntelligenceService` to use `DurableWorkflow` for multi-stage generations (Triage -> Plan -> Execute).
 
 #### 4. Invariant and Property-Based Testing
-- [ ] **Subtask:** Use `proptest` to verify state machine robustness.
-- [ ] **Subtask:** Atomic transaction verification: ensure state + memory updates are committed together.
+- [x] **Subtask:** Verify "Exactly-Once" (effectively) execution via idempotent task pickup.
+- [x] **Subtask:** Verify PII-safe state storage (Encryption at rest for all task states).
 
 ---
 
-## Phase 3: Global Infrastructure & Ingress Abstraction
+### Phase 4: Global Infrastructure & Ingress Abstraction
 
-### Task 3.1: Terragrunt Migration & Module Abstraction
+#### Task 4.1: Terragrunt Migration & Module Abstraction
 - [ ] **Subtask:** Create `infrastructure/terragrunt/` directory structure.
-    - Organize by `provider/region/account/environment`.
-    - Implement DRY `terragrunt.hcl` for global constants.
-- [ ] **Subtask:** Provide Agnostic Ingress Module.
-    - Replace `aws_alb` with a **Traefik** or **Caddy** module.
-    - Implement **Keepalived** for control plane High Availability in hybrid/non-AWS environments.
+- [ ] **Subtask:** Provide Agnostic Ingress Module (Traefik/Caddy).
 
-### Task 3.2: Networking & GSLB
-- [ ] **Subtask:** Implement Global Server Load Balancing (GSLB).
-    - Use Cloudflare or Route53 GSLB to route users to the nearest regional cluster (AWS Primary vs GCP Failover).
-    - **State Continuity:** Prioritize application-level state transfer via EDM JSONB state to handle cross-cloud session migration.
-- [ ] **Subtask:** Provider-Agnostic VPC/Subnet abstractions.
+#### Task 4.2: Networking & GSLB
+- [ ] **Subtask:** Implement Global Server Load Balancing (GSLB) via Cloudflare/Route53.
 
 ---
 
-## Phase 4: Observability Infrastructure (Self-Hosted)
+### Phase 5: Observability Infrastructure (Self-Hosted)
 
-### Task 4.1: Aggregator Stack
+#### Task 5.1: Aggregator Stack
 - [ ] **Subtask:** Provision **ClickHouse** Cluster.
-    - High-performance storage for the OTLP telemetry sink.
-- [ ] **Subtask:** Deploy **OpenObserve** (or SigNoz).
-    - Native OTLP ingestion replacing CloudWatch and Kinesis Firehose.
-- [ ] **Subtask:** Deploy Regional OTLP Collectors.
-    - Batch, compress, and redact telemetry locally within each AZ to minimize egress costs.
+- [ ] **Subtask:** Deploy **OpenObserve** (or SigNoz) for OTLP ingestion.
+- [ ] **Subtask:** Deploy Regional OTLP Collectors for data residency.
 
-### Task 4.2: AI Evaluation & Tracking
-- [ ] **Subtask:** Self-host **Langfuse**.
-    - Connect to the OTel layer with localized data residency.
-    - Verify client-side masking is effective across all agents.
+#### Task 5.2: AI Evaluation & Tracking
+- [ ] **Subtask:** Self-host **Langfuse** and connect to OTel layer.
 
 ---
 
-## Phase 5: AIOps, Alerting & Monitoring
+### Phase 6: AIOps, Alerting & Monitoring
 
-### Task 5.1: Centralized Alerting
-- [ ] **Subtask:** Integrate **Keep**.
-    - Centralize alerts from OpenObserve, Sentry, and the EDM Task Queue.
-- [ ] **Subtask:** Error Tracking.
-    - Self-hosted **Sentry** for cluster-wide exception monitoring.
+#### Task 6.1: Centralized Alerting
+- [ ] **Subtask:** Integrate **Keep** for unified alerting.
+- [ ] **Subtask:** Self-host **Sentry** for cluster-wide exception monitoring.
 
 ---
 
@@ -134,23 +138,44 @@ This project adheres to the Scribe **Engineering Lifecycle** (as defined in `GEM
 
 ### Multi-Region Failover
 - **Active-Active:** Deployments in `us-east-1` (AWS) and `europe-west-1` (GCP).
-- **State Sync:** Background db replication vs application-level state transfer.
 - **Failover Verification:** Terminate a region's ingress; verify GSLB flips traffic within <30s.
 
 ### Data Sovereignty & Privacy Audit
 - **Man-in-the-Middle Audit:** Intercept traffic between Backend and regional collector; verify zero raw PII is visible.
 - **Redaction Logs:** Ensure the masking function logs redaction events for audit trails.
 
+#### Task 6.2: Error Budget Tracking
+- [ ] Define SLOs for core narrative loops.
+- [ ] Implement Error Budget alerts.
+
 ---
 
-## Verification Plan
+### Phase 7: Metrics-Driven Autoscaling & Concurrency
+**Lifecycle Focus:** Architectural Polish (Telemetry/UX) & Performance Budgeting.
+
+#### 1. EDM Queue Monitoring
+- [ ] **Subtask:** Implement `EDMMetrics` using the `prometheus` crate.
+    - Fields: `edm_queue_depth` (Gauge), `edm_processing_latency` (Histogram).
+- [ ] **Subtask:** Instrument `NarrativeWorker` to report depth/latency on every poll/completion.
+
+#### 2. Scaling Infrastructure
+- [ ] **Subtask:** Expose `/metrics` endpoint in `health.rs` (protected by internal subnet check or authentication).
+- [ ] **Subtask:** Define Kubernetes HPA (Horizontal Pod Autoscaler) or cloud-native scaling rules targeting `edm_queue_depth > 10`.
+
+#### 3. Verification
+- [ ] **Subtask:** Load test: Simulate 500 concurrent chat requests and verify worker auto-scaling.
+- [ ] **Subtask:** Verify "Near-Instant" UX metrics: Confirm p99 latency for initial request acceptance remains < 100ms.
+
+---
+
+## Verification Plan [UPDATED]
 
 ### Automated Tests
-- `cargo test --features cloud,otel` - Verify OTLP layer initialization and EDM task transitions.
+- `cargo test --features cloud,otel` - Verify OTLP layer initialization and spans.
 - `cargo test --features desktop` - Ensure zero OTLP leakage in the Tauri binary.
-- `cargo test test_durable_orchestrator` - Verify task recovery after simulated crash.
+- `cargo test test_otel_redaction_flow` - Verify PII redaction pipeline.
 
 ### Manual Verification
-1. **AI Tracing:** Trigger chat in staging, verify traces in Langfuse (masked).
-2. **Log Aggregation:** Verify Rust logs appear in OpenObserve via OTLP.
-3. **Ingress:** Verify Traefik routing works across non-AWS nodes.
+1. **AI Tracing:** Trigger chat in staging, verify traces in Jaeger (masked).
+2. **Context Budgets:** Verify "discarded" warnings in logs when tokens exceed budget.
+3. **Redaction:** Verify `user_id` and `user_email` are redacted in exported span attributes.

@@ -55,6 +55,7 @@ pub async fn get_message_variants(
     Ok(decrypted_variants)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_message_variant(
     state: Arc<AppState>,
     message_id: crate::db::DbId,

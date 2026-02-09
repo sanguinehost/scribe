@@ -1062,6 +1062,26 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
+    narrative_tasks (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        session_id -> Uuid,
+        workflow_type -> Text,
+        current_state -> Bytea,
+        status -> Text,
+        worker_id -> Nullable<Text>,
+        trace_context -> Nullable<Text>,
+        expires_at -> Timestamptz,
+        last_step_at -> Timestamptz,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
 diesel::joinable!(agent_context_analysis -> chat_sessions (chat_session_id));
 diesel::joinable!(agent_context_analysis -> users (user_id));
 diesel::joinable!(character_assets -> characters (character_id));
@@ -1139,6 +1159,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lorebook_entries,
     lorebooks,
     message_variants,
+    narrative_tasks,
     old_documents,
     old_suggestions,
     old_votes,

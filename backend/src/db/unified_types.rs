@@ -405,6 +405,28 @@ impl diesel::serialize::ToSql<Timestamptz, Pg> for DbTimestamp {
     }
 }
 
+#[cfg(feature = "postgres-backend")]
+impl FromSql<diesel::sql_types::Timestamp, Pg> for DbTimestamp {
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let naive_dt =
+            <chrono::NaiveDateTime as FromSql<diesel::sql_types::Timestamp, Pg>>::from_sql(bytes)?;
+        Ok(Self(DateTime::from_naive_utc_and_offset(naive_dt, Utc)))
+    }
+}
+
+#[cfg(feature = "postgres-backend")]
+impl diesel::serialize::ToSql<diesel::sql_types::Timestamp, Pg> for DbTimestamp {
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut diesel::serialize::Output<'b, '_, Pg>,
+    ) -> diesel::serialize::Result {
+        // TIMESTAMP and TIMESTAMPTZ are binary compatible in Postgres (both 8-byte ints)
+        <DateTime<Utc> as diesel::serialize::ToSql<Timestamptz, Pg>>::to_sql(&self.0, out)
+    }
+}
+
 #[cfg(all(feature = "sqlite-backend", feature = "postgres-backend"))]
 impl FromSql<diesel::sql_types::Timestamptz, Sqlite> for DbTimestamp {
     fn from_sql(

@@ -282,7 +282,8 @@ impl NarrativeIntelligenceService {
         };
 
         // Execute the context enrichment workflow
-        match self
+        use tracing::Instrument;
+        let workflow_result = self
             .narrative_runner
             .process_narrative_event(
                 user_id,
@@ -295,8 +296,10 @@ impl NarrativeIntelligenceService {
                 game_state,
                 character_context,
             )
-            .await
-        {
+            .instrument(tracing::info_span!("narrative_workflow_execution"))
+            .await;
+
+        match workflow_result {
             Ok(workflow_result) => {
                 let processing_time = start_time.elapsed().as_millis() as u64;
 

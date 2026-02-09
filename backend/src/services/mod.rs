@@ -9,6 +9,7 @@ pub mod chat_override_service;
 pub mod chronicle_deduplication_service;
 pub mod chronicle_service;
 pub mod cognitive;
+pub mod edm;
 pub mod email_service;
 pub mod embeddings;
 pub mod encryption_service;

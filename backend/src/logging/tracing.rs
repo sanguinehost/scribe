@@ -51,7 +51,7 @@ impl LogFormat {
 /// - `LOG_ROTATION`: Rotation policy - daily, hourly, never (default: daily)
 /// - `LOG_FORMAT`: Format - json, pretty, compact (default: json)
 /// - `RUST_LOG`: Log level filter (default: info for scribe_backend)
-/// Initializes and sets the global tracing subscriber with rotation and format options.
+///   Initializes and sets the global tracing subscriber with rotation and format options.
 ///
 /// Configures multi-output:
 /// - stdout (JSON/Pretty/Compact)
@@ -134,9 +134,9 @@ fn init_otel_layer<S>() -> Option<impl tracing_subscriber::Layer<S>>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
+    use crate::privacy::otlp::wrap_exporter;
     use opentelemetry_otlp::WithExportConfig;
     use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider, SimpleSpanProcessor};
-    use crate::privacy::otlp::wrap_exporter;
 
     let endpoint = env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:4317".to_string());
@@ -156,13 +156,14 @@ where
         let exporter = match opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .with_endpoint(endpoint)
-            .build() {
-                Ok(ex) => ex,
-                Err(e) => {
-                    eprintln!("Failed to create OTLP exporter: {}", e);
-                    return None;
-                }
-            };
+            .build()
+        {
+            Ok(ex) => ex,
+            Err(e) => {
+                eprintln!("Failed to create OTLP exporter: {}", e);
+                return None;
+            }
+        };
         let privacy_exporter = wrap_exporter(exporter);
         SdkTracerProvider::builder()
             .with_span_processor(SimpleSpanProcessor::new(privacy_exporter))

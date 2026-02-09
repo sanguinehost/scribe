@@ -552,6 +552,26 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    narrative_tasks (id) {
+        id -> Text,
+        user_id -> Text,
+        session_id -> Text,
+        workflow_type -> Text,
+        current_state -> Binary,
+        status -> Text,
+        worker_id -> Nullable<Text>,
+        trace_context -> Nullable<Text>,
+        expires_at -> Timestamp,
+        last_step_at -> Timestamp,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_documents (id, created_at) {
         id -> Text,
         created_at -> Timestamp,
@@ -1023,6 +1043,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lorebook_entries,
     lorebooks,
     message_variants,
+    narrative_tasks,
     old_documents,
     old_suggestions,
     old_votes,

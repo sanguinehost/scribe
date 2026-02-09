@@ -10,7 +10,12 @@ use qdrant_client::qdrant::{
 };
 
 impl LorebookService {
-    #[instrument(skip(self, auth_session, payload, user_dek, state), fields(user_id = ?auth_session.user.as_ref().map(|u| u.id), lorebook_id = %lorebook_id))]
+    #[instrument(skip(self, auth_session, payload, user_dek, state), fields(
+        user_id = ?auth_session.user.as_ref().map(|u| u.id),
+        lorebook_id = %lorebook_id,
+        entry_title = %payload.entry_title,
+        content_len = payload.content.len()
+    ))]
     pub async fn create_lorebook_entry(
         &self,
         auth_session: &AuthSession<AuthBackend>,
@@ -592,116 +597,122 @@ AppError::InternalServerErrorGeneric(format!(
         let user_dek_bytes = user_dek_secret_box.expose_secret();
 
         let mut entry_responses = Vec::new();
-        for entry in entries {
-            // Decrypt entry title
-            let decrypted_title_bytes = self
-                .encryption_service
-                .decrypt(
-                    &entry.entry_title_ciphertext,
-                    &entry.entry_title_nonce,
-                    user_dek_bytes,
-                )
-                .map_err(|e| {
-                    error!(
-                        "Failed to decrypt entry title for entry [REDACTED_UUID]: {:?}",
-                        e
-                    );
-                    AppError::DecryptionError(
-                        "Failed to decrypt entry title for entry [REDACTED_UUID]".to_string(),
-                    )
-                })?;
-            let decrypted_title = String::from_utf8_lossy(&decrypted_title_bytes).into_owned();
-
-            // Decrypt keys_text
-            let keys_text = if entry.keys_text_ciphertext.is_empty() {
-                None
-            } else {
-                let decrypted_keys_bytes = self
+        {
+            let _span = tracing::info_span!("decrypt_entries", count = entries.len()).entered();
+            for entry in entries {
+                // Decrypt entry title
+                let decrypted_title_bytes = self
                     .encryption_service
                     .decrypt(
-                        &entry.keys_text_ciphertext,
-                        &entry.keys_text_nonce,
+                        &entry.entry_title_ciphertext,
+                        &entry.entry_title_nonce,
                         user_dek_bytes,
                     )
                     .map_err(|e| {
                         error!(
-                            "Failed to decrypt keys_text for entry [REDACTED_UUID]: {:?}",
+                            "Failed to decrypt entry title for entry [REDACTED_UUID]: {:?}",
                             e
                         );
                         AppError::DecryptionError(
-                            "Failed to decrypt keys text for entry [REDACTED_UUID]".to_string(),
+                            "Failed to decrypt entry title for entry [REDACTED_UUID]".to_string(),
                         )
                     })?;
-                let decrypted_keys = String::from_utf8_lossy(&decrypted_keys_bytes).into_owned();
-                if decrypted_keys.is_empty() {
+                let decrypted_title = String::from_utf8_lossy(&decrypted_title_bytes).into_owned();
+
+                // Decrypt keys_text
+                let keys_text = if entry.keys_text_ciphertext.is_empty() {
                     None
                 } else {
-                    Some(decrypted_keys)
-                }
-            };
-
-            // Decrypt content
-            let decrypted_content_bytes = self
-                .encryption_service
-                .decrypt(
-                    &entry.content_ciphertext,
-                    &entry.content_nonce,
-                    user_dek_bytes,
-                )
-                .map_err(|e| {
-                    error!(
-                        "Failed to decrypt content for entry [REDACTED_UUID]: {:?}",
-                        e
-                    );
-                    AppError::DecryptionError(
-                        "Failed to decrypt content for entry [REDACTED_UUID]".to_string(),
-                    )
-                })?;
-            let decrypted_content = String::from_utf8_lossy(&decrypted_content_bytes).into_owned();
-
-            // Decrypt comment if present
-            let comment = match (&entry.comment_ciphertext, &entry.comment_nonce) {
-                (Some(cipher), Some(nonce)) => {
-                    let decrypted_comment_bytes = self
+                    let decrypted_keys_bytes = self
                         .encryption_service
-                        .decrypt(cipher, nonce, user_dek_bytes)
+                        .decrypt(
+                            &entry.keys_text_ciphertext,
+                            &entry.keys_text_nonce,
+                            user_dek_bytes,
+                        )
                         .map_err(|e| {
                             error!(
-                                "Failed to decrypt comment for entry [REDACTED_UUID]: {:?}",
+                                "Failed to decrypt keys_text for entry [REDACTED_UUID]: {:?}",
                                 e
                             );
                             AppError::DecryptionError(
-                                "Failed to decrypt comment for entry [REDACTED_UUID]".to_string(),
+                                "Failed to decrypt keys text for entry [REDACTED_UUID]".to_string(),
                             )
                         })?;
-                    let decrypted_comment =
-                        String::from_utf8_lossy(&decrypted_comment_bytes).into_owned();
-                    if decrypted_comment.is_empty() {
+                    let decrypted_keys =
+                        String::from_utf8_lossy(&decrypted_keys_bytes).into_owned();
+                    if decrypted_keys.is_empty() {
                         None
                     } else {
-                        Some(decrypted_comment)
+                        Some(decrypted_keys)
                     }
-                }
-                _ => None,
-            };
+                };
 
-            entry_responses.push(LorebookEntryResponse {
-                id: entry.id,
-                lorebook_id: entry.lorebook_id,
-                user_id: entry.user_id,
-                entry_title: decrypted_title,
-                keys_text,
-                content: decrypted_content,
-                comment,
-                is_enabled: entry.is_enabled,
-                is_constant: entry.is_constant,
-                insertion_order: entry.insertion_order,
-                placement_hint: entry
-                    .placement_hint
-                    .unwrap_or_else(|| "after_prompt".to_string()),
-                created_at: entry.created_at,
-                updated_at: entry.updated_at,
-            });
+                // Decrypt content
+                let decrypted_content_bytes = self
+                    .encryption_service
+                    .decrypt(
+                        &entry.content_ciphertext,
+                        &entry.content_nonce,
+                        user_dek_bytes,
+                    )
+                    .map_err(|e| {
+                        error!(
+                            "Failed to decrypt content for entry [REDACTED_UUID]: {:?}",
+                            e
+                        );
+                        AppError::DecryptionError(
+                            "Failed to decrypt content for entry [REDACTED_UUID]".to_string(),
+                        )
+                    })?;
+                let decrypted_content =
+                    String::from_utf8_lossy(&decrypted_content_bytes).into_owned();
+
+                // Decrypt comment if present
+                let comment = match (&entry.comment_ciphertext, &entry.comment_nonce) {
+                    (Some(cipher), Some(nonce)) => {
+                        let decrypted_comment_bytes = self
+                            .encryption_service
+                            .decrypt(cipher, nonce, user_dek_bytes)
+                            .map_err(|e| {
+                                error!(
+                                    "Failed to decrypt comment for entry [REDACTED_UUID]: {:?}",
+                                    e
+                                );
+                                AppError::DecryptionError(
+                                    "Failed to decrypt comment for entry [REDACTED_UUID]"
+                                        .to_string(),
+                                )
+                            })?;
+                        let decrypted_comment =
+                            String::from_utf8_lossy(&decrypted_comment_bytes).into_owned();
+                        if decrypted_comment.is_empty() {
+                            None
+                        } else {
+                            Some(decrypted_comment)
+                        }
+                    }
+                    _ => None,
+                };
+
+                entry_responses.push(LorebookEntryResponse {
+                    id: entry.id,
+                    lorebook_id: entry.lorebook_id,
+                    user_id: entry.user_id,
+                    entry_title: decrypted_title,
+                    keys_text,
+                    content: decrypted_content,
+                    comment,
+                    is_enabled: entry.is_enabled,
+                    is_constant: entry.is_constant,
+                    insertion_order: entry.insertion_order,
+                    placement_hint: entry
+                        .placement_hint
+                        .unwrap_or_else(|| "after_prompt".to_string()),
+                    created_at: entry.created_at,
+                    updated_at: entry.updated_at,
+                });
+            }
         }
 
         Ok(entry_responses)
