@@ -157,14 +157,14 @@ impl<'a> Visit for PrivacyVisitor<'a> {
 }
 
 /// Check if a string looks like a UUID
-fn is_uuid_pattern(s: &str) -> bool {
+pub(crate) fn is_uuid_pattern(s: &str) -> bool {
     s.len() == 36
         && s.chars().filter(|&c| c == '-').count() == 4
         && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
 /// Check if a string looks like an email
-fn is_email_pattern(s: &str) -> bool {
+pub(crate) fn is_email_pattern(s: &str) -> bool {
     s.contains('@') && s.contains('.') && s.len() > 5
 }
 

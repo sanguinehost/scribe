@@ -51,23 +51,22 @@ impl LogFormat {
 /// - `LOG_ROTATION`: Rotation policy - daily, hourly, never (default: daily)
 /// - `LOG_FORMAT`: Format - json, pretty, compact (default: json)
 /// - `RUST_LOG`: Log level filter (default: info for scribe_backend)
+/// Initializes and sets the global tracing subscriber with rotation and format options.
+///
+/// Configures multi-output:
+/// - stdout (JSON/Pretty/Compact)
+/// - File rotation (JSON/Pretty/Compact)
+/// - OTLP Tracing/Metrics (Optional, gated by `otel` feature)
 pub fn init_subscriber() {
-    // Sets the default log level from RUST_LOG env var, defaulting to INFO
-    // for scribe_backend and tower_http if not set.
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| "info,scribe_backend::routes=info,scribe_backend::auth=info,scribe_backend::services=info,scribe_backend::vector_db=info,tower_http=info,sqlx=warn,gemini_client=info,auth_debug=error".into());
 
-    // Get configuration from environment variables
     let log_dir = env::var("LOG_DIR").unwrap_or_else(|_| "/tmp".to_string());
     let log_prefix = env::var("LOG_FILE_PREFIX").unwrap_or_else(|_| "scribe-backend".to_string());
     let rotation = LogRotation::from_env();
     let format = LogFormat::from_env();
 
-    // Create file appender with rotation
-    // The rotation policy determines when new log files are created:
-    // - Daily: Creates a new file each day (e.g., scribe-backend.2025-11-15)
-    // - Hourly: Creates a new file each hour (e.g., scribe-backend.2025-11-15-14)
-    // - Never: Single file, no rotation (scribe-backend.log)
+    // Create file appender
     let file_appender = match rotation {
         LogRotation::Daily => tracing_appender::rolling::daily(&log_dir, &log_prefix),
         LogRotation::Hourly => tracing_appender::rolling::hourly(&log_dir, &log_prefix),
@@ -75,21 +74,20 @@ pub fn init_subscriber() {
             tracing_appender::rolling::never(&log_dir, format!("{}.log", log_prefix))
         }
     };
-
-    // tracing-appender's non_blocking() creates a worker thread that handles
-    // writing to the file asynchronously, returning a guard that must be kept alive
     let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
-
-    // Leak the guard to ensure the worker thread stays alive for the program's lifetime
-    // This is intentional - we want logs to be written until the program exits
     std::mem::forget(guard);
 
-    // Build and initialize subscriber with dual output based on format preference
-    // We build and init the subscriber inside the match to avoid type complexity
+    // Build the base registry with environment filter
+    let registry = tracing_subscriber::registry().with(env_filter);
+
+    // Conditional OTLP Layer
+    #[cfg(feature = "otel")]
+    let registry = registry.with(init_otel_layer());
+
+    // Add stdout and file layers based on format
     match format {
         LogFormat::Json => {
-            tracing_subscriber::registry()
-                .with(env_filter)
+            registry
                 .with(
                     fmt::layer()
                         .json()
@@ -107,32 +105,76 @@ pub fn init_subscriber() {
                 .init();
         }
         LogFormat::Pretty => {
-            tracing_subscriber::registry()
-                .with(env_filter)
+            registry
                 .with(fmt::layer().pretty().with_writer(std::io::stdout))
                 .with(fmt::layer().pretty().with_writer(file_writer))
                 .init();
         }
         LogFormat::Compact => {
-            tracing_subscriber::registry()
-                .with(env_filter)
+            registry
                 .with(fmt::layer().compact().with_writer(std::io::stdout))
                 .with(fmt::layer().compact().with_writer(file_writer))
                 .init();
         }
     }
 
-    // Log the configuration that was used
-    let rotation_str = env::var("LOG_ROTATION").unwrap_or_else(|_| "daily".to_string());
-    let format_str = env::var("LOG_FORMAT").unwrap_or_else(|_| "json".to_string());
-
+    // Log the configuration
     tracing::info!(
         log_dir = %log_dir,
         log_prefix = %log_prefix,
-        rotation = %rotation_str,
-        format = %format_str,
-        "Tracing subscriber initialized with configuration"
+        rotation = ?rotation,
+        format = ?format,
+        otel_enabled = cfg!(feature = "otel"),
+        "Tracing subscriber initialized"
     );
+}
+
+#[cfg(feature = "otel")]
+fn init_otel_layer<S>() -> Option<impl tracing_subscriber::Layer<S>>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
+    use opentelemetry_otlp::WithExportConfig;
+    use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider, SimpleSpanProcessor};
+    use crate::privacy::otlp::wrap_exporter;
+
+    let endpoint = env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .unwrap_or_else(|_| "http://localhost:4317".to_string());
+
+    // Build OTLP exporter or Stdout exporter for testing
+    let is_stdout = env::var("OTEL_STDOUT").is_ok();
+
+    // Create the tracer provider with masking
+    let provider = if is_stdout {
+        let exporter = opentelemetry_stdout::SpanExporter::default();
+        let privacy_exporter = wrap_exporter(exporter);
+        SdkTracerProvider::builder()
+            .with_span_processor(SimpleSpanProcessor::new(privacy_exporter))
+            .with_sampler(Sampler::AlwaysOn)
+            .build()
+    } else {
+        let exporter = match opentelemetry_otlp::SpanExporter::builder()
+            .with_tonic()
+            .with_endpoint(endpoint)
+            .build() {
+                Ok(ex) => ex,
+                Err(e) => {
+                    eprintln!("Failed to create OTLP exporter: {}", e);
+                    return None;
+                }
+            };
+        let privacy_exporter = wrap_exporter(exporter);
+        SdkTracerProvider::builder()
+            .with_span_processor(SimpleSpanProcessor::new(privacy_exporter))
+            .with_sampler(Sampler::AlwaysOn)
+            .build()
+    };
+
+    // Initialize Global Tracer Provider
+    opentelemetry::global::set_tracer_provider(provider);
+
+    let tracer = opentelemetry::global::tracer("scribe-backend");
+    Some(tracing_opentelemetry::layer().with_tracer(tracer))
 }
 
 #[cfg(test)]
