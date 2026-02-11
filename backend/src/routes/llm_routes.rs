@@ -29,7 +29,6 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 #[cfg(feature = "local-llm")]
 use tracing::{debug, error};
 
-#[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]
 pub struct LlmInfoResponse {
     pub local_llm_enabled: bool, // Feature is available
@@ -39,7 +38,6 @@ pub struct LlmInfoResponse {
     pub download_progress: Option<DownloadProgressInfo>,
 }
 
-#[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]
 pub struct ModelInfo {
     pub id: String,
@@ -84,7 +82,6 @@ pub struct ModelVariantInfo {
     pub quality_level: String, // Very Compact, Compact, Balanced, Good Quality, etc.
 }
 
-#[cfg(feature = "local-llm")]
 #[derive(Debug, Serialize)]
 pub struct DownloadProgressInfo {
     pub model_id: String,
@@ -193,6 +190,7 @@ pub fn llm_router() -> Router<AppState> {
     {
         // Limited router when local-llm feature is disabled (preferences still work)
         Router::new()
+            .route("/info", get(get_llm_info))
             .route("/status", get(get_llm_status))
             .route("/preferences", get(get_user_preferences))
             .route("/preferences", put(update_user_preferences))
@@ -203,6 +201,18 @@ pub fn llm_router() -> Router<AppState> {
                 get(get_model_capabilities),
             )
     }
+}
+
+/// GET /api/llm/info - Get LLM system information (Stub for non-local-llm mode)
+#[cfg(not(feature = "local-llm"))]
+async fn get_llm_info(_auth: UnifiedAuth) -> Result<Json<LlmInfoResponse>, StatusCode> {
+    Ok(Json(LlmInfoResponse {
+        local_llm_enabled: false,
+        server_running: false,
+        hardware: crate::db::Json(serde_json::json!({})),
+        models: Vec::new(),
+        download_progress: None,
+    }))
 }
 
 /// GET /api/llm/info - Get LLM system information

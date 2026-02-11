@@ -28,6 +28,25 @@ resource "aws_secretsmanager_secret_version" "database_credentials" {
 }
 
 # Application secrets (API keys, etc.)
+resource "random_password" "jwt_secret" {
+  length  = 32
+  special = true
+}
+
+resource "random_password" "encryption_key" {
+  length  = 32
+  special = false # Often needs to be a specific length/format for encryption libs
+}
+
+resource "random_password" "session_secret" {
+  length  = 64
+  special = true
+}
+
+resource "random_id" "cookie_signing_key" {
+  byte_length = 64
+}
+
 resource "aws_secretsmanager_secret" "app_secrets" {
   name                    = "${var.environment}/scribe/app"
   description             = "Application secrets for Scribe ${var.environment} environment"
@@ -45,10 +64,10 @@ resource "aws_secretsmanager_secret_version" "app_secrets" {
   secret_string = jsonencode(merge({
     gemini_api_key      = var.gemini_api_key
     qdrant_api_key      = var.qdrant_api_key
-    jwt_secret          = var.jwt_secret
-    encryption_key      = var.encryption_key
-    session_secret      = var.session_secret
-    cookie_signing_key  = var.cookie_signing_key
+    jwt_secret          = var.jwt_secret != "" ? var.jwt_secret : random_password.jwt_secret.result
+    encryption_key      = var.encryption_key != "" ? var.encryption_key : random_password.encryption_key.result
+    session_secret      = var.session_secret != "" ? var.session_secret : random_password.session_secret.result
+    cookie_signing_key  = var.cookie_signing_key != "" ? var.cookie_signing_key : random_id.cookie_signing_key.hex
     tls_cert_pem        = var.tls_cert_pem
     tls_key_pem         = var.tls_key_pem
     from_email          = var.from_email

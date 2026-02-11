@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 # Configuration with environment variable overrides
 ENVIRONMENT=${ENVIRONMENT:-staging}
 ENABLE_PAYMENTS=${ENABLE_PAYMENTS:-true}
-VERCEL_ORG=${VERCEL_ORG:-sanguinehost}
+VERCEL_ORG=${VERCEL_ORG:-paperboygolds-projects}
 VERCEL_PROJECT=${VERCEL_PROJECT:-sanguine-scribe-frontend}
 
 log_info() {

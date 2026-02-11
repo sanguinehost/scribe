@@ -875,6 +875,7 @@ impl std::fmt::Debug for NewChat {
     diesel::query_builder::QueryId,
 )]
 #[diesel(sql_type = crate::schema::sql_types::MessageType)]
+#[diesel(postgres_type(name = "message_type"))]
 pub enum MessageRole {
     #[default]
     User,
@@ -3746,6 +3747,7 @@ pub struct MessageVariantResponse {
     pub model_name: Option<String>,
 
     pub game_state: Option<serde_json::Value>,
+    pub reasoning_content: Option<String>,
 }
 
 // MessageResponse struct for API responses
@@ -3775,6 +3777,7 @@ pub struct MessageResponse {
     // Optional: Complete variant data for immediate access
     pub variants: Option<Vec<MessageVariantResponse>>,
     pub game_state: Option<serde_json::Value>,
+    pub reasoning_content: Option<String>,
 }
 
 impl std::fmt::Debug for MessageResponse {
@@ -4895,6 +4898,7 @@ impl From<MessageVariantDto> for MessageVariantResponse {
             completion_tokens: dto.completion_tokens,
             model_name: dto.model_name,
             game_state: dto.game_state,
+            reasoning_content: dto.reasoning_content,
         }
     }
 }

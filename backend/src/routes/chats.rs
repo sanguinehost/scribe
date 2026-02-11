@@ -860,7 +860,7 @@ async fn process_messages_for_response(
         );
         // Get content based on the current variant index, not always variant 0
         // Get content and game_state based on the current variant index
-        let (content, game_state) = match get_variant_content_by_index(
+        let (content, game_state, reasoning_content) = match get_variant_content_by_index(
             pool.clone(),
             msg_db.id,
             msg_db.current_variant_index,
@@ -869,12 +869,12 @@ async fn process_messages_for_response(
         )
         .await?
         {
-            Some((c, gs)) => {
+            Some((c, gs, r)) => {
                 tracing::info!(
-                    "✅ Found variant content and game state for message {}",
+                    "✅ Found variant content, game state, and reasoning for message {}",
                     msg_db.id
                 );
-                (c, gs)
+                (c, gs, r)
             }
             None => {
                 // Fallback to original message content if variant not found
@@ -893,7 +893,13 @@ async fn process_messages_for_response(
                     } else {
                         None
                     };
-                (decrypted_client_message.content, fallback_gs)
+                // Fallback reasoning from the parent message
+                let reasoning = msg_db
+                    .clone()
+                    .decrypt_reasoning_field(&dek.0)
+                    .ok()
+                    .flatten();
+                (decrypted_client_message.content, fallback_gs, reasoning)
             }
         };
 
@@ -991,6 +997,7 @@ async fn process_messages_for_response(
                                             character_name,
                                             user_persona_name,
                                         );
+                                    // Reasoning is already in resp from MessageVariantDto::from_model
                                     resp
                                 })
                                 .collect(),
@@ -1009,6 +1016,7 @@ async fn process_messages_for_response(
                 None
             },
             game_state,
+            reasoning_content,
         };
 
         tracing::info!(
@@ -1564,6 +1572,7 @@ pub async fn create_message_handler(
         parent_message_id: None, // TODO: Add parent_message_id to ChatMessage struct
         variants: None,          // TODO: Load actual variants
         game_state: None,
+        reasoning_content: client_message.reasoning_content,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
@@ -1800,6 +1809,7 @@ pub async fn get_message_by_id_handler(
         parent_message_id: None,
         variants: None,
         game_state: None,
+        reasoning_content: None,
     };
 
     Ok(Json(response))
@@ -2670,20 +2680,26 @@ pub async fn select_message_variant_handler(
         .await
         .map_err(|e| AppError::DbInteractError(e.to_string()))?;
 
-    // Get content and game_state
-    let (content, game_state) = if payload.variant_index == 0 {
+    // Get content, game_state, and reasoning
+    let (content, game_state, reasoning_content) = if payload.variant_index == 0 {
         // Index 0 means original message content
         let client_message = updated_message
             .clone()
             .into_decrypted_for_client(Some(&dek.0))?;
 
+        let reasoning = updated_message
+            .clone()
+            .decrypt_reasoning_field(&dek.0)
+            .ok()
+            .flatten();
+
         // For variant 0, try to fetch game_state from message_variants table
         match get_variant_content_by_index(pool.clone(), message_id, 0, user.id, &dek).await? {
-            Some((_, gs)) => (client_message.content, gs),
-            None => (client_message.content, None),
+            Some((_, gs, _)) => (client_message.content, gs, reasoning),
+            None => (client_message.content, None, reasoning),
         }
     } else {
-        // Get content and game_state from the variants table
+        // Get content, game_state, and reasoning from the variants table
         get_variant_content_by_index(
             pool.clone(),
             message_id,
@@ -2723,6 +2739,7 @@ pub async fn select_message_variant_handler(
         parent_message_id: None,
         variants: None,
         game_state,
+        reasoning_content,
     };
 
     Ok((StatusCode::OK, Json(response)))
@@ -2735,7 +2752,7 @@ async fn get_variant_content_by_index(
     variant_index: i32,
     user_id: crate::db::DbId,
     dek: &SessionDek,
-) -> Result<Option<(String, Option<serde_json::Value>)>, AppError> {
+) -> Result<Option<(String, Option<serde_json::Value>, Option<String>)>, AppError> {
     use crate::schema::message_variants;
     use diesel::SelectableHelper;
 
@@ -2754,9 +2771,10 @@ async fn get_variant_content_by_index(
 
     if let Some(variant) = variant_opt {
         let content = variant.decrypt_content(dek_ref)?;
-        let game_state = variant.game_state.map(|j| j.0);
+        let game_state = variant.game_state.as_ref().map(|j| j.0.clone());
+        let reasoning = variant.decrypt_reasoning(dek_ref)?;
 
-        Ok(Some((content, game_state)))
+        Ok(Some((content, game_state, reasoning)))
     } else {
         Ok(None)
     }

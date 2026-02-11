@@ -121,10 +121,10 @@ deploy_qdrant() {
     log_info "Deploying Qdrant image..."
 
     # Pull official Qdrant image
-    $RUNTIME pull qdrant/qdrant:latest
+    $RUNTIME pull docker.io/qdrant/qdrant:latest
 
     # Tag for ECR
-    $RUNTIME tag qdrant/qdrant:latest $ECR_QDRANT_REPO:latest
+    $RUNTIME tag docker.io/qdrant/qdrant:latest $ECR_QDRANT_REPO:latest
 
     # Push to ECR
     $RUNTIME push $ECR_QDRANT_REPO:latest
@@ -211,8 +211,11 @@ main() {
                 log_info "Features enabled: $FEATURES"
                 shift 2
                 ;;
-            backend|qdrant|all)
+            backend|qdrant|all|staging)
                 TARGET="$1"
+                if [ "$TARGET" == "staging" ]; then
+                    TARGET="all"
+                fi
                 shift
                 ;;
             *)
@@ -220,6 +223,12 @@ main() {
                 ;;
         esac
     done
+
+    # Set default features for cloud deployment if not specified
+    if [ -z "$FEATURES" ]; then
+        log_info "No features specified, defaulting to 'cloud,payment'"
+        export FEATURES="cloud,payment"
+    fi
 
     check_prerequisites
     ecr_login

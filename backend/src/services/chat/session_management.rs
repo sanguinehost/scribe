@@ -520,11 +520,11 @@ fn insert_chat_session(
                     chat_sessions::prompt_template_id.eq(params.prompt_template_id),
                     // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
                     #[cfg(feature = "postgres-backend")]
-                    chat_sessions::total_prompt_tokens.eq(0i32),
+                    chat_sessions::total_prompt_tokens.eq(0i64),
                     #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                     chat_sessions::total_prompt_tokens.eq(0i64),
                     #[cfg(feature = "postgres-backend")]
-                    chat_sessions::total_completion_tokens.eq(0i32),
+                    chat_sessions::total_completion_tokens.eq(0i64),
                     #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                     chat_sessions::total_completion_tokens.eq(0i64),
                     chat_sessions::estimated_cost_cents.eq(0),

@@ -1,0 +1,45 @@
+# Build stage
+FROM node:22-alpine AS build
+
+# Install pnpm
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# Copy dependency manifests
+# The build context is expected to be the project root
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY frontend/ ./
+
+# Build the application
+RUN pnpm build
+
+# Final stage
+FROM node:22-alpine AS runner
+
+WORKDIR /app
+
+# Copy build output from build stage
+# adapter-node by default puts things in the 'build' directory
+COPY --from=build /app/build ./build
+COPY --from=build /app/package.json ./package.json
+
+# If you have external dependencies needed at runtime (usually not for adapter-node),
+# you might need to install them here or copy node_modules.
+# However, adapter-node usually bundles everything.
+# We'll copy node_modules just in case if the project isn't fully self-contained
+COPY --from=build /app/node_modules ./node_modules
+
+# Expose the default SvelteKit port
+EXPOSE 3000
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Run the app
+CMD ["node", "build"]

@@ -58,7 +58,7 @@ pub use backend_trait::DbBackend;
 pub use pool_helpers::{get_conn, with_conn, with_conn_immediate};
 
 // Export SQLite extension traits for compatibility
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 pub use pool_helpers::{SqliteInteractExt, SqlitePoolExt};
 
 // Conditional exports based on feature flags

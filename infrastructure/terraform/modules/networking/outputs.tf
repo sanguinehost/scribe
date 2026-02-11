@@ -49,7 +49,7 @@ output "rds_security_group_id" {
 }
 
 
-output "efs_security_group_id" {
-  description = "ID of the EFS security group"
-  value       = aws_security_group.efs_sg.id
+output "frontend_security_group_id" {
+  description = "ID of the frontend security group"
+  value       = aws_security_group.frontend_sg.id
 }

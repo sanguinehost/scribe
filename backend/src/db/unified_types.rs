@@ -65,8 +65,12 @@ use uuid::Uuid;
 /// let uuid: &Uuid = &id;  // Deref to Uuid
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = PgUuid))]
-#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Text))]
+#[cfg_attr(
+    any(feature = "postgres-backend", feature = "sqlite-backend"),
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
+#[cfg_attr(feature = "postgres-backend", diesel(sql_type = PgUuid))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Text))]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct DbId(Uuid);
@@ -263,8 +267,12 @@ impl ToSql<diesel::sql_types::Uuid, Sqlite> for DbId {
 /// Stores UTC timestamps in both PostgreSQL (TIMESTAMPTZ) and SQLite (INTEGER as Unix timestamp).
 /// Provides transparent access to the underlying `chrono::DateTime<Utc>` value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Timestamptz))]
-#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = Timestamp))]
+#[cfg_attr(
+    any(feature = "postgres-backend", feature = "sqlite-backend"),
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
+#[cfg_attr(feature = "postgres-backend", diesel(sql_type = Timestamptz))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Timestamp))]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct DbTimestamp(DateTime<Utc>);
@@ -650,15 +658,11 @@ impl FromSql<Nullable<Text>, Sqlite> for DbTimestamp {
 /// Used for monetary values and other high-precision calculations.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(
-    feature = "postgres-backend",
-    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression),
-    diesel(sql_type = diesel::sql_types::Numeric)
+    any(feature = "postgres-backend", feature = "sqlite-backend"),
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
 )]
-#[cfg_attr(
-    feature = "sqlite-backend",
-    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression),
-    diesel(sql_type = diesel::sql_types::Double)
-)]
+#[cfg_attr(feature = "postgres-backend", diesel(sql_type = diesel::sql_types::Numeric))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Double))]
 #[repr(transparent)]
 pub struct DbDecimal(pub BigDecimal);
 
@@ -1037,8 +1041,12 @@ impl ToSql<diesel::sql_types::Binary, Sqlite> for DbBlob {
 /// # SQLite Representation
 /// JSON array stored as TEXT: `["string1", "string2", null, "string3"]`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "postgres-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>))]
-#[cfg_attr(feature = "sqlite-backend", derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression), diesel(sql_type = diesel::sql_types::Text))]
+#[cfg_attr(
+    any(feature = "postgres-backend", feature = "sqlite-backend"),
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
+#[cfg_attr(feature = "postgres-backend", diesel(sql_type = diesel::sql_types::Array<diesel::sql_types::Nullable<diesel::sql_types::Text>>))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = diesel::sql_types::Text))]
 #[repr(transparent)]
 pub struct DbStringArray(pub Vec<Option<String>>);
 

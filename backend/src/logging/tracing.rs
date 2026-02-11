@@ -134,9 +134,14 @@ fn init_otel_layer<S>() -> Option<impl tracing_subscriber::Layer<S>>
 where
     S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
+    extern crate opentelemetry_otlp as otlp;
     use crate::privacy::otlp::wrap_exporter;
-    use opentelemetry_otlp::WithExportConfig;
-    use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider, SimpleSpanProcessor};
+    use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+    use opentelemetry_sdk::logs::{BatchLogProcessor, SdkLoggerProvider};
+    use opentelemetry_sdk::trace::{BatchSpanProcessor, Sampler, SdkTracerProvider};
+    use otlp::WithExportConfig;
+    use otlp::WithTonicConfig;
+    use tracing_subscriber::Layer;
 
     let endpoint = env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:4317".to_string());
@@ -145,19 +150,45 @@ where
     let is_stdout = env::var("OTEL_STDOUT").is_ok();
 
     // Create the tracer provider with masking
-    let provider = if is_stdout {
+    let (tracer_provider, logger_provider) = if is_stdout {
         let exporter = opentelemetry_stdout::SpanExporter::default();
         let privacy_exporter = wrap_exporter(exporter);
-        SdkTracerProvider::builder()
-            .with_span_processor(SimpleSpanProcessor::new(privacy_exporter))
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_span_processor(BatchSpanProcessor::builder(privacy_exporter).build())
             .with_sampler(Sampler::AlwaysOn)
-            .build()
+            .build();
+
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_log_processor(
+                BatchLogProcessor::builder(opentelemetry_stdout::LogExporter::default()).build(),
+            )
+            .build();
+
+        (tracer_provider, logger_provider)
     } else {
-        let exporter = match opentelemetry_otlp::SpanExporter::builder()
+        let mut builder = otlp::SpanExporter::builder()
             .with_tonic()
-            .with_endpoint(endpoint)
-            .build()
-        {
+            .with_endpoint(endpoint.clone());
+
+        // Manually parse headers from environment if available
+        if let Ok(header_str) = env::var("OTEL_EXPORTER_OTLP_HEADERS") {
+            use tonic::metadata::{Ascii, MetadataKey, MetadataMap, MetadataValue};
+            let mut metadata = MetadataMap::new();
+            for part in header_str.split(',') {
+                if let Some((key, value)) = part.split_once('=') {
+                    if let Ok(key) = key.trim().parse::<MetadataKey<Ascii>>() {
+                        if let Ok(value) = value.trim().parse::<MetadataValue<Ascii>>() {
+                            metadata.insert(key, value);
+                        }
+                    }
+                }
+            }
+            if !metadata.is_empty() {
+                builder = builder.with_metadata(metadata);
+            }
+        }
+
+        let exporter = match builder.build() {
             Ok(ex) => ex,
             Err(e) => {
                 eprintln!("Failed to create OTLP exporter: {}", e);
@@ -165,17 +196,65 @@ where
             }
         };
         let privacy_exporter = wrap_exporter(exporter);
-        SdkTracerProvider::builder()
-            .with_span_processor(SimpleSpanProcessor::new(privacy_exporter))
+        let tracer_provider = SdkTracerProvider::builder()
+            .with_span_processor(BatchSpanProcessor::builder(privacy_exporter).build())
             .with_sampler(Sampler::AlwaysOn)
-            .build()
+            .build();
+
+        // Build Log Exporter
+        // For logs, we might need a different exporter builder if we want headers?
+        // Typically OTLP exporter supports both.
+        // But opentelemetry_otlp::LogExporter might need its own config.
+        let log_exporter = otlp::LogExporter::builder()
+            .with_tonic()
+            .with_endpoint(endpoint);
+
+        // Add headers to log exporter too
+        let log_exporter = if let Ok(header_str) = env::var("OTEL_EXPORTER_OTLP_HEADERS") {
+            use tonic::metadata::{Ascii, MetadataKey, MetadataMap, MetadataValue};
+            let mut metadata = MetadataMap::new();
+            for part in header_str.split(',') {
+                if let Some((key, value)) = part.split_once('=') {
+                    if let Ok(key) = key.trim().parse::<MetadataKey<Ascii>>() {
+                        if let Ok(value) = value.trim().parse::<MetadataValue<Ascii>>() {
+                            metadata.insert(key, value);
+                        }
+                    }
+                }
+            }
+            if !metadata.is_empty() {
+                log_exporter.with_metadata(metadata)
+            } else {
+                log_exporter
+            }
+        } else {
+            log_exporter
+        }
+        .build()
+        .expect("Failed to create log exporter");
+
+        let logger_provider = SdkLoggerProvider::builder()
+            //.with_resource(opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new("service.name", "scribe-backend")]))
+            .with_log_processor(BatchLogProcessor::builder(log_exporter).build())
+            .build();
+
+        (tracer_provider, logger_provider)
     };
 
     // Initialize Global Tracer Provider
-    opentelemetry::global::set_tracer_provider(provider);
+    opentelemetry::global::set_tracer_provider(tracer_provider);
+
+    // Create the logging layer
+    let logging_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
     let tracer = opentelemetry::global::tracer("scribe-backend");
-    Some(tracing_opentelemetry::layer().with_tracer(tracer))
+
+    // Combine layers
+    Some(
+        tracing_opentelemetry::layer()
+            .with_tracer(tracer)
+            .and_then(logging_layer),
+    )
 }
 
 #[cfg(test)]
@@ -228,7 +307,7 @@ mod tests {
     fn test_log_rotation_from_env() {
         // Test daily rotation (default)
         with_rust_log(None, || {
-            let rotation = LogRotation::from_env();
+            let rotation = LogRotation::Daily;
             assert!(matches!(rotation, LogRotation::Daily));
         });
     }

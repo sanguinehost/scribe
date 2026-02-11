@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.87-slim AS builder
+FROM rust:1.88-slim AS builder
 
 # Build arguments
 ARG FEATURES=""
@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libc6-dev \
     clang \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -21,6 +22,7 @@ WORKDIR /app
 
 # Copy workspace manifests
 COPY Cargo.toml Cargo.lock ./
+RUN echo '[workspace]\nmembers = ["backend", "cli"]\nresolver = "3"\n\n[patch.crates-io]\nh2 = { git = "https://github.com/hyperium/h2", rev = "6b27688442aed1200f436190bc54fad805f0b770" }' > Cargo.toml
 COPY backend/Cargo.toml ./backend/
 COPY cli/Cargo.toml ./cli/
 
@@ -43,11 +45,11 @@ COPY backend/config ./backend/config
 
 # Build the application with optional features
 RUN if [ -n "$FEATURES" ]; then \
-        echo "Building with features: $FEATURES" && \
-        cargo build --release --bin scribe-backend --features "$FEATURES"; \
+    echo "Building with features: $FEATURES" && \
+    cargo build -j 2 --release --bin scribe-backend --features "$FEATURES"; \
     else \
-        echo "Building with default features" && \
-        cargo build --release --bin scribe-backend; \
+    echo "Building with default features" && \
+    cargo build -j 2 --release --bin scribe-backend; \
     fi
 
 # Runtime stage - Using Debian for broader compatibility

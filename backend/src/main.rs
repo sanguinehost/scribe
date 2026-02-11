@@ -1,4 +1,6 @@
-use axum::{extract::DefaultBodyLimit, routing::get, Router};
+use axum::{
+    extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Json, Router,
+};
 #[cfg(feature = "postgres-backend")]
 use deadpool_diesel::postgres::{Manager as DeadpoolManager, Runtime as DeadpoolRuntime};
 #[cfg(feature = "postgres-backend")]
@@ -81,8 +83,9 @@ use tower_cookies::CookieManagerLayer; // Re-add CookieManagerLayer
 use tower_governor::{
     governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor, GovernorLayer,
 };
-use tower_sessions::cookie::Key; // Use Key from tower_sessions::cookie for with_signed
-use tower_sessions::{cookie::SameSite, Expiry, SessionManagerLayer}; // Add Arc for config // Add Qdrant service import // Add embedding pipeline service import
+use tower_sessions::cookie::{Key, SameSite}; // Use Key and SameSite from tower_sessions::cookie
+use tower_sessions::service::PrivateCookie; // Found in tower_sessions::service in 0.14.0
+use tower_sessions::{Expiry, SessionManagerLayer};
 use tracing::{info, warn};
 
 // Define the embedded migrations macro - use different directories based on backend
@@ -480,9 +483,21 @@ fn setup_tokenizer_service(config: &Config) -> Result<TokenizerService> {
 // Helper function to resolve the tokenizer model path and log relevant information
 #[allow(clippy::cognitive_complexity)]
 fn resolve_tokenizer_model_path(config: &Config) -> PathBuf {
-    let tokenizer_model_relative_path_str = config.tokenizer_model_path.clone();
+    let tokenizer_model_path = PathBuf::from(&config.tokenizer_model_path);
+
+    // If it's an absolute path, use it directly
+    if tokenizer_model_path.is_absolute() {
+        return tokenizer_model_path;
+    }
+
+    // Try relative to current working directory first
+    if tokenizer_model_path.exists() {
+        return tokenizer_model_path;
+    }
+
+    // Fallback to CARGO_MANIFEST_DIR for local development
     let backend_crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let final_tokenizer_model_path = backend_crate_dir.join(&tokenizer_model_relative_path_str);
+    let final_tokenizer_model_path = backend_crate_dir.join(&config.tokenizer_model_path);
 
     if let Ok(cwd) = env::current_dir() {
         tracing::info!("Current working directory: {}", cwd.display());
@@ -492,7 +507,7 @@ fn resolve_tokenizer_model_path(config: &Config) -> PathBuf {
 
     tracing::info!(
         "Tokenizer model relative path from config: {}",
-        tokenizer_model_relative_path_str
+        tokenizer_model_path.display()
     );
     tracing::info!(
         "Backend crate directory (CARGO_MANIFEST_DIR): {}",
@@ -564,7 +579,7 @@ fn setup_app_state_and_auth(
     services: AppStateServices,
 ) -> Result<(
     AppState,
-    axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
+    axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore, PrivateCookie>,
 )> {
     // --- Session Store Setup ---
     let session_store = DieselSessionStore::new(pool.clone());
@@ -575,9 +590,9 @@ fn setup_app_state_and_auth(
         .context("COOKIE_SIGNING_KEY must be set in config")?;
     let key_bytes =
         decode(secret_key).context("Invalid COOKIE_SIGNING_KEY format in config (must be hex)")?;
-    let _signing_key = Key::from(&key_bytes);
-
+    let signing_key = Key::from(&key_bytes);
     let mut session_manager_layer = SessionManagerLayer::new(session_store)
+        .with_private(signing_key)
         .with_secure(config.session_cookie_secure)
         .with_same_site(SameSite::Lax)
         .with_http_only(true)
@@ -620,7 +635,7 @@ fn setup_app_state_and_auth(
 // Build the router with all routes and middleware
 fn build_router(
     app_state: AppState,
-    auth_layer: axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore>,
+    auth_layer: axum_login::AuthManagerLayer<AuthBackend, DieselSessionStore, PrivateCookie>,
 ) -> Router {
     let protected_api_routes = Router::new()
         .nest(
@@ -809,6 +824,7 @@ fn build_router(
         .merge(api_routes); // All API routes (public + protected)
 
     final_router
+        .fallback(fallback_404)
         .layer(cors)
         .layer(CookieManagerLayer::new())
         .with_state(app_state)
@@ -820,6 +836,17 @@ fn build_router(
                 .make_span_with(DefaultMakeSpan::default().include_headers(true)),
         )
         .layer(axum_middleware::from_fn(main_request_logging_middleware))
+}
+
+/// Global 404 fallback handler that returns JSON
+async fn fallback_404() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({
+            "error": "Not Found",
+            "error_code": "NOT_FOUND"
+        })),
+    )
 }
 
 // Start the server with TLS configuration

@@ -208,6 +208,14 @@ resource "aws_security_group" "backend_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
+  ingress {
+    description = "HTTP from VPC (Traefik/Tailscale)"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
   egress {
     description = "All outbound traffic"
     from_port   = 0
@@ -229,6 +237,41 @@ resource "aws_security_group" "backend_sg" {
     Project     = "scribe"
   }
 }
+
+# Security Group for Frontend ECS Tasks
+resource "aws_security_group" "frontend_sg" {
+  name_prefix = "${var.environment}-scribe-frontend-"
+  vpc_id      = aws_vpc.scribe_vpc.id
+
+  ingress {
+    description = "HTTP from VPC (Traefik/Tailscale)"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  revoke_rules_on_delete = true
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "${var.environment}-scribe-frontend-sg"
+    Environment = var.environment
+    Project     = "scribe"
+  }
+}
+
 
 # Security Group for Qdrant ECS Tasks
 resource "aws_security_group" "qdrant_sg" {

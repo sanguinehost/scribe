@@ -26,7 +26,7 @@
 	} = $props();
 
 	// Get reactive state from streaming service
-	const streamingState = streamingService.getState();
+	const streamingServiceRef = streamingService;
 
 	// Get store instances
 	const modelLifecycleStore = ModelLifecycleStore.fromContext();
@@ -42,16 +42,16 @@
 
 	// Derived state
 	let isLoading = $derived(
-		streamingState.connectionStatus === 'connecting' ||
-			streamingState.connectionStatus === 'open' ||
-			streamingState.messages.some((msg) => msg.isAnimating === true)
+		streamingServiceRef.connectionStatus === 'connecting' ||
+			streamingServiceRef.connectionStatus === 'open' ||
+			streamingServiceRef.messages.some((msg) => msg.isAnimating === true)
 	);
 
-	let _hasError = $derived(streamingState.currentError !== null);
+	let _hasError = $derived(streamingServiceRef.currentError !== null);
 
 	let _lastMessage = $derived(
-		streamingState.messages.length > 0
-			? streamingState.messages[streamingState.messages.length - 1]
+		streamingServiceRef.messages.length > 0
+			? streamingServiceRef.messages[streamingServiceRef.messages.length - 1]
 			: null
 	);
 
@@ -80,8 +80,8 @@
 
 	// Handle connection status changes
 	$effect(() => {
-		const status = streamingState.connectionStatus;
-		const error = streamingState.currentError;
+		const status = streamingServiceRef.connectionStatus;
+		const error = streamingServiceRef.currentError;
 
 		if (status === 'error' && error) {
 			toast.error(error.message);
@@ -126,7 +126,7 @@
 
 		try {
 			// Build history from current messages
-			const history = streamingState.messages
+			const history = streamingServiceRef.messages
 				.filter((msg) => !msg.isAnimating && !msg.error)
 				.map((msg) => ({
 					role: msg.sender === 'assistant' ? ('assistant' as const) : ('user' as const),
@@ -198,10 +198,10 @@
 
 		try {
 			// Build history up to the failed message
-			const messageIndex = streamingState.messages.findIndex((msg) => msg.id === messageId);
+			const messageIndex = streamingServiceRef.messages.findIndex((msg) => msg.id === messageId);
 			if (messageIndex === -1) return;
 
-			const _history = streamingState.messages
+			const _history = streamingServiceRef.messages
 				.slice(0, messageIndex)
 				.filter((msg) => !msg.isAnimating && !msg.error)
 				.map((msg) => ({
@@ -245,7 +245,7 @@
 	<!-- Messages Container -->
 	<div class="flex-1 overflow-y-auto px-4 py-4">
 		<div class="mx-auto max-w-3xl space-y-4">
-			{#each streamingState.messages as message (message.id)}
+			{#each streamingServiceRef.messages as message (message.id)}
 				<div class="message-wrapper">
 					<!-- User Message -->
 					{#if message.sender === 'user'}
@@ -385,7 +385,7 @@
 			{/each}
 
 			<!-- Connection Status -->
-			{#if streamingState.connectionStatus === 'connecting'}
+			{#if streamingServiceRef.connectionStatus === 'connecting'}
 				<div class="flex justify-center">
 					<div
 						class="flex items-center space-x-2 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground"
@@ -443,9 +443,9 @@
 						</button>
 						<span class="text-xs text-muted-foreground">•</span>
 						<span class="font-mono text-xs text-muted-foreground">
-							Status: {streamingState.connectionStatus}
+							Status: {streamingServiceRef.connectionStatus}
 						</span>
-						{#if streamingState.isTyping}
+						{#if streamingServiceRef.isTyping}
 							<span class="text-xs text-muted-foreground">• Typing...</span>
 						{/if}
 					</div>

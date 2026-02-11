@@ -1,10 +1,11 @@
 use axum::{
     extract::{FromRef, FromRequestParts},
-    http::{header::AUTHORIZATION, request::Parts, StatusCode},
+    http::{header::AUTHORIZATION, request::Parts},
     response::{IntoResponse, Response},
 };
 use axum_login::{AuthSession, AuthnBackend};
-use tracing::{error, info, instrument, warn};
+use tower_sessions::Session;
+use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::db::unified_types::DbId;
@@ -96,11 +97,10 @@ where
                         Some(service) => service,
                         None => {
                             error!("Token service not initialized");
-                            return Err((
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                "Token service unavailable",
+                            return Err(AppError::InternalServerErrorGeneric(
+                                "Token service unavailable".to_string(),
                             )
-                                .into_response());
+                            .into_response());
                         }
                     };
 
@@ -125,9 +125,10 @@ where
                                         error = ?e,
                                         "✗ CRITICAL: Failed to load user from database during JWT validation - user may not exist or database connection failed"
                                     );
-                                    return Err(
-                                        (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
-                                    );
+                                    return Err(AppError::Unauthorized(
+                                        "Invalid token".to_string(),
+                                    )
+                                    .into_response());
                                 }
                             };
 
@@ -137,11 +138,10 @@ where
                                 UnifiedAuthSession::from_request_parts(parts, state)
                                     .await
                                     .map_err(|_| {
-                                        (
-                                            StatusCode::INTERNAL_SERVER_ERROR,
-                                            "Failed to create auth session",
+                                        AppError::InternalServerErrorGeneric(
+                                            "Failed to create auth session".to_string(),
                                         )
-                                            .into_response()
+                                        .into_response()
                                     })?;
 
                             // Set the user in the session (in-memory only, not persisted)
@@ -156,11 +156,11 @@ where
                         }
                         Err(e) => {
                             error!(?e, "Token validation failed - returning 401 instead of falling back to cookies");
-                            return Err((
-                                StatusCode::UNAUTHORIZED,
-                                format!("Invalid or expired token: {}", e),
-                            )
-                                .into_response());
+                            return Err(AppError::Unauthorized(format!(
+                                "Invalid or expired token: {}",
+                                e
+                            ))
+                            .into_response());
                         }
                     }
                 }
@@ -169,12 +169,45 @@ where
 
         // Fall back to cookie-based authentication
         info!("No Bearer token found in Authorization header - falling back to cookie-based authentication");
-        let auth_session = UnifiedAuthSession::from_request_parts(parts, state)
+        let mut auth_session = UnifiedAuthSession::from_request_parts(parts, state)
             .await
             .map_err(|e| {
                 error!(?e, "Failed to extract auth session (cookie mode)");
-                (StatusCode::UNAUTHORIZED, "Authentication required").into_response()
+                AppError::Unauthorized("Authentication required".to_string()).into_response()
             })?;
+
+        // Attempt to load DEK from session if it's missing (cache miss on cold instance)
+        if let Some(user) = auth_session.user.as_mut() {
+            if user.dek.is_none() {
+                if let Ok(session) = Session::from_request_parts(parts, state).await {
+                    match session
+                        .get::<crate::models::users::SerializableSecretDek>("dek")
+                        .await
+                    {
+                        Ok(Some(dek)) => {
+                            info!(
+                                user_id = %crate::privacy::logging::loggable_user_id(user.id),
+                                "✓ DEK retrieved from secure session (cache miss recovery)"
+                            );
+                            user.dek = Some(dek);
+                        }
+                        Ok(None) => {
+                            debug!(
+                                user_id = %crate::privacy::logging::loggable_user_id(user.id),
+                                "No DEK found in session"
+                            );
+                        }
+                        Err(e) => {
+                            error!(
+                                user_id = %crate::privacy::logging::loggable_user_id(user.id),
+                                error = ?e,
+                                "Failed to load DEK from session"
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(UnifiedAuth {
             session: auth_session,

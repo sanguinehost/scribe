@@ -65,6 +65,24 @@ impl RigClient {
         mistralrs: Option<Arc<MistralRsService>>,
         model: Option<String>,
     ) -> Self {
+        let api_key = api_key.map(|k| k.trim().to_string());
+
+        if let Some(ref key) = api_key {
+            let len = key.len();
+            if len >= 8 {
+                tracing::info!(
+                    "RigClient initialized with API key (len: {}, mask: {}...{})",
+                    len,
+                    &key[0..4],
+                    &key[len - 4..]
+                );
+            } else {
+                tracing::info!("RigClient initialized with short API key (len: {})", len);
+            }
+        } else {
+            tracing::warn!("RigClient initialized WITHOUT API key - will fallback to environment");
+        }
+
         Self {
             api_key,
             mistralrs,
@@ -129,7 +147,7 @@ impl RigClient {
 
                     // Add thinkingLevel if present (Gemini 3)
                     if let Some(level) = &req.thinking_level {
-                        if level != "dynamic" {
+                        if level != "dynamic" && !level.is_empty() {
                             thinking_config
                                 .insert("thinkingLevel".to_string(), serde_json::json!(level));
                         }
@@ -346,70 +364,24 @@ impl RigClient {
 
                 let mut generation_config = serde_json::Map::new();
 
-                // Model-aware thinkingConfig:
-                // - gemini-2.5-* ONLY supports thinkingBudget (max 24576)
-                // - gemini-3-* supports both, but PREFERS thinkingLevel
-                let has_budget = req.reasoning_budget.is_some();
-                let has_level = req.thinking_level.is_some();
-
-                if has_budget || has_level {
+                // Unified Thinking Config for Gemini 2.x and 3.x matching completion()
+                if let Some(budget) = req.reasoning_budget {
                     let mut thinking_config = serde_json::Map::new();
                     thinking_config.insert("includeThoughts".to_string(), serde_json::json!(true));
 
-                    let is_gemini_3 = req.model_name.starts_with("gemini-3");
-                    let is_gemini_25 = req.model_name.starts_with("gemini-2.5");
+                    // Always set budget to satisfy rig-core. Map -1 (dynamic) to a default if needed.
+                    let effective_budget = if budget == -1 { 32768 } else { budget };
+                    thinking_config.insert(
+                        "thinkingBudget".to_string(),
+                        serde_json::json!(effective_budget),
+                    );
 
-                    if is_gemini_3 {
-                        // Gemini 3: Use thinkingLevel (preferred)
-                        if let Some(level) = &req.thinking_level {
-                            if level != "dynamic" && level != "none" && !level.is_empty() {
-                                thinking_config.insert(
-                                    "thinkingLevel".to_string(),
-                                    serde_json::json!(level.to_uppercase()),
-                                );
-                            } else {
-                                thinking_config.insert(
-                                    "thinkingLevel".to_string(),
-                                    serde_json::json!("MEDIUM"),
-                                );
-                            }
-                        } else {
+                    // Add thinkingLevel if present (Gemini 3)
+                    if let Some(level) = &req.thinking_level {
+                        if level != "dynamic" && !level.is_empty() {
                             thinking_config
-                                .insert("thinkingLevel".to_string(), serde_json::json!("MEDIUM"));
+                                .insert("thinkingLevel".to_string(), serde_json::json!(level));
                         }
-                        // CRITICAL: Even though Gemini 3 uses level, Rig's internal streaming logic
-                        // for capturing reasoning often checks for a non-zero budget.
-                        thinking_config
-                            .insert("thinkingBudget".to_string(), serde_json::json!(16384));
-                    } else if is_gemini_25 {
-                        // Gemini 2.5: Only supports thinkingBudget (max 24576)
-                        let budget = if let Some(level) = &req.thinking_level {
-                            match level.to_lowercase().as_str() {
-                                "low" => 8192,
-                                "medium" => 16384,
-                                "high" => 24576,
-                                _ => req.reasoning_budget.unwrap_or(16384).min(24576),
-                            }
-                        } else {
-                            req.reasoning_budget.unwrap_or(16384).min(24576)
-                        };
-                        let effective_budget = if budget <= 0 {
-                            16384
-                        } else {
-                            budget.min(24576)
-                        };
-                        thinking_config.insert(
-                            "thinkingBudget".to_string(),
-                            serde_json::json!(effective_budget),
-                        );
-                    } else {
-                        // Unknown model: default to thinkingBudget
-                        let budget = req.reasoning_budget.unwrap_or(16384);
-                        let effective_budget = if budget <= 0 { 16384 } else { budget };
-                        thinking_config.insert(
-                            "thinkingBudget".to_string(),
-                            serde_json::json!(effective_budget),
-                        );
                     }
 
                     tracing::info!("RigClient: thinkingConfig = {:?}", thinking_config);

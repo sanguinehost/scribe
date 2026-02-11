@@ -88,21 +88,33 @@ impl AuthnBackend for Backend {
 
         // Call the free function from crate::auth module
         let verify_result = crate::db::with_conn(&pool, move |conn| {
-            // Unwrap the Result inside the closure so with_conn returns Result<Tuple, AppError> not Result<Result<Tuple, AppError>, AppError>
-            let result = crate::auth::verify_credentials(conn, &identifier_clone, password_clone)
-                .map_err(|e| {
-                crate::errors::AppError::DatabaseQueryError(format!(
-                    "Credential verification failed: {}",
-                    e
-                ))
-            })?;
-            Ok(result)
+            crate::auth::verify_credentials(conn, &identifier_clone, password_clone).map_err(|e| {
+                match e {
+                    AuthError::UserNotFound => crate::errors::AppError::UserNotFound,
+                    AuthError::WrongCredentials => crate::errors::AppError::InvalidCredentials,
+                    _ => crate::errors::AppError::DatabaseQueryError(format!(
+                        "Credential verification failed: {}",
+                        e
+                    )),
+                }
+            })
         })
-        .await
-        .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
+        .await;
+
+        let verify_result = match verify_result {
+            Ok(res) => res,
+            Err(e) => {
+                // Map AppError back to AuthError for axum-login
+                return match e {
+                    crate::errors::AppError::UserNotFound => Err(AuthError::UserNotFound),
+                    crate::errors::AppError::InvalidCredentials => Err(AuthError::WrongCredentials),
+                    _ => Err(AuthError::DatabaseError(e.to_string())),
+                };
+            }
+        };
 
         match verify_result {
-            (mut user, Some(dek_secret_box)) => {
+            (user, Some(dek_secret_box)) => {
                 // Store the DEK in the cache
                 let dek_to_cache = crate::models::users::SerializableSecretDek(dek_secret_box);
                 let mut cache = self.dek_cache.write().await; // Use .await
@@ -110,9 +122,9 @@ impl AuthnBackend for Backend {
                 // More verbose logging
                 warn!(target: "dek_cache_debug", user_id = %loggable_user_id(user.id), cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache.len(), "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", loggable_user_id(user.id));
 
-                // CRITICAL: Set the user's DEK to None before returning
-                // This prevents axum-login from serializing the DEK into the session
-                user.dek = None;
+                // CRITICAL: We no longer nullify the DEK here so that the login handler
+                // can persist it to the secure session.
+                // user.dek = None;
                 Ok(Some(user))
             }
             (user, None) => {

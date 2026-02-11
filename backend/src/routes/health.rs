@@ -83,6 +83,7 @@ impl HealthCheckResponse {
 }
 
 /// Enhanced health check endpoint with database and external service connectivity checks.
+#[tracing::instrument(skip(state))]
 pub async fn health_check(
     State(state): State<AppState>,
 ) -> Result<Json<HealthCheckResponse>, AppError> {

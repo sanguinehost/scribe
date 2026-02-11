@@ -14,7 +14,7 @@ remote-vector = ["dep:rig-qdrant"]  # qdrant-client is already a direct dependen
 local-llm = ["dep:sysinfo", "dep:nix", "dep:which", "dep:tempfile", "dep:mistralrs-core", "dep:mistralrs"]
 payment = ["dep:subtle"]  # Payment processing dependencies (reqwest and serde_json already available)
 production = ["payment"]  # Include payment in production builds
-otel = ["dep:opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:opentelemetry-langfuse", "dep:opentelemetry-semantic-conventions", "dep:opentelemetry-stdout"]
+otel = ["dep:opentelemetry", "dep:opentelemetry-otlp", "dep:opentelemetry_sdk", "dep:tracing-opentelemetry", "dep:opentelemetry-langfuse", "dep:opentelemetry-semantic-conventions", "dep:opentelemetry-stdout", "dep:opentelemetry-appender-tracing"]
 
 [[bin]]
 name = "re_embed_chronicles"
@@ -42,7 +42,7 @@ diesel-derive-enum = { version = "2.1.0", default-features = false }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-tower-sessions = { version = "0.14.0", features = ["signed"] }
+tower-sessions = { version = "0.14.0", features = ["signed", "private"] }
 tower-sessions-memory-store = "0.15.0"
 axum-login = "0.17.0"
 bcrypt = "0.18.0"
@@ -127,7 +127,8 @@ regex = "1.10.4"
 blake3 = "1.5.1"
 nanoid = "0.4.0"
 # Add missing dependencies needed by test_helpers
-tonic = "0.12.3"
+tonic = "0.14.3"
+opentelemetry-proto = { version = "0.31.0", features = ["gen-tonic"] }
 testcontainers = "0.26.3"
 http-body-util = { version = "0.1.3", features = ["full"] }
 
@@ -186,6 +187,7 @@ opentelemetry-stdout = { version = "0.31", optional = true }
 opentelemetry-semantic-conventions = { version = "0.31", optional = true }
 tracing-opentelemetry = { version = "0.32", optional = true }
 opentelemetry-langfuse = { version = "0.6", optional = true }
+opentelemetry-appender-tracing = { version = "0.31.1", optional = true }
 
 jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
 bytes = "1.11.1"

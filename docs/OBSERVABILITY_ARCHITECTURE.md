@@ -51,10 +51,22 @@ To maintain causal links across background boundaries, the system implements **D
 
 ### 3.1 OWASP LLM Top 10 Redlines
 - **LLM02: Sensitive Information Disclosure:** Prevented via SDK Redaction.
-- **LLM10: Unbounded Consumption:** Mitigated via unified `token_usage` spans exported to ClickHouse for real-time alerting.
+- **LLM10: Unbounded Consumption:** Mitigated via unified `token_usage` spans exported to **OpenObserve** for real-time alerting.
 
 ### 3.2 Data Sovereignty
 - **Regional Collectors:** Telemetry is exported to regional OTLP collectors to minimize cross-border data transfer of even redacted metadata.
+
+---
+
+## 4. Aggregator Stack: OpenObserve (S3-Native)
+
+To scale with Scribe's high-throughput narrative engine without the operational complexity of ClickHouse or ELK, we utilize **OpenObserve**.
+
+### 4.1 Scaling & Efficiency
+- **Architecture:** Stateless compute nodes querying Apache Parquet files on S3/MinIO.
+- **Throughput:** Capable of handling hundreds of thousands of events/sec per node (5-10x faster than Elasticsearch).
+- **Cost:** Significant storage reduction via zero-indexing; only metadata and Parquet columnar headers are indexed.
+- **Parity:** Built in Rust, allowing for potential integration of shared crates between the aggregator and the Scribe backend.
 
 ---
 

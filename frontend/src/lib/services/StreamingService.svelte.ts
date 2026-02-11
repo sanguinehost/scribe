@@ -677,7 +677,9 @@ class StreamingService {
 				options: {
 					method: 'POST',
 					headers,
-					body: JSON.stringify(requestBody)
+					body: JSON.stringify(requestBody),
+					// @ts-expect-error - credentials is required for cross-subdomain cookies but missing in sveltekit-sse types
+					credentials: 'include'
 				},
 				close: () => {
 					logger.debug('streaming-service', 'Source closed');
@@ -841,7 +843,22 @@ class StreamingService {
 
 					if (_event.data) {
 						const messageId = this.currentAssistantMessageId || assistantMessageId;
-						this.appendReasoningContent(messageId, _event.data);
+
+						// Try to parse as JSON first (new format)
+						try {
+							const parsed = JSON.parse(_event.data);
+							if (parsed && typeof parsed === 'object' && 'text' in parsed) {
+								this.appendReasoningContent(messageId, parsed.text);
+							} else {
+								// Fallback: treat properly parsed JSON that doesn't have 'text' as raw data if needed,
+								// but mostly we expect {text: ...}
+								// If it's a string, just use it
+								this.appendReasoningContent(messageId, _event.data);
+							}
+						} catch (_e) {
+							// Fallback: treat as raw text (old format)
+							this.appendReasoningContent(messageId, _event.data);
+						}
 					}
 					break;
 
@@ -892,8 +909,8 @@ class StreamingService {
 						try {
 							const gameState = JSON.parse(_event.data);
 							this.handleGameStateUpdateEvent(gameState);
-						} catch (e) {
-							logger.error('streaming-service', 'Failed to parse game state', e as Error);
+						} catch (_e) {
+							logger.error('streaming-service', 'Failed to parse game state', _e as Error);
 						}
 					}
 					break;
@@ -925,8 +942,8 @@ class StreamingService {
 
 						this.connectionCloseState.messageSavedReceived = true;
 						this.tryCloseConnection();
-					} catch (e) {
-						logger.error('streaming-service', 'Failed to parse message_saved event', e as Error);
+					} catch (_e) {
+						logger.error('streaming-service', 'Failed to parse message_saved event', _e as Error);
 					}
 					break;
 
@@ -952,8 +969,8 @@ class StreamingService {
 
 						this.connectionCloseState.tokenUsageReceived = true;
 						this.tryCloseConnection();
-					} catch (e) {
-						logger.error('streaming-service', 'Failed to parse token_usage event', e as Error);
+					} catch (_e) {
+						logger.error('streaming-service', 'Failed to parse token_usage event', _e as Error);
 					}
 					break;
 			}

@@ -77,6 +77,8 @@ pub enum ScribeSseEvent {
         created_at: String,
         variant_count: i32,
         current_variant_index: i32,
+        game_time: Option<serde_json::Value>,
     },
     GameState(serde_json::Value),
+    Done,
 }

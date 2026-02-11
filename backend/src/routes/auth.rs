@@ -278,8 +278,8 @@ pub async fn login_handler(
             let user_id = user.id;
             info!(%user_id, "Authentication successful via AuthBackend.");
 
-            // SECURITY: The DEK is now cached in AuthBackend, NOT stored in the session
-            // The user object returned from authenticate has dek=None to prevent session storage
+            // SECURITY: The DEK is cached in AuthBackend AND persisted in the secure session
+            // for multi-instance stability. It is encrypted with the session private key.
 
             // Serialize the user object to see what's going into the session
             match serde_json::to_string(&user) {
@@ -296,11 +296,11 @@ pub async fn login_handler(
             // Log the session ID BEFORE auth_session.login
             debug!(session_id = ?session.id(), user_id = %user_id, "Session ID BEFORE axum-login.login() call");
 
-            // Debugging: User returned from authenticate should have dek=None
-            if user.dek.is_some() {
-                error!(%user_id, "SECURITY WARNING: User.dek should be None after authenticate but it's present!");
+            // Debugging: User returned from authenticate should have dek populated
+            if user.dek.is_none() {
+                warn!(%user_id, "DEK was not available/decryptable during login - re-auth might be needed later");
             } else {
-                debug!(%user_id, "User.dek is correctly None after authenticate (DEK is cached in AuthBackend)");
+                debug!(%user_id, "User.dek is present after authenticate");
             }
 
             // Invalidate the session before logging in to prevent session fixation
@@ -318,6 +318,16 @@ pub async fn login_handler(
                     "Failed to establish session after authentication".to_string(),
                 ));
             }
+
+            // Persist the DEK in the session for multi-instance stability
+            if let Some(ref dek) = user.dek {
+                if let Err(e) = session.insert("dek", dek).await {
+                    error!(%user_id, error = ?e, "Failed to persist DEK in session tracker");
+                } else {
+                    debug!(%user_id, "DEK persisted in secure session");
+                }
+            }
+
             info!(user_id = %user_id, "Login successful via authenticate");
 
             // SECURITY MONITORING: Record successful authentication
@@ -358,14 +368,8 @@ pub async fn login_handler(
                 error!(%user_id, "auth_session.user is NONE after login.");
             }
 
-            // SECURITY FIX: We no longer store the DEK in the session.
-            // The following block for checking "axum-login.user" key immediately after login has been removed.
-            // This check is unreliable as the session instance in the handler may not be synchronously updated.
-            // Session persistence is handled by middleware and verified by integration tests.
-
-            // SECURITY FIX: We no longer store the DEK in the session.
-            // The DEK is now only stored in the server-side AuthBackend cache.
-            // This comment block replaces the code that previously stored the DEK in the session.
+            // SECURITY NOTE: The DEK is stored in a separate session key "dek"
+            // and is also cached in the server-side AuthBackend.
 
             // Get session ID and expiry from tower_sessions::Session
             let session_id_str = session.id().map_or_else(
@@ -533,6 +537,7 @@ pub async fn login_handler(
 pub async fn logout_handler(
     State(state): State<AppState>,
     mut auth_session: CurrentAuthSession,
+    session: Session,
 ) -> Result<Response, AppError> {
     info!("Logout handler entered.");
 
@@ -543,7 +548,13 @@ pub async fn logout_handler(
 
         // Remove the DEK from the AuthBackend cache
         state.auth_backend.remove_dek_from_cache(&user_id).await;
-        info!(user_id = %user_id, "DEK removed from cache during logout");
+
+        // Remove DEK from the session
+        let _ = session
+            .remove::<crate::models::users::SerializableSecretDek>("dek")
+            .await;
+
+        info!(user_id = %user_id, "DEK removed from cache and session during logout");
     } else {
         debug!("Logout called, but no user session found in request.");
     }

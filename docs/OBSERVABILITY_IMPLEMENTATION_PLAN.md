@@ -1,6 +1,6 @@
 # Epic: Multi-Cloud OTLP Observability & Infrastructure Abstraction
 
-**Goal:** Transition Scribe from an AWS-locked observability and infrastructure model to a resilient, privacy-centric, and provider-agnostic global architecture. This involves standardizing on OpenTelemetry (OTLP), implementing an **Embedded Durable Machine** for orchestration (replacing the sidecar-heavy Temporal model), and abstracting the infrastructure layer through Terragrunt and platform-agnostic ingress (Traefik/Caddy).
+**Goal:** Transition Scribe from an AWS-locked observability and infrastructure model to a resilient, privacy-centric, and provider-agnostic global architecture. This involves standardizing on OpenTelemetry (OTLP), implementing an **Embedded Durable Machine** for orchestration (replacing the sidecar-heavy Temporal model), and abstracting the infrastructure layer through **OpenTofu** (with native state encryption), Terragrunt, and platform-agnostic ingress (Traefik).
 
 ## Core Architectural Principles
 
@@ -19,7 +19,7 @@ This project adheres to the Scribe **Engineering Lifecycle** (as defined in `GEM
 1.  **Contextual Impact Analysis (The "Blast Radius" Check):** Before any code is modified, we interrogate the system to understand the breadth of the change.
 2.  **Isolated Proof of Concept (The "Empirical" Phase):** We requires evidence before implementation. Prototyping logic in isolation ensures the core system remains stable.
 3.  **Idiomatic Implementation (The "Senior Engineer" Phase):** Focus on precision, leveraging Rust idiomatic patterns and zero-cost abstractions for observability and orchestration.
-4.  **Post-Implementation Verification (The "Regression" Phase):** Exhaustive validation including negative testing and regression suites.
+4.  **Post-Implementation Verification (The "Regression" Phase):** Exhaustive validation including negative testing and OpenTofu drift detection.
 5.  **Aesthetic and PR Polish (The "Definition of Done"):** Adherence to formatting, documentation, and impact summaries.
 
 ---
@@ -103,26 +103,28 @@ This project adheres to the Scribe **Engineering Lifecycle** (as defined in `GEM
 
 ---
 
-### Phase 4: Global Infrastructure & Ingress Abstraction
+### Phase 4: Composable Infrastructure & Platform-Agnostic Ingress [COMPLETED]
+**Lifecycle Focus:** Architectural Parity & Security-Hardening.
 
-#### Task 4.1: Terragrunt Migration & Module Abstraction
-- [ ] **Subtask:** Create `infrastructure/terragrunt/` directory structure.
-- [ ] **Subtask:** Provide Agnostic Ingress Module (Traefik/Caddy).
-
-#### Task 4.2: Networking & GSLB
-- [ ] **Subtask:** Implement Global Server Load Balancing (GSLB) via Cloudflare/Route53.
+- [x] **Subtask:** Create `infrastructure/terragrunt/` root and environment configurations.
+- [x] **Subtask:** Refactor AWS modules into **Composable Platform Modules** using **OpenTofu**.
+- [x] **Subtask:** Enable **Native State Encryption** in OpenTofu via AWS KMS.
+- [x] **Subtask:** Implement "Dry" remote state and provider injection via Terragrunt.
+- [x] **Subtask:** Deploy **Traefik** as an ECS Fargate ingress with NLB/ACM.
+- [x] **Subtask:** Provision **Tailscale Subnet Router** for secure overlay management.
+- [x] **Subtask:** Verified "Zero-Trust" access path to internal VPC resources.
 
 ---
 
-### Phase 5: Observability Infrastructure (Self-Hosted)
+### Phase 5: Observability Infrastructure (Self-Hosted) [IN PROGRESS]
 
 #### Task 5.1: Aggregator Stack
-- [ ] **Subtask:** Provision **ClickHouse** Cluster.
-- [ ] **Subtask:** Deploy **OpenObserve** (or SigNoz) for OTLP ingestion.
-- [ ] **Subtask:** Deploy Regional OTLP Collectors for data residency.
+- [ ] **Subtask:** Provision **Object Storage** (Amazon S3) for OpenObserve data persistence.
+- [ ] **Subtask:** Deploy **OpenObserve** on ECS for OTLP ingestion.
+- [ ] **Subtask:** Configure OTLP exporters in Backend and Traefik.
 
 #### Task 5.2: AI Evaluation & Tracking
-- [ ] **Subtask:** Self-host **Langfuse** and connect to OTel layer.
+- [ ] **Subtask:** Self-host **Langfuse** (Optional/Future) and connect to OTel layer.
 
 ---
 

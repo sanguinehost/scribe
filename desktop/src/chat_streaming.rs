@@ -250,9 +250,21 @@ pub async fn stream_chat_response(
                             "🔥 [stream_chat_response] RECEIVED 'thinking' SSE event - len: {}",
                             sse_event.data.len()
                         );
-                        ChatStreamEvent::Thinking {
-                            text: sse_event.data,
-                        }
+
+                        // Parse JSON: { "text": "..." }
+                        let text_content =
+                            match serde_json::from_str::<serde_json::Value>(&sse_event.data) {
+                                Ok(json_data) => json_data["text"]
+                                    .as_str()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or(sse_event.data),
+                                Err(_) => {
+                                    // Fallback for raw text (backward compatibility)
+                                    sse_event.data
+                                }
+                            };
+
+                        ChatStreamEvent::Thinking { text: text_content }
                     }
                     "error" => ChatStreamEvent::Error {
                         message: sse_event.data,

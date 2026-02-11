@@ -242,9 +242,10 @@ pub async fn generate_chat_response(
 
     if chat_session_owner_id != user_id_value {
         error!(%session_id, expected_owner = %user_id_value, actual_owner = %chat_session_owner_id, "User forbidden from accessing chat session.");
-        return Err(AppError::Forbidden(
-            "Access denied to chat session".to_string(),
-        ));
+        return Err(AppError::Forbidden(format!(
+            "Access denied to chat session (Ownership mismatch: expected {}, got {})",
+            user_id_value, chat_session_owner_id
+        )));
     }
     debug!(%session_id, "User authorized for chat session");
 
@@ -1394,7 +1395,8 @@ pub async fn generate_chat_response(
                                             Event::default().event("content").data(data)
                                         }
                                         ScribeSseEvent::Thinking(data) => {
-                                            Event::default().event("thinking").data(data)
+                                            let json_data = serde_json::json!({ "text": data }).to_string();
+                                            Event::default().event("thinking").data(json_data)
                                         }
                                         ScribeSseEvent::Error(data) => {
                                             error_from_service_stream = true;
@@ -1408,7 +1410,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, .. } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, model_name, created_at, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid);
@@ -1450,12 +1452,16 @@ pub async fn generate_chat_response(
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,
                                                 "variant_count": variant_count,
-                                                "current_variant_index": current_variant_index
+                                                "current_variant_index": current_variant_index,
+                                                "game_time": game_time
                                             });
                                             Event::default().event("message_saved").data(message_data.to_string())
                                         }
                                         ScribeSseEvent::GameState(game_state_json) => {
                                             Event::default().event("game_state").data(game_state_json.to_string())
+                                        }
+                                        ScribeSseEvent::Done => {
+                                            Event::default().event("done").data("[DONE]")
                                         }
                                     };
                                     yield Ok(axum_sse_event);
@@ -2262,7 +2268,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, .. } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, model_name, created_at, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid);
@@ -2270,12 +2276,16 @@ pub async fn generate_chat_response(
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,
                                                 "variant_count": variant_count,
-                                                "current_variant_index": current_variant_index
+                                                "current_variant_index": current_variant_index,
+                                                "game_time": game_time
                                             });
                                             Event::default().event("message_saved").data(message_data.to_string())
                                         }
                                         ScribeSseEvent::GameState(game_state_json) => {
                                             Event::default().event("game_state").data(game_state_json.to_string())
+                                        }
+                                        ScribeSseEvent::Done => {
+                                            Event::default().event("done").data("[DONE]")
                                         }
                                     };
                                     yield Ok(axum_sse_event);
@@ -2831,6 +2841,7 @@ async fn create_message_variant_handler(
         is_variant: false,
         parent_message_id: None,
         variants: None,
+        reasoning_content: payload.reasoning,
     };
 
     Ok((StatusCode::CREATED, Json(response)))
