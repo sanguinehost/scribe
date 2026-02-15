@@ -80,5 +80,7 @@ pub enum ScribeSseEvent {
         game_time: Option<serde_json::Value>,
     },
     GameState(serde_json::Value),
+    Status(String),
+    Heartbeat,
     Done,
 }

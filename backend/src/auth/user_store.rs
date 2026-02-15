@@ -122,9 +122,13 @@ impl AuthnBackend for Backend {
                 // More verbose logging
                 warn!(target: "dek_cache_debug", user_id = %loggable_user_id(user.id), cache_ptr = ?Arc::as_ptr(&self.dek_cache), cache_size = cache.len(), "AuthBackend::authenticate - DEK CACHED (key: {}, value_present: true)", loggable_user_id(user.id));
 
-                // CRITICAL: We no longer nullify the DEK here so that the login handler
-                // can persist it to the secure session.
-                // user.dek = None;
+                // CRITICAL: Set the DEK on the user object so the login handler can
+                // persist it to the session store for cross-instance recovery.
+                // Without this, user.dek is always None (it's #[serde(skip)] and
+                // not loaded from DB), and the session DEK persistence silently fails.
+                let mut user = user;
+                user.dek = Some(dek_to_cache);
+
                 Ok(Some(user))
             }
             (user, None) => {

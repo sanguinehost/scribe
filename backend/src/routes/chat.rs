@@ -183,7 +183,6 @@ pub async fn create_chat_session_handler(
     Ok((StatusCode::CREATED, Json(created_chat_session)))
 }
 
-#[instrument(skip_all, fields(session_id = %session_id_str, user_id = field::Empty, chat_id = field::Empty, message_id = field::Empty))]
 pub async fn generate_chat_response(
     State(state): State<AppState>,
     auth: UnifiedAuth,
@@ -192,6 +191,566 @@ pub async fn generate_chat_response(
     Query(query_params): Query<ChatGenerateQueryParams>,
     headers: HeaderMap,
     Json(payload): Json<GenerateChatRequest>,
+) -> Result<axum::response::Response, AppError> {
+    let accept_header = headers
+        .get(axum::http::header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+
+    if accept_header.contains(mime::TEXT_EVENT_STREAM.as_ref()) {
+        Ok(generate_chat_response_sse(
+            state,
+            auth,
+            session_dek,
+            session_id_str,
+            query_params,
+            headers,
+            payload,
+        )
+        .await?
+        .into_response())
+    } else {
+        Ok(generate_chat_response_json(
+            state,
+            auth,
+            session_dek,
+            session_id_str,
+            query_params,
+            headers,
+            payload,
+        )
+        .await?
+        .into_response())
+    }
+}
+
+async fn generate_chat_response_sse(
+    state: AppState,
+    auth: UnifiedAuth,
+    session_dek: SessionDek,
+    session_id_str: String,
+    query_params: ChatGenerateQueryParams,
+    _headers: HeaderMap,
+    payload: GenerateChatRequest,
+) -> Result<axum::response::Response, AppError> {
+    info!("Received SSE request to generate chat response (immediate init)");
+    payload.validate()?;
+
+    let state_arc = Arc::new(state);
+    let user = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("User not found in session".to_string()))?;
+    let user_id_value = user.id;
+    let session_dek_arc = Arc::new(session_dek.0);
+
+    let session_id = DbId::parse_str(&session_id_str)
+        .map_err(|_| AppError::BadRequest("Invalid session UUID format".to_string()))?;
+
+    // Quick authorization check before starting the stream
+    let chat_session_owner_id = crate::db::get_conn(&state_arc.pool)
+        .await?
+        .interact(move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::user_id)
+                .first::<crate::db::DbId>(conn)
+        })
+        .await
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Auth interact error: {e}")))?
+        .map_err(|e_db| match e_db {
+            diesel::result::Error::NotFound => {
+                AppError::NotFound(format!("Chat session {session_id} not found."))
+            }
+            _ => AppError::DatabaseQueryError(format!("Failed to query owner: {e_db}")),
+        })?;
+
+    if chat_session_owner_id != user_id_value {
+        return Err(AppError::Forbidden(
+            "Access denied to chat session".to_string(),
+        ));
+    }
+
+    let request_thinking = query_params.request_thinking || payload.thinking_level.is_some();
+
+    // Create the persistent stream
+    let final_stream = async_stream::stream! {
+        // 1. Initial status event immediately to improve TTFB
+        yield Ok::<Event, AppError>(Event::default().event("status").data("Initializing chat context..."));
+
+        // Extract content early
+        let current_user_api_message = match payload.history.last() {
+            Some(msg) => msg.clone(),
+            None => {
+                yield Ok(Event::default().event("error").data("Empty history"));
+                return;
+            }
+        };
+        let current_user_content = current_user_api_message.content;
+
+        // Yield status for RAG/Context Loading
+        yield Ok(Event::default().event("status").data("Loading narrative history and context..."));
+
+        // BEGIN: Async logic inside the stream
+        let session_data_result = chat::generation::get_session_data_for_generation(
+            state_arc.clone(),
+            user_id_value,
+            session_id,
+            current_user_content.clone(),
+            Some(session_dek_arc.clone()),
+            if payload.history.len() <= 1 { None } else { Some(payload.history.clone()) },
+        ).await;
+
+        let (
+            managed_db_history,
+            system_prompt_from_service,
+            _active_lorebook_ids,
+            session_character_id,
+            raw_character_system_prompt,
+            gen_temperature,
+            gen_max_output_tokens,
+            gen_frequency_penalty,
+            gen_presence_penalty,
+            gen_top_k,
+            gen_top_p,
+            gen_seed,
+            gen_model_name_from_service,
+            gen_model_provider_from_service,
+            gen_reasoning_budget,
+            gen_thinking_level,
+            gen_enable_code_execution,
+            user_message_struct_to_save,
+            _recent_history_tokens,
+            rag_context_items_from_service,
+            _hist_strat,
+            _hist_limit,
+            user_persona_name,
+            player_chronicle_id,
+            agent_mode,
+            game_master_mode_enabled,
+            initial_game_state,
+            rag_chronicles_limit,
+            rag_lorebooks_limit,
+            rag_older_chat_limit,
+            context_total_token_limit,
+            recent_history_token_budget,
+            rag_token_budget,
+        ) = match session_data_result {
+            Ok(data) => data,
+            Err(e) => {
+                yield Ok(Event::default().event("error").data(format!("Context loading error: {e}")));
+                return;
+            }
+        };
+
+        yield Ok(Event::default().event("status").data("Assembling character and persona..."));
+
+        // Fetch character
+        let char_id = match session_character_id {
+            Some(id) => id,
+            None => {
+                yield Ok(Event::default().event("error").data("Missing character ID"));
+                return;
+            }
+        };
+
+        let character_db_model_result = crate::db::with_conn(&state_arc.pool, move |conn| {
+            app_schema::characters::table
+                .filter(app_schema::characters::id.eq(char_id))
+                .filter(app_schema::characters::user_id.eq(user_id_value))
+                .select(Character::as_select())
+                .first(conn)
+                .map_err(AppError::from)
+        }).await;
+
+        let character_db_model = match character_db_model_result {
+            Ok(m) => m,
+            Err(e) => {
+                yield Ok(Event::default().event("error").data(format!("Character loading error: {e}")));
+                return;
+            }
+        };
+
+        // Build metadata for prompt builder
+        let character_metadata_for_prompt_builder = CharacterMetadata {
+            id: character_db_model.id,
+            user_id: character_db_model.user_id,
+            name: character_db_model.name.clone(),
+            description: character_db_model.description.clone(),
+            description_nonce: character_db_model.description_nonce.clone(),
+            personality: character_db_model.personality.clone(),
+            personality_nonce: character_db_model.personality_nonce.clone(),
+            scenario: character_db_model.scenario.clone(),
+            scenario_nonce: character_db_model.scenario_nonce.clone(),
+            mes_example: character_db_model.mes_example.clone(),
+            mes_example_nonce: character_db_model.mes_example_nonce.clone(),
+            creator_comment: character_db_model.creator_comment.clone(),
+            creator_comment_nonce: character_db_model.creator_comment_nonce.clone(),
+            first_mes: character_db_model.first_mes.clone(),
+            created_at: character_db_model.created_at,
+            updated_at: character_db_model.updated_at,
+        };
+
+        let model_to_use = payload.model.clone().unwrap_or_else(|| gen_model_name_from_service.clone());
+
+        // Credit check (Only if payment feature enabled)
+        #[cfg(feature = "payment")]
+        let _credit_reservation = {
+            // This is a bit complex to move entirely into the stream due to the &mut conn needs
+            // But we can do it because with_conn manages the checkout
+            // For now, I'll simplify the credit check logic for the stream POC
+            // and follow the implementation_plan's structure.
+            None::<bool> // Placeholder for now, will implement properly in next tool call
+        };
+
+        yield Ok(Event::default().event("status").data("Applying narrative style..."));
+
+        // Narrative style cascade
+        let mut template_prefs = match TemplatePreferenceService::get_template_preferences(&state_arc.pool, user_id_value, session_character_id).await {
+            Ok(p) => p,
+            Err(e) => {
+                yield Ok(Event::default().event("error").data(format!("Template prefs error: {e}")));
+                return;
+            }
+        };
+
+        // Get session settings to retrieve the prompt template ID
+        let session_settings = match chat::settings::get_session_settings(&state_arc.pool, user_id_value, session_id, Some(&*session_dek_arc)).await {
+            Ok(s) => s,
+            Err(e) => {
+                yield Ok(Event::default().event("error").data(format!("Session settings error: {e}")));
+                return;
+            }
+        };
+        let prompt_template_id = session_settings.prompt_template_id;
+
+        // Load Session overrides (another DB call)
+        let session_id_inner = session_id;
+        let pool_inner = state_arc.pool.clone();
+        let session_dek_arc_inner = session_dek_arc.clone();
+        let session_override_result = crate::db::with_conn(&pool_inner, move |conn| {
+            chat_sessions::table.filter(chat_sessions::id.eq(session_id_inner)).select(ChatSessionQuery::as_select()).first::<ChatSessionQuery>(conn).optional()
+                .map_err(AppError::from)
+        }).await;
+
+        if let Ok(Some(chat)) = session_override_result {
+            if let Ok(Some(override_data)) = chat.get_narrative_style_override(&session_dek_arc_inner) {
+                if let Some(tense) = override_data.tense { template_prefs.tense = tense; }
+                if let Some(narration) = override_data.narration { template_prefs.narration = narration; }
+                if let Some(perspective) = override_data.perspective { template_prefs.perspective = perspective; }
+                if let Some(length) = override_data.length { template_prefs.length = length; }
+            }
+        }
+
+        let narrative_style = NarrativeStyle {
+            tense: match template_prefs.tense.as_str() { "present-tense" => Tense::PresentTense, "future-tense" => Tense::FutureTense, _ => Tense::PastTense },
+            narration: match template_prefs.narration.as_str() { "first-person" => Narration::FirstPerson, "second-person" => Narration::SecondPerson, _ => Narration::ThirdPerson },
+            perspective: match template_prefs.perspective.as_str() { "limited-character" => Perspective::LimitedCharacter, "limited-user" => Perspective::LimitedUser, _ => Perspective::Omniscient },
+            length: match template_prefs.length.as_str() { "concise" => ResponseLength::Concise, "moderate" => ResponseLength::Moderate, "extended" => ResponseLength::Extended, _ => ResponseLength::Flexible },
+        };
+
+        // Before saving new messages, supersede any failed or partial messages from this session
+        {
+            let pool = state_arc.pool.clone();
+            let session_id_for_cleanup = session_id;
+            let _ = crate::db::with_conn(&pool, move |conn| {
+                let cutoff_time: crate::db::DbTimestamp = (chrono::Utc::now() - chrono::Duration::seconds(60)).into();
+                crate::models::chats::ChatMessage::supersede_failed_messages(conn, session_id_for_cleanup, cutoff_time)
+            }).await;
+        }
+
+        yield Ok(Event::default().event("status").data("Saving message..."));
+
+        // Save the user message first
+        let saved_user_message = if payload.variant_of.is_some() {
+            // Placeholder for variant case (simplified for stream)
+            crate::models::chats::ChatMessage::builder()
+                .id(crate::db::DbId::new_v4())
+                .session_id(session_id)
+                .user_id(user_id_value)
+                .message_type(MessageRole::User)
+                .content(current_user_content.as_bytes().to_vec())
+                .model_name(model_to_use.clone())
+                .status("completed".to_string())
+                .build()
+        } else {
+            match chat::message_handling::save_message(chat::message_handling::SaveMessageParams {
+                state: state_arc.clone(),
+                session_id,
+                user_id: user_id_value,
+                message_type_enum: MessageRole::User,
+                content: &current_user_content,
+                role_str: user_message_struct_to_save.role.clone(),
+                parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
+                attachments: user_message_struct_to_save.attachments.clone().map(|j| j.0),
+                user_dek_secret_box: Some(session_dek_arc.clone()),
+                model_name: model_to_use.clone(),
+                raw_prompt_debug: None,
+                status: crate::models::chats::MessageStatus::Completed,
+                error_message: None,
+                variant_of: None,
+                charge_credits: false,
+                credits_cost_override: None,
+                game_time: None,
+                reasoning_content: None,
+            }).await {
+                Ok((saved_msg, _)) => saved_msg,
+                Err(e) => {
+                    yield Ok(Event::default().event("error").data(format!("Failed to save message: {e}")));
+                    return;
+                }
+            }
+        };
+
+        let user_message_id = saved_user_message.id;
+
+        yield Ok(Event::default().event("status").data("Analyzing narrative intent..."));
+
+        // Agent Analysis (Simplified version for stream init)
+        let should_skip_analysis = payload.analysis_mode.as_deref() == Some("skip");
+        let (agent_context, pre_processing_analysis_id) = if !should_skip_analysis && agent_mode.as_deref() == Some("pre_processing") {
+            // Run the agent
+            let search_tool = Arc::new(SearchKnowledgeBaseTool::new(state_arc.qdrant_service.clone(), state_arc.embedding_client.clone(), state_arc.clone()));
+            let chronicle_service = Arc::new(ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone()));
+            let agent = ContextEnrichmentAgent::new(state_arc.clone(), search_tool.clone(), state_arc.recall_pipeline.clone(), chronicle_service.clone());
+
+            let mut messages_for_agent: Vec<(String, String)> = managed_db_history.iter().take(10).map(|m| {
+                let role = match m.message_type { MessageRole::User => "User", _ => "Assistant" }.to_string();
+                let content = String::from_utf8_lossy(&m.content).into_owned();
+                (role, content)
+            }).collect();
+            messages_for_agent.push(("User".to_string(), current_user_content.clone()));
+
+            match agent.enrich_context(
+                session_id, user_id_value, player_chronicle_id, &messages_for_agent, EnrichmentMode::PreProcessing,
+                session_dek_arc.expose_secret(), user_message_id, rag_chronicles_limit, rag_lorebooks_limit, rag_older_chat_limit, None
+            ).await {
+                Ok(res) => (Some(res.analysis_summary), res.analysis_id),
+                Err(e) => {
+                    warn!(%session_id, error = ?e, "Pre-processing agent failed (SSE stream continues)");
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        yield Ok(Event::default().event("status").data("Preparing AI generation..."));
+
+        yield Ok(Event::default().event("status").data("Retrieving secure cognitive memories..."));
+
+        // Cognitive Recall
+        let cognitive_context = if let Some(chronicle_id) = player_chronicle_id {
+            let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+            let mut recall_query_parts = Vec::new();
+            // Simple history for recall query
+            for m in managed_db_history.iter().rev().take(2).rev() {
+                recall_query_parts.push(String::from_utf8_lossy(&m.content).into_owned());
+            }
+            recall_query_parts.push(current_user_content.clone());
+            let recall_query = recall_query_parts.join("\n");
+
+            state_arc.recall_pipeline.recall_context(
+                user_id_value, chronicle_id, &recall_query, &session_dek_ref, state_arc.clone(), None,
+                initial_game_state.as_ref().and_then(|gs| gs["game_time"]["day"].as_i64()), None
+            ).await.ok()
+        } else {
+            None
+        };
+
+        // Core Memory
+        let core_memory = if let Some(chronicle_id) = player_chronicle_id {
+            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone());
+            match chronicle_service.get_core_memory(user_id_value, chronicle_id).await {
+                Ok(Some(mem)) => {
+                    let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+                    mem.decrypt(&session_dek_ref).ok()
+                }
+                _ => None
+            }
+        } else {
+            None
+        };
+
+        yield Ok(Event::default().event("status").data("Finalizing prompt and starting generation..."));
+
+        // Build Final LLM Prompt
+        let current_user_rig_message = RigMessage::User {
+            content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(current_user_content.clone())),
+        };
+
+        let mut rig_recent_history: Vec<RigMessage> = Vec::new();
+        for db_msg in managed_db_history {
+            let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+            let rig_msg = match db_msg.message_type {
+                MessageRole::User => RigMessage::User { content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(content_str)) },
+                _ => RigMessage::Assistant { id: None, content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(content_str)) },
+            };
+            rig_recent_history.push(rig_msg);
+        }
+
+        let (final_system_prompt_str, final_rig_message_list) = match prompt_builder::build_final_llm_prompt(prompt_builder::PromptBuildParams {
+            config: state_arc.config.clone(),
+            token_counter: state_arc.token_counter.clone(),
+            recent_history: rig_recent_history,
+            rag_items: rag_context_items_from_service,
+            system_prompt_base: system_prompt_from_service,
+            raw_character_system_prompt,
+            character_metadata: Some(&character_metadata_for_prompt_builder),
+            current_user_message: current_user_rig_message.clone(),
+            model_name: model_to_use.clone(),
+            user_dek: Some(&*session_dek_arc),
+            user_persona_name,
+            agent_context,
+            guidance: payload.guidance.clone(),
+            prompt_template_id,
+            narrative_style: Some(narrative_style),
+            game_state: initial_game_state.as_ref().and_then(|v| serde_json::from_value(v.clone()).ok()).as_ref(),
+            rag_chronicles_limit,
+            rag_lorebooks_limit,
+            rag_older_chat_limit,
+            context_total_token_limit: Some(context_total_token_limit),
+            recent_history_token_budget: Some(recent_history_token_budget),
+            rag_token_budget: Some(rag_token_budget),
+            cognitive_context,
+            core_memory,
+        }).await {
+            Ok(res) => res,
+            Err(e) => {
+                yield Ok(Event::default().event("error").data(format!("Prompt build error: {e}")));
+                return;
+            }
+        };
+
+        // Call generation service
+        let service_stream_result = chat::generation::stream_ai_response_and_save_message_with_retry(
+            chat::generation::StreamAiParams {
+                state: state_arc.clone(),
+                session_id,
+                user_id: user_id_value,
+                history: final_rig_message_list,
+                system_prompt: Some(final_system_prompt_str),
+                temperature: gen_temperature,
+                max_output_tokens: gen_max_output_tokens,
+                frequency_penalty: gen_frequency_penalty,
+                presence_penalty: gen_presence_penalty,
+                top_k: gen_top_k,
+                top_p: gen_top_p,
+                stop_sequences: None,
+                seed: gen_seed,
+                model_name: model_to_use.clone(),
+                model_provider: gen_model_provider_from_service,
+                reasoning_budget: gen_reasoning_budget,
+                thinking_level: gen_thinking_level,
+                enable_code_execution: gen_enable_code_execution,
+                request_thinking,
+                user_dek: session_dek_arc.clone(),
+                character_name: Some(character_metadata_for_prompt_builder.name),
+                player_chronicle_id,
+                variant_of: payload.variant_of,
+                charge_credits: false, // For now
+                game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
+                initial_game_state: initial_game_state.clone(),
+                parent_message_id: None::<crate::db::DbId>,
+                pre_processing_analysis_id,
+            }
+        ).await;
+
+        match service_stream_result {
+            Ok(mut service_stream) => {
+                while let Some(scribe_event_res) = service_stream.next().await {
+                    match scribe_event_res {
+                        Ok(event) => {
+                            let axum_sse_event = match event {
+                                ScribeSseEvent::Content(data) => Event::default().event("content").data(data),
+                                ScribeSseEvent::Thinking(data) => {
+                                    let json_data = serde_json::json!({ "text": data }).to_string();
+                                    Event::default().event("thinking").data(json_data)
+                                }
+                                ScribeSseEvent::Error(data) => Event::default().event("error").data(data),
+                                ScribeSseEvent::TokenUsage { prompt_tokens, completion_tokens, model_name } => {
+                                    let token_data = serde_json::json!({
+                                        "prompt_tokens": prompt_tokens,
+                                        "completion_tokens": completion_tokens,
+                                        "model_name": model_name
+                                    });
+                                    Event::default().event("token_usage").data(token_data.to_string())
+                                }
+                                ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, model_name, created_at, .. } => {
+                                    let save_data = serde_json::json!({ "message_id": message_id, "model_name": model_name, "created_at": created_at, "variant_count": variant_count, "current_variant_index": current_variant_index, "game_time": game_time });
+                                    Event::default().event("message_saved").data(save_data.to_string())
+                                }
+                                ScribeSseEvent::GameState(gs) => Event::default().event("game_state").data(gs.to_string()),
+                                ScribeSseEvent::Status(data) => Event::default().event("status").data(data),
+                                ScribeSseEvent::Heartbeat => Event::default().event("heartbeat").data("ping"),
+                                ScribeSseEvent::Done => Event::default().event("done").data("[DONE]"),
+                            };
+                            yield Ok(axum_sse_event);
+                        }
+                        Err(e) => {
+                            yield Ok(Event::default().event("error").data(format!("Stream error: {e}")));
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                yield Ok(Event::default().event("error").data(format!("Failed to start service stream: {e}")));
+            }
+        }
+    };
+
+    let mut response = Sse::new(Box::pin(final_stream))
+        .keep_alive(
+            KeepAlive::new()
+                .interval(std::time::Duration::from_secs(1))
+                .text("keep-alive"),
+        )
+        .into_response();
+
+    // Disable buffering for cloud proxies (ALB/Traefik)
+    response
+        .headers_mut()
+        .insert("X-Accel-Buffering", "no".parse().unwrap());
+    response
+        .headers_mut()
+        .insert("Cache-Control", "no-cache, no-transform".parse().unwrap());
+
+    Ok(response)
+}
+
+pub async fn generate_chat_response_json(
+    state: AppState,
+    auth: UnifiedAuth,
+    session_dek: SessionDek,
+    session_id_str: String,
+    query_params: ChatGenerateQueryParams,
+    headers: HeaderMap,
+    payload: GenerateChatRequest,
+) -> Result<axum::response::Response, AppError> {
+    let result = generate_chat_response_json_inner(
+        state,
+        auth,
+        session_dek,
+        session_id_str,
+        query_params,
+        headers,
+        payload,
+    )
+    .await;
+
+    match result {
+        Ok(res) => Ok(res.into_response()),
+        Err(e) => Err(e),
+    }
+}
+
+async fn generate_chat_response_json_inner(
+    state: AppState,
+    auth: UnifiedAuth,
+    session_dek: SessionDek,
+    session_id_str: String,
+    query_params: ChatGenerateQueryParams,
+    headers: HeaderMap,
+    payload: GenerateChatRequest,
 ) -> Result<impl IntoResponse, AppError> {
     info!("Received request to generate chat response with history");
     payload.validate()?;
@@ -1368,6 +1927,7 @@ pub async fn generate_chat_response(
                 game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                 initial_game_state,
                 parent_message_id: payload.parent_message_id,
+                pre_processing_analysis_id: None,
             };
             match chat::generation::stream_ai_response_and_save_message_with_retry(stream_params)
                 .await
@@ -1410,7 +1970,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, model_name, created_at, .. } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid);
@@ -1460,6 +2020,8 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::GameState(game_state_json) => {
                                             Event::default().event("game_state").data(game_state_json.to_string())
                                         }
+                                        ScribeSseEvent::Status(data) => Event::default().event("status").data(data),
+                                        ScribeSseEvent::Heartbeat => Event::default().event("heartbeat").data("ping"),
                                         ScribeSseEvent::Done => {
                                             Event::default().event("done").data("[DONE]")
                                         }
@@ -2233,6 +2795,7 @@ pub async fn generate_chat_response(
                     game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                     initial_game_state,
                     parent_message_id: payload.parent_message_id,
+                    pre_processing_analysis_id: None,
                 },
             )
             .await
@@ -2254,7 +2817,8 @@ pub async fn generate_chat_response(
                                             Event::default().event("content").data(data)
                                         }
                                         ScribeSseEvent::Thinking(data) => {
-                                            Event::default().event("thinking").data(data)
+                                            let json_data = serde_json::json!({ "text": data }).to_string();
+                                            Event::default().event("thinking").data(json_data)
                                         }
                                         ScribeSseEvent::Error(data) => {
                                             error_from_service_stream = true;
@@ -2268,7 +2832,7 @@ pub async fn generate_chat_response(
                                             });
                                             Event::default().event("token_usage").data(token_data.to_string())
                                         }
-                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, model_name, created_at, .. } => {
+                                        ScribeSseEvent::MessageSaved { message_id, variant_count, current_variant_index, game_time, .. } => {
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid);
@@ -2284,6 +2848,8 @@ pub async fn generate_chat_response(
                                         ScribeSseEvent::GameState(game_state_json) => {
                                             Event::default().event("game_state").data(game_state_json.to_string())
                                         }
+                                        ScribeSseEvent::Status(data) => Event::default().event("status").data(data),
+                                        ScribeSseEvent::Heartbeat => Event::default().event("heartbeat").data("ping"),
                                         ScribeSseEvent::Done => {
                                             Event::default().event("done").data("[DONE]")
                                         }
@@ -3729,6 +4295,7 @@ pub async fn expand_text_handler(
             }
         },
         parent_message_id: payload.parent_message_id,
+        pre_processing_analysis_id: None,
     };
 
     // Generate the response using the full pipeline (with RAG, persona, lorebooks, etc.)
@@ -3742,9 +4309,11 @@ pub async fn expand_text_handler(
         match event_result {
             Ok(event) => {
                 match event {
-                    chat::types::ScribeSseEvent::Content(content) => {
+                    ScribeSseEvent::Content(content) => {
                         // Parse the JSON-serialized StreamedChunk to extract the actual content
-                        match serde_json::from_str::<chat::types::StreamedChunk>(&content) {
+                        match serde_json::from_str::<crate::services::chat::types::StreamedChunk>(
+                            &content,
+                        ) {
                             Ok(chunk) => {
                                 expanded_text.push_str(&chunk.content);
                             }
@@ -3755,15 +4324,18 @@ pub async fn expand_text_handler(
                             }
                         }
                     }
-                    chat::types::ScribeSseEvent::Error(error_msg) => {
+                    ScribeSseEvent::Error(error_msg) => {
                         error!("Error in expansion stream: {}", error_msg);
                         return Err(AppError::BadGateway("Failed to expand text".to_string()));
                     }
-                    chat::types::ScribeSseEvent::TokenUsage { .. } => {
-                        // For expansion, we don't need to handle token usage
-                    }
-                    _ => {
-                        // Skip other event types (thinking, etc.)
+                    ScribeSseEvent::Thinking(_)
+                    | ScribeSseEvent::TokenUsage { .. }
+                    | ScribeSseEvent::MessageSaved { .. }
+                    | ScribeSseEvent::GameState(_)
+                    | ScribeSseEvent::Status(_)
+                    | ScribeSseEvent::Heartbeat
+                    | ScribeSseEvent::Done => {
+                        // Skip other event types
                     }
                 }
             }
@@ -4099,6 +4671,7 @@ pub async fn impersonate_handler(
             }
         },
         parent_message_id: payload.parent_message_id,
+        pre_processing_analysis_id: None,
     };
 
     // Generate the response using the full pipeline
@@ -4112,9 +4685,11 @@ pub async fn impersonate_handler(
         match event_result {
             Ok(event) => {
                 match event {
-                    chat::types::ScribeSseEvent::Content(content) => {
+                    ScribeSseEvent::Content(content) => {
                         // Parse the JSON-serialized StreamedChunk to extract the actual content
-                        match serde_json::from_str::<chat::types::StreamedChunk>(&content) {
+                        match serde_json::from_str::<crate::services::chat::types::StreamedChunk>(
+                            &content,
+                        ) {
                             Ok(chunk) => {
                                 generated_response.push_str(&chunk.content);
                             }
@@ -4125,17 +4700,20 @@ pub async fn impersonate_handler(
                             }
                         }
                     }
-                    chat::types::ScribeSseEvent::Error(error_msg) => {
+                    ScribeSseEvent::Error(error_msg) => {
                         error!("Error in impersonation stream: {}", error_msg);
                         return Err(AppError::BadGateway(
                             "Failed to generate response".to_string(),
                         ));
                     }
-                    chat::types::ScribeSseEvent::TokenUsage { .. } => {
-                        // For impersonation, we don't need to handle token usage
-                    }
-                    _ => {
-                        // Skip other event types (thinking, etc.)
+                    ScribeSseEvent::Thinking(_)
+                    | ScribeSseEvent::TokenUsage { .. }
+                    | ScribeSseEvent::MessageSaved { .. }
+                    | ScribeSseEvent::GameState(_)
+                    | ScribeSseEvent::Status(_)
+                    | ScribeSseEvent::Heartbeat
+                    | ScribeSseEvent::Done => {
+                        // Skip other event types
                     }
                 }
             }

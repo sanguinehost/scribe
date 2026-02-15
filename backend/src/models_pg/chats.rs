@@ -2792,7 +2792,7 @@ impl DbInsertableChatMessage {
             raw_prompt_nonce: None,
             status: MessageStatus::Completed.to_string(),
             error_message: None,
-            variant_count: 0,
+            variant_count: 1, // Default to 1 (the original version is variant 0)
             current_variant_index: 0,
             credits_charged: 0,
             credits_cost: crate::db::DbDecimal::from(0),

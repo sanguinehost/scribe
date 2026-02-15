@@ -46,7 +46,7 @@ COPY backend/config ./backend/config
 # Build the application with optional features
 RUN if [ -n "$FEATURES" ]; then \
     echo "Building with features: $FEATURES" && \
-    cargo build -j 2 --release --bin scribe-backend --features "$FEATURES"; \
+    cargo build -j 2 --release --no-default-features --bin scribe-backend --features "$FEATURES"; \
     else \
     echo "Building with default features" && \
     cargo build -j 2 --release --bin scribe-backend; \

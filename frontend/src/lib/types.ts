@@ -39,6 +39,7 @@ export interface Message {
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
 	game_state?: GameState | null; // Game state associated with this message variant
 	reasoning_content?: string | null; // Reasoning/thoughts from the model
+	reasoningContent?: string | null; // Alias for UI consistency (camelCase)
 }
 
 // Message variant response type
@@ -688,6 +689,7 @@ export interface ScribeChatMessage {
 	variants?: MessageVariantResponse[] | null; // Array of variants for this message
 	game_state?: GameState | null; // Game state associated with this message variant
 	reasoning_content?: string | null; // Reasoning/thoughts from the model
+	reasoningContent?: string | null; // Alias for UI consistency (camelCase)
 	// UI state
 	isRegenerating?: boolean; // Currently regenerating this message (shows loading indicator)
 	shouldAnimate?: boolean; // True only for new streaming messages, false for historical messages

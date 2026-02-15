@@ -452,6 +452,7 @@ struct ChatSessionInsertParams {
     default_history_management_limit: i32,
     player_chronicle_id: Option<crate::db::DbId>,
     prompt_template_id: String,
+    thinking_level: Option<String>,
 }
 
 /// Inserts the chat session into the database
@@ -478,6 +479,7 @@ fn insert_chat_session(
                 chat_sessions::history_management_limit.eq(params.default_history_management_limit),
                 chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
                 chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+                chat_sessions::thinking_level.eq(params.thinking_level),
             ))
             .returning(Chat::as_returning())
             .get_result(transaction_conn)
@@ -518,6 +520,7 @@ fn insert_chat_session(
                         .eq(params.default_history_management_limit),
                     chat_sessions::player_chronicle_id.eq(params.player_chronicle_id),
                     chat_sessions::prompt_template_id.eq(params.prompt_template_id),
+                    chat_sessions::thinking_level.eq(params.thinking_level),
                     // SQLite doesn't apply DEFAULT values with explicit column INSERT - provide values explicitly
                     #[cfg(feature = "postgres-backend")]
                     chat_sessions::total_prompt_tokens.eq(0i64),
@@ -813,6 +816,7 @@ fn create_session_in_transaction(
     default_model_name: String,
     default_history_management_strategy: String,
     default_history_management_limit: i32,
+    thinking_level: Option<String>,
 ) -> SessionCreationResult {
     let effective_active_persona_id =
         determine_effective_persona_id(user_id, active_custom_persona_id, transaction_conn);
@@ -929,6 +933,7 @@ fn create_session_in_transaction(
             default_history_management_limit,
             player_chronicle_id: chronicle_id,
             prompt_template_id: "neutral_roleplay".to_string(), // Default template
+            thinking_level,
         },
         transaction_conn,
     )?;
@@ -1191,6 +1196,7 @@ pub async fn create_session_and_maybe_first_message(
                     default_model_name,
                     default_history_management_strategy,
                     default_history_management_limit,
+                    user_settings.default_thinking_level.clone(),
                 )
             })
         })

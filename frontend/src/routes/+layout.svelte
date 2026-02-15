@@ -22,6 +22,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types';
 	import ReAuthModal from '$lib/components/ReAuthModal.svelte';
+	import { isReAuthInProgress } from '$lib/stores/authState';
 
 	let { children } = $props<{ data?: { user?: User | null }; children: unknown }>();
 
@@ -541,6 +542,15 @@
 				immediate?: boolean;
 				endpoint?: string;
 			}>;
+
+			// Check global auth state to prevent duplicate modals
+			// If re-auth is already in progress, ignore this event
+			if (isReAuthInProgress()) {
+				console.log(
+					'[Layout] DEK missing detected but re-auth already in progress, ignoring duplicate event'
+				);
+				return;
+			}
 
 			// Prevent showing modal multiple times (can happen if multiple API calls fail simultaneously)
 			if (reAuthModalShownOnce && showReAuthModal) {

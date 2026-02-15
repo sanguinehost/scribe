@@ -3,14 +3,15 @@ use crate::errors::AppError;
 use crate::privacy::logging::loggable_user_id;
 
 use axum::{
-    extract::FromRequestParts,
+    extract::{FromRef, FromRequestParts},
     http::{header::HeaderName, request::Parts},
 };
 use axum_login::AuthSession;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use secrecy::{ExposeSecret, SecretBox};
 use std::fmt;
-use tracing::{error, info, warn};
+use tower_sessions::Session;
+use tracing::{debug, error, info, warn};
 
 /// Represents the session's Data Encryption Key (DEK).
 /// This struct is intended to be used as an Axum request extractor.
@@ -52,6 +53,7 @@ impl fmt::Debug for SessionDek {
 
 impl<S> FromRequestParts<S> for SessionDek
 where
+    crate::state::AppState: FromRef<S>,
     S: Send + Sync,
 {
     type Rejection = AppError;
@@ -108,7 +110,7 @@ where
             })?;
 
         // Get the authenticated user
-        let user = auth_session.user.ok_or_else(|| {
+        let user = auth_session.user.as_ref().ok_or_else(|| {
             warn!("SessionDek: No authenticated user in AuthSession");
             AppError::Unauthorized("No authenticated user found".to_string())
         })?;
@@ -121,25 +123,77 @@ where
 
         // The AuthBackend's get_user method populates the DEK from cache
         // So if the user has a DEK, it should be present in the user object
-        user.dek.map_or_else(
-            || {
-                warn!(
-                    user_id = %loggable_user_id(user_id),
-                    "SessionDek extractor: DEK not found in user session object. User may need to log in again."
-                );
-                Err(AppError::DekMissing)
-            },
-            |dek_wrapper| {
-                info!(
-                    user_id = %loggable_user_id(user_id),
-                    "SessionDek extractor: Successfully retrieved DEK from user session object"
-                );
+        if let Some(dek_wrapper) = &user.dek {
+            info!(
+                user_id = %loggable_user_id(user_id),
+                "SessionDek extractor: Successfully retrieved DEK from user session object (cache hit)"
+            );
 
-                // Convert SerializableSecretDek to SessionDek
-                let dek_bytes_vec = dek_wrapper.expose_secret_bytes().to_vec();
-                Ok(Self(SecretBox::new(Box::new(dek_bytes_vec))))
-            },
-        )
+            // Convert SerializableSecretDek to SessionDek
+            let dek_bytes_vec = dek_wrapper.expose_secret_bytes().to_vec();
+            return Ok(Self(SecretBox::new(Box::new(dek_bytes_vec))));
+        }
+
+        // Fallback: If DEK is not in the user object (cache miss on cold instance),
+        // try to pull it directly from the session
+        info!(
+            user_id = %loggable_user_id(user_id),
+            "SessionDek extractor: DEK not in user object, attempting fallback to session store"
+        );
+
+        if let Ok(session) = Session::from_request_parts(parts, state).await {
+            match session
+                .get::<crate::models::users::SerializableSecretDek>("dek")
+                .await
+            {
+                Ok(Some(dek_wrapper)) => {
+                    info!(
+                        user_id = %loggable_user_id(user_id),
+                        "SessionDek extractor: ✓ DEK retrieved from secure session (cache miss recovery)"
+                    );
+
+                    // Populate the in-memory cache to benefit subsequent requests to this instance
+                    let app_state = crate::state::AppState::from_ref(state);
+                    let mut cache = app_state.auth_backend.dek_cache.write().await;
+                    cache.insert(user.id, dek_wrapper.clone());
+
+                    // CRITICAL: We also need to update the User object in auth_session's extension
+                    // so that subsequent extractors don't have to hit the session store again.
+                    let mut auth_session_update = auth_session.clone();
+                    if let Some(ref mut user_ref) = auth_session_update.user {
+                        user_ref.dek = Some(dek_wrapper.clone());
+                        parts.extensions.insert(auth_session_update);
+                    }
+
+                    debug!(
+                        user_id = %loggable_user_id(user_id),
+                        "In-memory DEK cache populated and AuthSession extension updated from SessionDek"
+                    );
+
+                    let dek_bytes_vec = dek_wrapper.expose_secret_bytes().to_vec();
+                    return Ok(Self(SecretBox::new(Box::new(dek_bytes_vec))));
+                }
+                Ok(None) => {
+                    warn!(
+                        user_id = %loggable_user_id(user_id),
+                        "SessionDek extractor: DEK not found in session either"
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        user_id = %loggable_user_id(user_id),
+                        error = ?e,
+                        "SessionDek extractor: Failed to load DEK from session"
+                    );
+                }
+            }
+        }
+
+        warn!(
+            user_id = %loggable_user_id(user_id),
+            "SessionDek extractor: DEK recovery failed. User may need to log in again."
+        );
+        Err(AppError::DekMissing)
     }
 }
 

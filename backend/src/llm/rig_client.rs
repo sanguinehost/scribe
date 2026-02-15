@@ -441,12 +441,12 @@ impl RigClient {
                                         yield RigStreamEvent::Content(t.text);
                                     }
                                     rig::streaming::StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
-                                        tracing::info!("RigClient: Received ReasoningDelta (len: {})", reasoning.len());
+                                        tracing::info!(len = reasoning.len(), "RigClient: Received ReasoningDelta");
                                         yield RigStreamEvent::Reasoning(reasoning);
                                     }
                                     rig::streaming::StreamedAssistantContent::Reasoning(r) => {
                                         let reasoning_text = r.reasoning.join("");
-                                        tracing::info!("RigClient: Received Reasoning (len: {})", reasoning_text.len());
+                                        tracing::info!(len = reasoning_text.len(), "RigClient: Received full Reasoning chunk");
                                         yield RigStreamEvent::Reasoning(reasoning_text);
                                     }
                                     rig::streaming::StreamedAssistantContent::ToolCall { tool_call, .. } => {

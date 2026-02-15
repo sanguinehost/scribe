@@ -385,11 +385,11 @@ DELETE FROM users WHERE email = 'target@email.com';
 ### Deployment Process
 
 #### 1. Backend Deployment
-The backend is deployed via the `deploy-backend.sh` script, which handles building the Docker image, pushing to ECR, and updating the ECS service.
+The backend is deployed via the `scripts/deploy/aws.sh` script, which handles building the Docker image, pushing to ECR, and updating the ECS service.
 
 ```bash
-# Deploy to Staging
-./scripts/deploy-backend.sh staging
+# Deploy backend to Staging
+./scripts/deploy/aws.sh backend
 ```
 
 **Key Steps Performed:**
@@ -397,15 +397,20 @@ The backend is deployed via the `deploy-backend.sh` script, which handles buildi
 2.  Pushes image to ECR (`058264339990.dkr.ecr.ap-southeast-4.amazonaws.com/staging-scribe-backend`).
 3.  Forces a new deployment in ECS, pulling the latest image.
 
-#### 2. Frontend Deployment (Vercel)
-Frontend updates are automatically deployed via Vercel git integration on push to `main` (prod) or `develop` (staging).
-Manual deployment via CLI:
+#### 2. Frontend Deployment (ECS)
+Frontend is deployed to AWS ECS alongside the backend using the consolidated deployment script.
 
 ```bash
-cd frontend
-vercel deploy --prod # for production
-vercel deploy        # for preview/staging
+# Deploy frontend to Staging
+./scripts/deploy/aws.sh frontend
 ```
+
+This script will:
+- Build the Docker image for the frontend
+- Push to ECR
+- Update the ECS service
+
+See `docs/frontend/FRONTEND_DEPLOYMENT.md` for detailed instructions.
 
 #### 3. Infrastructure Updates (Terraform/Terragrunt)
 Infrastructure changes (e.g., env vars, IAM roles) are managed via Terragrunt.

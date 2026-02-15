@@ -6,7 +6,8 @@ import type {
 	StreamingMessage,
 	ConnectionStatus,
 	StreamingError,
-	StreamingConfig
+	StreamingConfig,
+	IStreamingService
 } from './StreamingService.svelte.ts';
 
 // Structured chunk format matching backend
@@ -30,6 +31,7 @@ type ChatStreamEvent =
 			data: { messageId: string; variantCount: number; currentVariantIndex: number };
 	  }
 	| { event: 'gameStateUpdate'; data: { gameState: Record<string, unknown> } }
+	| { event: 'status'; data: { message: string } }
 	| { event: 'done' };
 
 const DEFAULT_CONFIG: StreamingConfig = {
@@ -48,10 +50,11 @@ const DEFAULT_CONFIG: StreamingConfig = {
  * 3. Events sent through channel to this service
  * 4. Same buffering/chunking logic as web StreamingService
  */
-class DesktopStreamingService {
+class DesktopStreamingService implements IStreamingService {
 	// Reactive state using $state rune
 	public messages = $state<StreamingMessage[]>([]);
 	public connectionStatus = $state<ConnectionStatus>('idle');
+	public currentStatus = $state<string | null>(null);
 	public currentError = $state<StreamingError | null>(null);
 	public isTyping = $state(false);
 	public latestGameState = $state<Record<string, unknown> | null>(null);
@@ -99,6 +102,7 @@ class DesktopStreamingService {
 		return {
 			messages: this.messages,
 			connectionStatus: this.connectionStatus,
+			currentStatus: this.currentStatus,
 			currentError: this.currentError,
 			isTyping: this.isTyping
 		};
@@ -107,6 +111,10 @@ class DesktopStreamingService {
 	/**
 	 * Connect and start streaming using Tauri Channels
 	 */
+	public setMessages(messages: StreamingMessage[]): void {
+		this.messages = messages;
+	}
+
 	public async connect(params: {
 		chatId: string;
 		userMessage: string;
@@ -131,6 +139,7 @@ class DesktopStreamingService {
 		this.currentChatId = params.chatId;
 		this.retryCount = 0;
 		this.connectionStatus = 'connecting';
+		this.currentStatus = null;
 		this.currentError = null;
 
 		// Reset connection close state
@@ -189,11 +198,14 @@ class DesktopStreamingService {
 				...existingMessage,
 				content: '',
 				displayedContent: '',
-				isAnimating: false,
+				isAnimating: true, // Mark as animating immediately
 				isRegenerating: true,
+				shouldAnimate: true, // EXPLICITLY reset to true for regeneration/variants
 				error: undefined,
 				contentVersion: 0, // Initialize reactivity signal
-				retryable: false
+				retryable: false,
+				reasoningContent: undefined, // Clear stale reasoning
+				isThinking: true // Usually starts with thinking
 			};
 			this.messages = [...this.messages];
 
@@ -459,6 +471,9 @@ class DesktopStreamingService {
 			case 'gameStateUpdate':
 				this.handleGameStateUpdateEvent(event.data.gameState);
 				break;
+			case 'status':
+				this.currentStatus = event.data.message;
+				break;
 
 			default:
 				logger.warn('desktop-streaming', 'Unknown event type', {
@@ -550,7 +565,8 @@ class DesktopStreamingService {
 					content: buffer.content,
 					displayedContent: buffer.content,
 					contentVersion: (msg.contentVersion || 0) + 1,
-					isAnimating: false,
+					isAnimating: true, // Keep true while streaming
+					shouldAnimate: true, // Keep true while streaming
 					isRegenerating: false,
 					isThinking: false
 				};

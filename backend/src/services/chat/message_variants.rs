@@ -413,6 +413,9 @@ pub async fn get_variant_count(
             // .filter(message_variants::user_id.eq(user_id))
             .count()
             .get_result::<i64>(conn)
+            .inspect(|c| {
+                tracing::info!(message_id = %message_id, count = c, "Checked variant count");
+            })
             .map_err(|e| {
                 AppError::DatabaseQueryError(format!("Failed to count message variants: {e}"))
             })
@@ -492,10 +495,17 @@ pub async fn ensure_original_variant_exists(
     original_content: &str,
     user_id: crate::db::DbId,
     dek: &SecretBox<Vec<u8>>,
+    reasoning: Option<&str>,
 ) -> Result<Option<crate::db::DbId>, AppError> {
     let variant_count = get_variant_count(state.clone(), message_id, user_id).await?;
 
     if variant_count == 0 {
+        tracing::info!(
+            message_id = %message_id,
+            has_reasoning = reasoning.is_some(),
+            reasoning_len = reasoning.map(|r| r.len()).unwrap_or(0),
+            "Creating original variant (index 0)"
+        );
         // Create original variant with encryption outside the closure
         let original_variant = NewMessageVariant::new(
             message_id,
@@ -505,7 +515,7 @@ pub async fn ensure_original_variant_exists(
             dek,
             None, // No raw_prompt for old variants
             None, // No game state for old variants
-            None, // No reasoning for old variants
+            reasoning,
         )?;
 
         #[cfg(feature = "postgres-backend")]
@@ -536,6 +546,11 @@ pub async fn ensure_original_variant_exists(
 
         Ok(Some(variant_id))
     } else {
+        tracing::debug!(
+            message_id = %message_id,
+            variant_count,
+            "Original variant already exists, skipping creation"
+        );
         Ok(None)
     }
 }

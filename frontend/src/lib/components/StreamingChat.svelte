@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Effects are now used inline with $effect syntax
 	import { toast } from 'svelte-sonner';
-	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
+	import { activeStreamingService as streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import TypewriterMessage from './TypewriterMessage.svelte';
 	import ChatHeader from './chat-header.svelte';
@@ -66,7 +66,7 @@
 				created_at: new Date().toISOString()
 			};
 
-			streamingService.messages = [firstMessage];
+			streamingService.setMessages([firstMessage]);
 			isInitialized = true;
 		}
 	});
@@ -272,9 +272,16 @@
 
 									<!-- Reasoning/Thinking Content -->
 									{#if message.reasoningContent}
-										<div class="mb-3 rounded-md border border-border/50 bg-background/50">
-											<details class="group">
-												<summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+										<div class="mb-3 overflow-hidden rounded-md border border-border/50 bg-background/50">
+											<div class="group/reasoning">
+												<button
+													type="button"
+													class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+													onclick={(e) => {
+														const target = e.currentTarget.nextElementSibling;
+														if (target) target.classList.toggle('hidden');
+													}}
+												>
 													<div class="flex items-center gap-2">
 														{#if message.isThinking}
 															<span class="relative flex h-2 w-2">
@@ -283,19 +290,22 @@
 															</span>
 															<span>Thinking...</span>
 														{:else}
-															<svg class="h-3 w-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+															<svg class="h-3 w-3 transition-transform" class:rotate-90={!message.isThinking} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
 															</svg>
 															<span>Thought Process</span>
 														{/if}
 													</div>
-												</summary>
-												<div class="border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+												</button>
+												<div
+													class="max-h-60 overflow-y-auto border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground"
+													class:hidden={!message.isThinking}
+												>
 													<div class="prose prose-sm prose-invert max-w-none dark:prose-invert">
 														<p class="whitespace-pre-wrap text-xs leading-relaxed">{message.reasoningContent}</p>
 													</div>
 												</div>
-											</details>
+											</div>
 										</div>
 									{/if}
 
@@ -314,7 +324,7 @@
 												class="h-2 w-2 animate-pulse rounded-full bg-muted-foreground"
 												style="animation-delay: 0.4s"
 											></div>
-											<span class="text-sm text-muted-foreground">Thinking...</span>
+											<span class="text-sm text-muted-foreground">{streamingServiceRef.currentStatus || 'Thinking...'}</span>
 										</div>
 									{/if}
 
@@ -405,7 +415,7 @@
 								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
 							></path>
 						</svg>
-						<span>Connecting...</span>
+						<span>{streamingServiceRef.currentStatus || 'Connecting...'}</span>
 					</div>
 				</div>
 			{/if}

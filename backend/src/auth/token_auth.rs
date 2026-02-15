@@ -177,36 +177,40 @@ where
             })?;
 
         // Attempt to load DEK from session if it's missing (cache miss on cold instance)
-        if let Some(user) = auth_session.user.as_mut() {
+        let mut recovered_dek = None;
+        if let Some(user) = auth_session.user.as_ref() {
             if user.dek.is_none() {
                 if let Ok(session) = Session::from_request_parts(parts, state).await {
-                    match session
+                    if let Ok(Some(dek)) = session
                         .get::<crate::models::users::SerializableSecretDek>("dek")
                         .await
                     {
-                        Ok(Some(dek)) => {
-                            info!(
-                                user_id = %crate::privacy::logging::loggable_user_id(user.id),
-                                "✓ DEK retrieved from secure session (cache miss recovery)"
-                            );
-                            user.dek = Some(dek);
-                        }
-                        Ok(None) => {
-                            debug!(
-                                user_id = %crate::privacy::logging::loggable_user_id(user.id),
-                                "No DEK found in session"
-                            );
-                        }
-                        Err(e) => {
-                            error!(
-                                user_id = %crate::privacy::logging::loggable_user_id(user.id),
-                                error = ?e,
-                                "Failed to load DEK from session"
-                            );
-                        }
+                        recovered_dek = Some(dek);
                     }
                 }
             }
+        }
+
+        if let Some(dek) = recovered_dek {
+            if let Some(user) = auth_session.user.as_mut() {
+                info!(
+                    user_id = %crate::privacy::logging::loggable_user_id(user.id),
+                    "✓ DEK retrieved from secure session (cache miss recovery)"
+                );
+                user.dek = Some(dek.clone());
+
+                // Populate the in-memory cache to benefit subsequent requests to this instance
+                let app_state = AppState::from_ref(state);
+                let mut cache = app_state.auth_backend.dek_cache.write().await;
+                cache.insert(user.id, dek);
+            }
+
+            // CRITICAL: Re-insert the modified auth_session into request extensions
+            // so that downstream extractors (SessionDek, etc.) can see the recovered DEK.
+            // This is done after the mutable borrow of user is finished.
+            parts.extensions.insert(auth_session.clone());
+
+            debug!("AuthSession extension updated from session fallback in UnifiedAuth");
         }
 
         Ok(UnifiedAuth {

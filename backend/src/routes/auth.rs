@@ -260,11 +260,11 @@ pub async fn register_handler(
 
 #[instrument(skip(auth_session, payload), err)]
 pub async fn login_handler(
-    State(state): State<AppState>, // Added AppState
+    State(state): State<AppState>,
     mut auth_session: CurrentAuthSession,
-    session: Session,                  // tower_sessions session, extracted directly
-    headers: axum::http::HeaderMap,    // For IP extraction
-    Json(payload): Json<LoginPayload>, // Use LoginPayload
+    session: Session,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<LoginPayload>,
 ) -> Result<Response, AppError> {
     // SECURITY MONITORING: Extract client IP for auth tracking
     let client_ip = extract_and_anonymize_ip(&headers);
@@ -278,30 +278,12 @@ pub async fn login_handler(
             let user_id = user.id;
             info!(%user_id, "Authentication successful via AuthBackend.");
 
-            // SECURITY: The DEK is cached in AuthBackend AND persisted in the secure session
-            // for multi-instance stability. It is encrypted with the session private key.
+            // Log DEK availability from authenticate
+            let dek_available = user.dek.is_some();
+            info!(%user_id, dek_available = %dek_available, "User DEK status after authenticate");
 
-            // Serialize the user object to see what's going into the session
-            match serde_json::to_string(&user) {
-                Ok(user_json) => {
-                    // Note: user_json might still contain PII if User's Serialize impl includes it.
-                    // This change only removes the direct `username` field from this specific log line.
-                    debug!(%user_id, user_json = %user_json, "User object serialized before login");
-                }
-                Err(e) => {
-                    error!(%user_id, error = ?e, "Failed to serialize user for debugging");
-                }
-            }
-
-            // Log the session ID BEFORE auth_session.login
-            debug!(session_id = ?session.id(), user_id = %user_id, "Session ID BEFORE axum-login.login() call");
-
-            // Debugging: User returned from authenticate should have dek populated
-            if user.dek.is_none() {
-                warn!(%user_id, "DEK was not available/decryptable during login - re-auth might be needed later");
-            } else {
-                debug!(%user_id, "User.dek is present after authenticate");
-            }
+            // Log the session ID BEFORE any session operations
+            info!(session_id = ?session.id(), user_id = %user_id, "Session ID BEFORE logout/login cycle");
 
             // Invalidate the session before logging in to prevent session fixation
             if let Err(e) = auth_session.logout().await {
@@ -311,6 +293,8 @@ pub async fn login_handler(
                 )));
             }
 
+            info!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER logout (flush)");
+
             // Now we need to explicitly log the user in
             if let Err(e) = auth_session.login(&user).await {
                 error!(%user_id, error = ?e, "Failed to log in user after successful authentication");
@@ -319,13 +303,22 @@ pub async fn login_handler(
                 ));
             }
 
+            info!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER login (cycle_id)");
+
             // Persist the DEK in the session for multi-instance stability
+            // NOTE: Session uses Arc<Inner> internally, so `session` (extracted separately)
+            // shares state with auth_session's internal session. Both track ID rotation.
             if let Some(ref dek) = user.dek {
-                if let Err(e) = session.insert("dek", dek).await {
-                    error!(%user_id, error = ?e, "Failed to persist DEK in session tracker");
-                } else {
-                    debug!(%user_id, "DEK persisted in secure session");
+                match session.insert("dek", dek).await {
+                    Ok(()) => {
+                        info!(%user_id, session_id = ?session.id(), "DEK inserted into session successfully");
+                    }
+                    Err(e) => {
+                        error!(%user_id, error = ?e, "CRITICAL: Failed to insert DEK into session");
+                    }
                 }
+            } else {
+                error!(%user_id, "CRITICAL: No DEK available to persist in session! User will get DEK_MISSING on other instances.");
             }
 
             info!(user_id = %user_id, "Login successful via authenticate");
@@ -334,25 +327,29 @@ pub async fn login_handler(
             let user_hash = loggable_user_id(user_id);
             SECURITY_METRICS.record_auth_success(&user_hash.to_string(), &client_ip);
 
-            // Log the session ID AFTER auth_session.login
-            debug!(session_id = ?session.id(), user_id = %user_id, "Session ID AFTER axum-login.login() call");
-
-            // Rotate session ID to prevent session fixation attacks
-            if let Err(e) = session.cycle_id().await {
-                error!(%user_id, error = ?e, "Failed to rotate session ID after login: {:?}", e);
-                return Err(AppError::InternalServerErrorGeneric(format!(
-                    "Failed to rotate session ID after login: {e}"
-                )));
-            }
-            debug!(session_id = ?session.id(), user_id = %user_id, "Session ID rotated successfully after login");
-
-            // Try to explicitly save the session (this might be redundant, but useful for debugging)
+            // Explicitly save the session to ensure the DEK is persisted to the store
             match session.save().await {
                 Ok(()) => {
-                    debug!(session_id = ?session.id(), user_id = %user_id, "Explicitly called session.save() successfully");
+                    info!(session_id = ?session.id(), user_id = %user_id, "Session saved to store successfully");
                 }
                 Err(e) => {
-                    error!(session_id = ?session.id(), user_id = %user_id, error = ?e, "Explicit session.save() call failed: {:?}", e);
+                    error!(session_id = ?session.id(), user_id = %user_id, error = ?e, "CRITICAL: Session save failed: {:?}", e);
+                }
+            }
+
+            // DIAGNOSTIC: Verify DEK is actually in the session after save
+            match session
+                .get::<crate::models::users::SerializableSecretDek>("dek")
+                .await
+            {
+                Ok(Some(_)) => {
+                    info!(%user_id, session_id = ?session.id(), "VERIFIED: DEK confirmed present in session after save");
+                }
+                Ok(None) => {
+                    error!(%user_id, session_id = ?session.id(), "CRITICAL: DEK NOT found in session after save! Session data may have been lost.");
+                }
+                Err(e) => {
+                    error!(%user_id, session_id = ?session.id(), error = ?e, "CRITICAL: Failed to read-back DEK from session after save");
                 }
             }
 
@@ -375,14 +372,9 @@ pub async fn login_handler(
             let session_id_str = session.id().map_or_else(
                 || {
                     error!(user_id = %loggable_user_id(user.id), "Failed to get session ID after login for response");
-                    // Fallback or handle error appropriately, though this should ideally not happen
-                    // For now, let's use a placeholder or consider this a critical error.
-                    // However, axum-login should have ensured a session exists.
-                    // If this fails, the cookie setting itself might be problematic.
-                    // For now, we'll proceed, but this indicates an issue if it occurs.
                     "error_retrieving_session_id".to_string()
                 },
-                |id| id.0.to_string(), // tower_sessions::SessionId is OwnedSessionId(SessionId(i128))
+                |id| id.0.to_string(),
             );
 
             let expires_at_utc = offset_to_utc(Some(session.expiry_date())).ok_or_else(|| {

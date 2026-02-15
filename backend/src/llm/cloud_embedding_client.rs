@@ -91,8 +91,8 @@ struct GeminiApiError {
 }
 
 // --- Client Implementation (To be added below) ---
-const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Use this as the sole model
-                                                                   // const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
+const DEFAULT_EMBEDDING_MODEL: &str = "models/gemini-embedding-001"; // Use this as the sole model
+                                                                     // const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
 const MAX_RETRIES: u32 = 2; // Max retries for the single model
                             // const MAX_PRIMARY_MODEL_RETRIES_BEFORE_FALLBACK: u32 = 1; // REMOVED
                             // const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED

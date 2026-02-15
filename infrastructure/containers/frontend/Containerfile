@@ -16,7 +16,11 @@ RUN pnpm install --frozen-lockfile
 # Copy source code
 COPY frontend/ ./
 
-# Build the application
+# Build arguments for environment-specific configuration
+ARG VITE_PUBLIC_API_URL=https://api.staging.scribe.sanguinehost.com
+ENV VITE_PUBLIC_API_URL=$VITE_PUBLIC_API_URL
+
+# Build application (PUBLIC_API_URL will be available to vite.config.ts via process.env)
 RUN pnpm build
 
 # Final stage
@@ -25,7 +29,7 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 # Copy build output from build stage
-# adapter-node by default puts things in the 'build' directory
+# adapter-node by default puts things in 'build' directory
 COPY --from=build /app/build ./build
 COPY --from=build /app/package.json ./package.json
 

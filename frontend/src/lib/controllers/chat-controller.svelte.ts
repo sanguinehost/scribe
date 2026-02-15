@@ -105,12 +105,13 @@ export class ChatController {
 		return this.getDisplayMessages();
 	}
 
+	isAnimatingOrLoading = $derived(
+		this.activeStreamingService.connectionStatus === 'connecting' ||
+			this.activeStreamingService.connectionStatus === 'open'
+	);
+
 	get isLoading() {
-		return (
-			this.activeStreamingService.connectionStatus === 'connecting' ||
-			this.activeStreamingService.connectionStatus === 'open' ||
-			this.activeStreamingService.messages.some((msg) => msg.isAnimating === true)
-		);
+		return this.isAnimatingOrLoading;
 	}
 
 	getDisplayMessages() {
@@ -296,7 +297,9 @@ export class ChatController {
 						is_variant: rawMsg.is_variant,
 						parent_message_id: rawMsg.parent_message_id,
 						variants: rawMsg.variants,
-						game_state: rawMsg.game_state
+						game_state: rawMsg.game_state,
+						reasoning_content: rawMsg.reasoning_content,
+						reasoningContent: rawMsg.reasoning_content
 					})
 				);
 
@@ -325,7 +328,8 @@ export class ChatController {
 						parent_message_id: msg.parent_message_id,
 						variants: msg.variants,
 						contentVersion: 0,
-						game_state: msg.game_state as unknown as Record<string, unknown> | null
+						game_state: msg.game_state as unknown as Record<string, unknown> | null,
+						reasoningContent: msg.reasoningContent || msg.reasoning_content
 					})
 				);
 
@@ -485,7 +489,8 @@ export class ChatController {
 						parent_message_id: msg.parent_message_id,
 						variants: msg.variants,
 						contentVersion: 0, // Initialize for Svelte 5 reactivity
-						game_state: msg.game_state as unknown as Record<string, unknown> | null
+						game_state: msg.game_state as unknown as Record<string, unknown> | null,
+						reasoningContent: msg.reasoningContent || msg.reasoning_content
 					})
 				);
 

@@ -1,212 +1,300 @@
-# Frontend Deployment to Vercel
+# Frontend Deployment to AWS ECS
 
-This guide walks you through deploying the Sanguine Scribe frontend to Vercel.
+This guide walks you through deploying Sanguine Scribe frontend to AWS ECS using Docker containers.
+
+## Why ECS Instead of Vercel?
+
+We migrated from Vercel to AWS ECS for better integration with our infrastructure:
+- **Tailscale Integration**: ECS works seamlessly with our Tailscale network setup
+- **Unified Domain**: Frontend and backend share the same domain and load balancer
+- **Better Control**: Full control over the deployment environment
+- **Cost Efficiency**: No third-party platform fees
 
 ## Prerequisites
 
-1. **Backend Deployed**: Ensure your AWS backend is deployed and accessible
-2. **Vercel Account**: Sign up at [vercel.com](https://vercel.com)
-3. **Domain Configured**: Ensure your domain DNS is ready
+1. **Backend Deployed**: Ensure your AWS backend infrastructure is deployed
+2. **Docker Installed**: Docker or Podman for building images
+3. **AWS CLI**: Configured with appropriate permissions
 
-## Deployment Steps
+## Quick Start
 
-### 1. Install Vercel CLI (Optional)
-
-```bash
-npm i -g vercel
-```
-
-### 2. Prepare Environment Variables
-
-Create `.env.production` from the example:
+### Deploy to Staging
 
 ```bash
-cp .env.production.example .env.production
+./scripts/deploy-frontend.sh
 ```
 
-Edit `.env.production` with your backend URL:
+This script handles everything:
+1. Logs into Amazon ECR
+2. Builds the frontend Docker image using `infrastructure/containers/frontend/Containerfile`
+3. Pushes the image to ECR
+4. Updates the ECS service to deploy the new image
 
-```env
-# Your AWS ALB endpoint (after DNS is configured)
-PUBLIC_API_URL=https://staging.scribe.sanguinehost.com
+## Manual Deployment Steps
 
-# Or use the raw ALB DNS during initial setup
-# PUBLIC_API_URL=https://your-alb-dns-name.ap-southeast-4.elb.amazonaws.com
-```
+If you need more control or are troubleshooting, here are the manual steps:
 
-### 3. Deploy to Vercel
-
-#### Option A: Using Vercel CLI
+### 1. Build Frontend Image
 
 ```bash
-# From the frontend directory
-cd frontend
+cd /path/to/scribe
 
-# Login to Vercel
-vercel login
-
-# Build locally first
-pnpm build
-
-# Deploy with prebuilt flag (recommended for Node.js compatibility)
-vercel deploy --prebuilt --prod
+# Build with Podman (or Docker)
+podman build -f infrastructure/containers/frontend/Containerfile \
+  -t scribe-frontend:latest \
+  -t 058264339990.dkr.ecr.ap-southeast-4.amazonaws.com/staging-scribe-frontend:latest \
+  .
 ```
 
-**Note**: Due to Node.js version compatibility issues between local development environments and Vercel's build environment, it's recommended to build locally and deploy with the `--prebuilt` flag. This ensures consistent builds regardless of Node.js version differences.
+### 2. Push to ECR
 
-#### Option B: Using GitHub Integration
+```bash
+# Login to ECR (handled by script)
+aws ecr get-login-password --region ap-southeast-4 | \
+  podman login --username AWS --password-stdin \
+  058264339990.dkr.ecr.ap-southeast-4.amazonaws.com
 
-1. Push your code to GitHub
-2. Import project on [vercel.com](https://vercel.com/new)
-3. Configure:
-   - Framework Preset: `SvelteKit`
-   - Root Directory: `frontend`
-   - Build Command: `pnpm build` (auto-detected)
-   - Output Directory: `.vercel/output` (auto-detected)
-
-**Troubleshooting Build Issues**: If you encounter build failures on Vercel but the build works locally, try the CLI approach with `--prebuilt` flag instead.
-
-### 4. Configure Environment Variables in Vercel
-
-1. Go to your project settings on Vercel
-2. Navigate to "Environment Variables"
-3. Add your production variables:
-
-```
-PUBLIC_API_URL = https://staging.scribe.sanguinehost.com
-PUBLIC_APP_NAME = Sanguine Scribe
-PUBLIC_ENVIRONMENT = staging
+# Push image
+podman push 058264339990.dkr.ecr.ap-southeast-4.amazonaws.com/staging-scribe-frontend:latest
 ```
 
-### 5. Configure Custom Domain (Staging)
+### 3. Update ECS Service
 
-#### For `staging.scribe.sanguinehost.com`:
+```bash
+aws ecs update-service \
+  --cluster staging-scribe-cluster \
+  --service staging-scribe-frontend \
+  --force-new-deployment \
+  --region ap-southeast-4
+```
 
-1. In Vercel project settings, go to "Domains"
-2. Add `staging.scribe.sanguinehost.com`
-3. Configure DNS in Route 53:
-   - Add CNAME record: `staging.scribe` → `cname.vercel-dns.com`
-   - Or add A record to Vercel's IP addresses (provided by Vercel)
+## Architecture
 
-#### Alternative Production Domain:
+### Frontend Containerfile
 
-For production, you could use `scribe.sanguinehost.com` following the same process.
+The frontend is built as a multi-stage Docker image:
 
-### 6. Configure CORS on Backend
+**Stage 1: Build**
+- Base image: `node:22-alpine`
+- Installs pnpm
+- Copies `frontend/package.json` and `frontend/pnpm-lock.yaml`
+- Runs `pnpm install --frozen-lockfile`
+- Copies entire `frontend/` directory
+- Runs `pnpm build` to create production bundle
 
-**Critical Step**: After deploying to Vercel, you must update the backend CORS configuration to include your new Vercel domain.
+**Stage 2: Runtime**
+- Base image: `node:22-alpine`
+- Copies built files from stage 1
+- Sets environment variables:
+  - `NODE_ENV=production`
+  - `PORT=3000`
+- Exposes port 3000
+- Runs with `node build`
 
-1. **Note your Vercel domain** from the deployment output (e.g., `frontend-abc123-projects.vercel.app`)
+### Networking
 
-2. **Update backend CORS** in `backend/src/main.rs`:
-   ```rust
-   let cors = CorsLayer::new()
-       .allow_origin([
-           "https://staging.scribe.sanguinehost.com".parse().unwrap(), // Custom domain
-           "https://frontend-abc123-projects.vercel.app".parse().unwrap(), // Auto-generated domain
-           "https://staging.scribe.sanguinehost.com".parse().unwrap(),
-           "https://localhost:5173".parse().unwrap(), // for local dev
-       ])
-       .allow_credentials(true)
-       .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
-       .allow_headers([CONTENT_TYPE, AUTHORIZATION, ACCEPT]);
-   ```
+The frontend service is configured to:
+- Run on Fargate (serverless containers)
+- Use private subnets for security
+- Accessible through the Application Load Balancer
+- Share the same domain as the backend (`staging.scribe.sanguinehost.com`)
 
-3. **Redeploy the backend**:
-   ```bash
-   ./scripts/deploy-backend.sh backend
-   ```
+### Load Balancer Routing
 
-**Why this is necessary**: Each Vercel deployment gets a unique domain. Without updating CORS, your frontend will be blocked by the browser's same-origin policy.
+The ALB is configured with path-based routing:
+- `/` → Frontend container (port 3000)
+- `/api/*` → Backend container (port 8080)
+
+## Environment Configuration
+
+### Build-Time Variables
+
+Set environment variables during the build process:
+
+```bash
+# Enable/disable payment features
+export PUBLIC_ENABLE_PAYMENTS=true
+
+# Skip type checking for faster builds (CI/CD)
+export VITE_BUILD_SKIP_TYPE_CHECK=true
+```
+
+These are set in the deployment script automatically.
+
+### Runtime Configuration
+
+The frontend reads configuration from:
+
+1. **`PUBLIC_API_URL`**: Backend API endpoint
+   - Set in build environment or runtime
+   - Default: Uses same domain as frontend
+
+2. **`PUBLIC_ENABLE_PAYMENTS`**: Show payment features
+   - `true`: Enable Stripe integration
+   - `false`: Hide payment UI
 
 ## Build Configuration
 
-The project is already configured for Vercel with:
+The project uses:
+- **Adapter**: `@sveltejs/adapter-node` (not Vercel)
+- **Output**: Node.js server build
+- **Port**: 3000 (configurable via `PORT` env var)
 
-- ✅ `@sveltejs/adapter-vercel` installed
-- ✅ Adapter configured in `svelte.config.js`
-- ✅ Environment variable support
-- ✅ TypeScript configuration
+Configuration in `frontend/svelte.config.js`:
+```javascript
+import adapter from '@sveltejs/adapter-node';
 
-## API Routing
-
-The frontend expects API routes at `/api/*`. In production:
-
-1. **Frontend**: `https://staging.scribe.sanguinehost.com`
-2. **API calls**: `https://staging.scribe.sanguinehost.com/api/*`
-
-The `PUBLIC_API_URL` environment variable handles this routing.
+export default {
+  kit: {
+    adapter: adapter({
+      env: {
+        port: process.env.PORT || 3000
+      }
+    })
+  }
+};
+```
 
 ## Deployment Checklist
 
-- [ ] Backend deployed and accessible at `https://staging.scribe.sanguinehost.com`
-- [ ] DNS records configured for backend
-- [ ] SSL certificate validated for backend
-- [ ] Environment variables set in Vercel (`PUBLIC_API_URL=https://staging.scribe.sanguinehost.com`)
-- [ ] Frontend built locally: `pnpm build`
-- [ ] Frontend deployed: `pnpm vercel deploy --prebuilt --prod`
-- [ ] Custom domain `staging.scribe.sanguinehost.com` configured in Vercel
-- [ ] DNS CNAME record added in Route 53: `staging.scribe` → `cname.vercel-dns.com`
-- [ ] **CRITICAL**: CORS updated in backend to include custom domain
-- [ ] Backend redeployed with new CORS configuration
-- [ ] Test authentication flow end-to-end
-- [ ] Test API connectivity (check browser dev tools for CORS errors)
+- [ ] Backend infrastructure deployed via Terraform
+- [ ] ECR repository exists for frontend
+- [ ] ECS task definition configured for frontend
+- [ ] ALB listener rules configured for path routing
+- [ ] Target group created for frontend
+- [ ] Security group allows port 3000 from ALB
+- [ ] Frontend image builds successfully
+- [ ] Frontend pushed to ECR
+- [ ] ECS service updated with new image
+- [ ] Health checks passing for frontend tasks
+- [ ] Frontend accessible via domain
 
 ## Troubleshooting
 
-### API Connection Issues
+### Container Won't Start
 
-1. **Check CORS**: Ensure backend allows your frontend domain
-   - Add your Vercel deployment URL to the backend's CORS configuration in `backend/src/main.rs`
-   - The current deployment URL format is: `https://frontend-[hash]-paperboygolds-projects.vercel.app`
-   - Also add the main alias: `https://frontend-paperboygolds-projects.vercel.app`
-2. **Check SSL**: Both frontend and backend must use HTTPS
-3. **Check API URL**: Verify `PUBLIC_API_URL` is correct
-   - Should be: `https://staging.scribe.sanguinehost.com` (not the raw ALB DNS)
+1. **Check CloudWatch Logs**:
+   ```bash
+   aws logs tail /ecs/staging-scribe-frontend --follow
+   ```
 
-### Build Failures
+2. **Common Issues**:
+   - Port conflicts: Ensure no other process uses port 3000
+   - Memory limits: Check if container has enough memory
+   - Build errors: Verify `pnpm build` completed successfully
 
-1. **Check logs**: Vercel provides detailed build logs
-2. **Environment variables**: Ensure all required vars are set
-3. **Dependencies**: Run `pnpm install` locally to verify
+### Health Check Failures
 
-### Authentication Issues
+1. **Verify Health Check Path**:
+   - Default: `/` (root path)
+   - Must return HTTP 200 status
 
-1. **Cookie settings**: Backend must set `SameSite=None; Secure` for cross-domain
-2. **Domain matching**: Cookies might need domain configuration
+2. **Check Target Group Health**:
+   ```bash
+   aws elbv2 describe-target-health \
+     --target-group-arn $TARGET_GROUP_ARN
+   ```
 
-## Local Testing of Production Build
+### Build Issues
 
-```bash
-# Build production version
-pnpm build
+1. **Test Build Locally**:
+   ```bash
+   cd frontend
+   pnpm install
+   pnpm build
+   ```
 
-# Preview production build
-pnpm preview
+2. **Check Dependencies**:
+   - Ensure `pnpm-lock.yaml` is committed
+   - Verify `package.json` is correct
 
-# With production env vars
-PUBLIC_API_URL=https://staging.scribe.sanguinehost.com pnpm build
-pnpm preview
-```
+### Routing Issues
+
+If frontend routes don't work:
+
+1. **Check ALB Listener Rules**:
+   - Priority order matters
+   - Path patterns: `/` for frontend, `/api/*` for backend
+
+2. **Verify Container Port**:
+   - Frontend must expose port 3000
+   - Target group must forward to port 3000
 
 ## Monitoring
 
-Vercel provides:
-- Real-time logs
-- Performance analytics
-- Error tracking
-- Deployment history
+### CloudWatch Logs
 
-Access these in your Vercel dashboard.
+Frontend logs are sent to CloudWatch:
+- Log Group: `/ecs/staging-scribe-frontend`
+- Contains server logs and any console output
+
+### Metrics
+
+Monitor in CloudWatch Dashboard:
+- CPU utilization
+- Memory utilization
+- Request count
+- Error rate
+- Response time
+
+### ECS Events
+
+View ECS service events:
+```bash
+aws ecs describe-services \
+  --cluster staging-scribe-cluster \
+  --services staging-scribe-frontend \
+  --query 'services[0].events'
+```
+
+## Local Testing
+
+### Test Production Build Locally
+
+```bash
+# Build production version
+cd frontend
+pnpm build
+
+# Run production build locally
+PORT=3000 node build
+```
+
+### Test with Docker
+
+```bash
+# Build image
+podman build -f infrastructure/containers/frontend/Containerfile -t test-frontend .
+
+# Run container
+podman run -p 3000:3000 test-frontend
+```
+
+Access at `http://localhost:3000`
+
+## Cost Optimization
+
+Current configuration:
+- **Platform**: Fargate Spot (if available) or Fargate
+- **vCPU**: 0.25 vCPU (256 units)
+- **Memory**: 512 MB
+- **Tasks**: 1 desired task
+
+**Estimated Monthly Cost**: $5-15 USD
+
+To reduce costs further:
+- Use Fargate Spot instances
+- Reduce task count to 0 when not in use
+- Use smaller instance sizes
 
 ## Next Steps
 
-1. Set up CI/CD with GitHub Actions
-2. Configure preview deployments for PRs
-3. Set up monitoring and error tracking
-4. Configure edge functions if needed
-5. Optimize performance with Vercel Analytics
+1. **Set up CI/CD**: Automate builds and deployments
+2. **Configure Auto Scaling**: Scale based on traffic
+3. **Set up Monitoring**: CloudWatch alarms and SNS notifications
+4. **Implement Blue-Green Deployments**: Zero-downtime deployments
+5. **Add CDN**: CloudFront integration for static assets
 
 ---
 
-**Note**: The frontend will work with the Vite proxy for local development. The `PUBLIC_API_URL` is only needed for production deployments.
+**Note**: The frontend deployment uses the same domain, SSL certificate, and load balancer as the backend, providing a unified deployment experience.

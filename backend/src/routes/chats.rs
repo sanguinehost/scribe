@@ -871,10 +871,28 @@ async fn process_messages_for_response(
         {
             Some((c, gs, r)) => {
                 tracing::info!(
-                    "✅ Found variant content, game state, and reasoning for message {}",
-                    msg_db.id
+                    message_id = %msg_db.id,
+                    variant_index = msg_db.current_variant_index,
+                    has_reasoning = r.is_some(),
+                    reasoning_len = r.as_ref().map(|res| res.len()).unwrap_or(0),
+                    "✅ Found variant content and game state for message"
                 );
-                (c, gs, r)
+                // Fallback reasoning if the variant record is missing it
+                let final_reasoning = if r.is_none() {
+                    let fallback = msg_db
+                        .clone()
+                        .decrypt_reasoning_field(&dek.0)
+                        .ok()
+                        .flatten();
+
+                    if fallback.is_some() {
+                        tracing::info!(message_id = %msg_db.id, "Using fallback reasoning from parent message as variant was missing it");
+                    }
+                    fallback
+                } else {
+                    r
+                };
+                (c, gs, final_reasoning)
             }
             None => {
                 // Fallback to original message content if variant not found
@@ -899,6 +917,13 @@ async fn process_messages_for_response(
                     .decrypt_reasoning_field(&dek.0)
                     .ok()
                     .flatten();
+
+                tracing::info!(
+                    message_id = %msg_db.id,
+                    has_reasoning = reasoning.is_some(),
+                    reasoning_len = reasoning.as_ref().map(|r| r.len()).unwrap_or(0),
+                    "History fallback: Decrypted reasoning from parent message"
+                );
                 (decrypted_client_message.content, fallback_gs, reasoning)
             }
         };
@@ -1532,6 +1557,7 @@ pub async fn create_message_handler(
                             game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                             initial_game_state: initial_game_state.clone(),
                             parent_message_id,
+                            pre_processing_analysis_id: None,
                         };
 
                         // 4. Stream response
@@ -1707,78 +1733,44 @@ pub async fn get_message_by_id_handler(
     };
 
     // If this is a variant (index > 0), try to fetch the content and raw prompt from the variant itself
-    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
-    let (decrypted_content_string, decrypted_raw_prompt) = if message_db.current_variant_index > 0 {
-        let pool = state.pool.clone();
-        let msg_id = message_db.id;
-        let var_idx = message_db.current_variant_index;
-        // Clone the secret key for the closure
-        use secrecy::ExposeSecret;
-        let dek_bytes = dek.0.expose_secret().clone();
-        let dek_box = SecretBox::new(Box::new(dek_bytes));
-
-        let variant_res = crate::db::with_conn(&pool, move |conn| {
-            use crate::models::chats::MessageVariant;
-            use crate::schema::message_variants;
-
-            let variant_opt = message_variants::table
-                .filter(message_variants::parent_message_id.eq(msg_id))
-                .filter(message_variants::variant_index.eq(var_idx))
-                .first::<MessageVariant>(conn)
-                .optional()
-                .map_err(AppError::from)?;
-
-            Ok::<_, AppError>(variant_opt)
-        })
-        .await;
-
-        match variant_res {
-            Ok(Some(variant)) => {
-                // Decrypt content
-                let content_str = match (&variant.content, &variant.content_nonce) {
-                    (content, Some(nonce)) if !content.is_empty() && !nonce.is_empty() => {
-                        crypto::decrypt_gcm(content, nonce, &dek_box)
-                            .map_err(|e| AppError::DecryptionError(e.to_string()))
-                            .and_then(|bytes| {
-                                String::from_utf8(bytes.expose_secret().clone())
-                                    .map_err(|e| AppError::DecryptionError(e.to_string()))
-                            })
-                            .unwrap_or_else(|e| {
-                                tracing::error!("Failed to decrypt variant content: {}", e);
-                                decrypted_content_string.clone() // Fallback
-                            })
-                    }
-                    _ => decrypted_content_string.clone(), // Fallback
-                };
-
-                // Decrypt raw prompt
-                let raw_prompt_str =
-                    match (&variant.raw_prompt_ciphertext, &variant.raw_prompt_nonce) {
-                        (Some(ciphertext), Some(nonce))
-                            if !ciphertext.is_empty() && !nonce.is_empty() =>
-                        {
-                            crypto::decrypt_gcm(ciphertext, nonce, &dek_box)
-                                .map_err(|e| AppError::DecryptionError(e.to_string()))
-                                .and_then(|bytes| {
-                                    String::from_utf8(bytes.expose_secret().clone())
-                                        .map_err(|e| AppError::DecryptionError(e.to_string()))
-                                })
-                                .ok()
-                        }
-                        _ => decrypted_raw_prompt,
-                    };
-
-                (content_str, raw_prompt_str)
+    let (decrypted_content_string, decrypted_raw_prompt, reasoning_content_val) =
+        if message_db.current_variant_index > 0 {
+            match get_variant_content_by_index(
+                pool.clone(),
+                message_db.id,
+                message_db.current_variant_index,
+                user.id,
+                &dek,
+            )
+            .await
+            {
+                Ok(Some((content, _gs, reasoning))) => {
+                    // Note: get_variant_content_by_index also returns game_state, but we don't need it here
+                    // since individual message responses usually don't include it unless specifically requested.
+                    // For now, aligning with existing logic but adding reasoning.
+                    (content, decrypted_raw_prompt, reasoning)
+                }
+                _ => (
+                    decrypted_content_string,
+                    decrypted_raw_prompt,
+                    message_db.decrypt_reasoning_field(&dek.0).ok().flatten(),
+                ),
             }
-            Ok(None) => (decrypted_content_string, decrypted_raw_prompt),
-            Err(e) => {
-                tracing::warn!("Failed to fetch variant: {}", e);
-                (decrypted_content_string, decrypted_raw_prompt)
-            }
-        }
-    } else {
-        (decrypted_content_string, decrypted_raw_prompt)
-    };
+        } else {
+            (
+                decrypted_content_string,
+                decrypted_raw_prompt,
+                message_db.decrypt_reasoning_field(&dek.0).ok().flatten(),
+            )
+        };
+
+    tracing::info!(
+        message_id = %message_db.id,
+        variant_index = message_db.current_variant_index,
+        has_reasoning = reasoning_content_val.is_some(),
+        reasoning_len = reasoning_content_val.as_ref().map(|r| r.len()).unwrap_or(0),
+        "Retrieved message with reasoning"
+    );
 
     let response_parts = message_db
         .parts
@@ -1809,7 +1801,7 @@ pub async fn get_message_by_id_handler(
         parent_message_id: None,
         variants: None,
         game_state: None,
-        reasoning_content: None,
+        reasoning_content: reasoning_content_val,
     };
 
     Ok(Json(response))
@@ -2774,8 +2766,17 @@ async fn get_variant_content_by_index(
         let game_state = variant.game_state.as_ref().map(|j| j.0.clone());
         let reasoning = variant.decrypt_reasoning(dek_ref)?;
 
+        tracing::info!(
+            message_id = %message_id,
+            variant_index,
+            has_reasoning = reasoning.is_some(),
+            reasoning_len = reasoning.as_ref().map(|r| r.len()).unwrap_or(0),
+            "Decrypted variant content/reasoning"
+        );
+
         Ok(Some((content, game_state, reasoning)))
     } else {
+        tracing::debug!(message_id = %message_id, variant_index, "Variant not found");
         Ok(None)
     }
 }

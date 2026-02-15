@@ -5,13 +5,13 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
 	preprocess: vitePreprocess(),
 	kit: {
-		adapter: adapter(),
+		adapter: adapter({
+			// Default output directory for adapter-node is 'build'
+			// This matches what the Containerfile expects
+		}),
 		paths: {
 			base: '',
 			assets: ''
-		},
-		prerender: {
-			handleHttpError: 'warn'
 		}
 	}
 };

@@ -39,7 +39,7 @@ use crate::{
 #[cfg(feature = "payment")]
 use crate::services::encryption_service::EncryptionService;
 #[cfg(feature = "payment")]
-use crate::services::payment::{SoftLimitService, SubscriptionService};
+use crate::services::payment::SubscriptionService;
 
 // Type aliases for complex types
 /*
@@ -2069,6 +2069,7 @@ pub struct StreamAiParams {
     pub game_master_mode_enabled: bool,      // Whether Game Master mode is enabled for this session
     pub initial_game_state: Option<serde_json::Value>,
     pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning
+    pub pre_processing_analysis_id: Option<crate::db::DbId>,
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -2343,6 +2344,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             game_master_mode_enabled: params.game_master_mode_enabled,
             initial_game_state: params.initial_game_state.clone(),
             parent_message_id: params.parent_message_id,
+            pre_processing_analysis_id: params.pre_processing_analysis_id,
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -2415,6 +2417,7 @@ pub async fn stream_ai_response_and_save_message(
         game_master_mode_enabled,
         initial_game_state,
         parent_message_id,
+        pre_processing_analysis_id: _,
     } = params;
 
     // Prune future messages if this is a rewind operation (parent_message_id provided)
@@ -2508,7 +2511,22 @@ pub async fn stream_ai_response_and_save_message(
         }
     }
 
+    // Default to medium if not specified but needed
+    if effective_request_thinking && final_reasoning_budget.is_none() {
+        tracing::info!(
+            %session_id,
+            "No reasoning budget provided but thinking requested - defaulting to 16384 (Medium)"
+        );
+        final_reasoning_budget = Some(16384);
+    }
+
     if effective_request_thinking {
+        tracing::info!(
+            %session_id,
+            %model_name,
+            budget = ?final_reasoning_budget,
+            "Enabling Gemini thinking/reasoning mode"
+        );
         rig_req.reasoning_budget = final_reasoning_budget;
         rig_req.capture_reasoning_content = true;
     }
@@ -2600,6 +2618,7 @@ pub async fn stream_ai_response_and_save_message(
                     }
                     Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
                         if !reasoning.is_empty() {
+                            tracing::info!(len = reasoning.len(), "Generation: Emitting Thinking event");
                             accumulated_reasoning.push_str(&reasoning);
                             let _ = tx.send(Ok(ScribeSseEvent::Thinking(reasoning)));
                         }
@@ -2737,7 +2756,7 @@ pub async fn stream_ai_response_and_save_message(
 
                                 tokio::spawn(async move {
                                     // Fetch context for GM
-                                    let recent_messages_gm = crate::services::chat::message_handling::get_messages_for_session(
+                                    let _recent_messages_gm = crate::services::chat::message_handling::get_messages_for_session(
                                         &state_copy.pool,
                                         user_id_for_task,
                                         session_id_for_task,

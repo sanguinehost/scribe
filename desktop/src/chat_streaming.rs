@@ -65,6 +65,8 @@ pub enum ChatStreamEvent {
         #[serde(rename = "gameState")]
         game_state: serde_json::Value,
     },
+    /// Status message (e.g., "Finalizing prompt...")
+    Status { message: String },
     /// Streaming complete marker
     Done,
 }
@@ -389,6 +391,15 @@ pub async fn stream_chat_response(
                                 );
                                 continue; // Skip this event
                             }
+                        }
+                    }
+                    "status" => {
+                        log::debug!(
+                            "[stream_chat_response] Received 'status' event: {}",
+                            &sse_event.data
+                        );
+                        ChatStreamEvent::Status {
+                            message: sse_event.data,
                         }
                     }
                     _ => {
