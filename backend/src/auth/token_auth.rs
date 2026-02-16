@@ -168,7 +168,12 @@ where
         }
 
         // Fall back to cookie-based authentication
-        info!("No Bearer token found in Authorization header - falling back to cookie-based authentication");
+        // In cloud/web environments, this is the primary method.
+        // We only log a debug message if no header was found, or a warning if the header was present but invalid.
+        if !parts.headers.contains_key(AUTHORIZATION) {
+            debug!("No Authorization header found - continuing with cookie-based session");
+        }
+
         let mut auth_session = UnifiedAuthSession::from_request_parts(parts, state)
             .await
             .map_err(|e| {
