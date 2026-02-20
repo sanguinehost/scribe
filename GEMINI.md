@@ -217,6 +217,7 @@ All code changes must include comprehensive testing:
 - Strong typing throughout (no `any` in TypeScript)
 
 **Privacy-Safe Logging**: See [docs/PRIVACY_SAFE_LOGGING.md](docs/PRIVACY_SAFE_LOGGING.md). Key rules:
+- **Always use `capture_user_id_middleware`** - This automatically populates the obfuscated `loggable_user_id()` as `user_id` on the OTLP `tracing::Span`. Extract headers into native `tracing::info!` macros. Never log raw email addresses, plaintext IDs, or User PII to strings natively.
 - **Never log raw user IDs** - use `loggable_user_id(user.id)` for obfuscated format `u8a3f2xx`
 - **Never log usernames/emails** - use `sanitize_personal_info(email)` for partial redaction
 - **Never log user content** (messages, prompts, AI responses, reasoning) - log only lengths/metadata

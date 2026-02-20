@@ -6,9 +6,9 @@
     "enabled": true,
     "query_condition": {
         "type": "sql",
-        "sql": "SELECT count(*) as total, method, path, client_ip, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND CAST(REGEXP_REPLACE(status, '[^0-9]', '', 'g') AS INTEGER) >= 500 GROUP BY method, path, client_ip HAVING count(*) > 20"
+        "sql": "SELECT count(*) as total, method, path, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND CAST(REGEXP_REPLACE(status, '[^0-9]', '', 'g') AS INTEGER) >= 500 GROUP BY method, path HAVING count(*) > 20"
     },
-    "row_template": "- {method} {path} (IP: {client_ip}): {total} errors (Sample Trace: {trace_ref})",
+    "row_template": "- {method} {path}: {total} 5xx errors (Sample Trace: {trace_ref})",
     "trigger_condition": {
         "period": 5,
         "operator": ">",

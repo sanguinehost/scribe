@@ -192,7 +192,18 @@ impl RigClient {
                     tool_choice: None,
                 };
 
-                let response = model.completion(completion_req).await?;
+                let response = match model.completion(completion_req).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = "gemini",
+                            error = %e,
+                            "LLM completion failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 // Extract the first choice content
                 let content = response
@@ -225,6 +236,14 @@ impl RigClient {
                         _ => None,
                     });
                 }
+
+                tracing::info!(
+                    event_type = "llm_generation_success",
+                    provider = "gemini",
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    "LLM completion successful"
+                );
 
                 Ok(rig_response)
             }
@@ -295,7 +314,19 @@ impl RigClient {
                     tool_choice: None,
                 };
 
-                let response = adapter.completion(completion_req).await?;
+                let response = match adapter.completion(completion_req).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let prov = req.provider.as_str();
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = %prov,
+                            error = %e,
+                            "LLM completion failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 // Extract the first choice content
                 let content = response
@@ -307,11 +338,23 @@ impl RigClient {
                     })
                     .ok_or_else(|| anyhow::anyhow!("No text response received"))?;
 
+                let prompt_tokens = response.usage.input_tokens;
+                let completion_tokens = response.usage.output_tokens;
+                let prov = req.provider.as_str();
+
+                tracing::info!(
+                    event_type = "llm_generation_success",
+                    provider = %prov,
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    "LLM completion successful"
+                );
+
                 Ok(RigChatResponse {
                     content,
-                    prompt_tokens: Some(response.usage.input_tokens),
-                    completion_tokens: Some(response.usage.output_tokens),
-                    total_tokens: Some(response.usage.input_tokens + response.usage.output_tokens),
+                    prompt_tokens: Some(prompt_tokens),
+                    completion_tokens: Some(completion_tokens),
+                    total_tokens: Some(prompt_tokens + completion_tokens),
                     reasoning_content: None,
                 })
             }
@@ -424,19 +467,44 @@ impl RigClient {
                     tool_choice: None,
                 };
 
-                let stream = model.stream(completion_req).await?;
+                let stream = match model.stream(completion_req).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = "gemini",
+                            error = %e,
+                            "LLM stream initiation failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 let output_stream = async_stream::try_stream! {
                     use futures::StreamExt;
                     use rig::completion::GetTokenUsage;
+                    use std::time::Instant;
                     let inner_stream = stream;
                     futures::pin_mut!(inner_stream);
+
+                    let start_time = Instant::now();
+                    let mut first_token_received = false;
 
                     while let Some(result) = inner_stream.next().await {
                         match result {
                             Ok(content) => {
                                 match content {
                                     rig::streaming::StreamedAssistantContent::Text(t) => {
+                                        if !first_token_received {
+                                            first_token_received = true;
+                                            let ttft = start_time.elapsed().as_millis() as u64;
+                                            tracing::info!(
+                                                event_type = "llm_ttft",
+                                                provider = "gemini",
+                                                duration_ms = ttft,
+                                                "First token received"
+                                            );
+                                        }
                                         tracing::info!("RigClient: Received Text chunk (len: {})", t.text.len());
                                         yield RigStreamEvent::Content(t.text);
                                     }
@@ -516,15 +584,45 @@ impl RigClient {
                 }
                 messages.push(("user".to_string(), req.prompt));
 
-                let stream = service.stream_chat(messages).await?;
+                let stream = match service.stream_chat(messages).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let prov = req.provider.as_str();
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = %prov,
+                            error = %e,
+                            "LLM stream initiation failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 let output_stream = async_stream::try_stream! {
                     use futures::StreamExt;
+                    use std::time::Instant;
                     let inner_stream = stream;
                     futures::pin_mut!(inner_stream);
+
+                    let start_time = Instant::now();
+                    let mut first_token_received = false;
+                    let prov = req.provider.as_str();
+
                     while let Some(result) = inner_stream.next().await {
                         match result {
-                            Ok(content) => yield RigStreamEvent::Content(content),
+                            Ok(content) => {
+                                if !first_token_received {
+                                    first_token_received = true;
+                                    let ttft = start_time.elapsed().as_millis() as u64;
+                                    tracing::info!(
+                                        event_type = "llm_ttft",
+                                        provider = prov,
+                                        duration_ms = ttft,
+                                        "First token received"
+                                    );
+                                }
+                                yield RigStreamEvent::Content(content);
+                            }
                             Err(e) => Err(anyhow::anyhow!("Stream error: {}", e))?,
                         }
                     }

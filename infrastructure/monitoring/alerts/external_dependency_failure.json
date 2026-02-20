@@ -1,0 +1,24 @@
+{
+    "name": "external_dependency_failure",
+    "description": "Alerts on recurring database or vector database errors",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total, dependency, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type IN ('database_error', 'qdrant_error', 'health_check_failure') GROUP BY dependency HAVING count(*) > 10"
+    },
+    "row_template": "- Dependency {dependency}: {total} failures (Sample Trace: {trace_ref})",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 10,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}

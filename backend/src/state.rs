@@ -3,6 +3,7 @@
 // Import AuthError enum
 // Removed AppError import as it's not directly used here
 use crate::config::Config; // Use Config instead
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 // Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
 use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
@@ -99,6 +100,7 @@ pub struct AppState {
     pub security_audit_logger: Option<Arc<SecurityAuditLogger>>, // Added for LLM security auditing
     #[cfg(feature = "local-llm")]
     pub model_integrity_verifier: Option<Arc<ModelIntegrityVerifier>>, // Added for model integrity verification
+    pub qdrant_healthy: Arc<AtomicBool>, // Dynamic feature flag for RAG degradation
 }
 
 // Manual Debug implementation for AppState
@@ -134,6 +136,10 @@ impl fmt::Debug for AppState {
             .field(
                 "narrative_intelligence_service",
                 &"<Option<Arc<NarrativeIntelligenceService>>>",
+            )
+            .field(
+                "qdrant_healthy",
+                &self.qdrant_healthy.load(Ordering::Relaxed),
             ); // Added for agentic narrative processing
 
         #[cfg(feature = "local-llm")]
@@ -188,6 +194,7 @@ impl AppState {
             security_audit_logger: services.security_audit_logger,
             #[cfg(feature = "local-llm")]
             model_integrity_verifier: services.model_integrity_verifier,
+            qdrant_healthy: Arc::new(AtomicBool::new(true)),
         }
     }
 

@@ -37,6 +37,7 @@ use scribe_backend::routes::{
     generation_routes,                // Added for generation routes
     llm_routes::llm_router,           // Added for LLM management routes
     lorebook_routes::lorebook_routes, // Added for lorebook routes
+    telemetry_routes::ingest_telemetry,
     template_preferences_routes::template_preferences_routes, // Added for template preferences routes
     templates,                                                // Added for template routes
     user_persona_routes::user_personas_router,                // Added for user persona routes
@@ -780,6 +781,7 @@ fn build_router(
     // The actual authentication requirement is enforced by protected routes or handler logic
     let public_auth_routes = Router::new()
         .nest("/auth", auth_routes()) // Auth routes under /api/auth (login, register, desktop config, auto-login, etc.)
+        .route("/telemetry", axum::routing::post(ingest_telemetry)) // Telemetry ingestion route (supports unauthenticated payloads)
         .layer(axum_middleware::from_fn(
             scribe_backend::middleware::capture_user_id_middleware,
         ))
@@ -918,6 +920,18 @@ fn build_router(
                     );
                 }
                 "Credit Anomaly Triggered"
+            }),
+        )
+        .route(
+            "/health/ttft",
+            get(|| async {
+                tracing::info!(
+                    event_type = "llm_ttft",
+                    provider = "gemini",
+                    duration_ms = 3500_u64,
+                    "Time to First Token: 3500ms"
+                );
+                "Mock TTFT Triggered"
             }),
         )
         .route("/health/debug", get(|| async { "Health Debug OK" }))

@@ -1,0 +1,24 @@
+{
+    "name": "high_ttft",
+    "description": "Alerts when Time To First Token for LLM streams exceeds 3 seconds repeatedly",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total, provider FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type = 'llm_ttft' AND duration_ms > 3000 GROUP BY provider HAVING count(*) > 5"
+    },
+    "row_template": "- {provider}: {total} requests had TTFT > 3s",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 15,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}

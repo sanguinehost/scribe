@@ -1393,22 +1393,69 @@ pub async fn get_session_data_for_generation(
     debug!(target: "test_debug", %session_id, %available_rag_tokens, "RAG token budget check. available_rag_tokens > 0: {}", available_rag_tokens > 0);
 
     if available_rag_tokens > 0 {
-        // Extract max_game_time_day from game_state for RAG filtering
-        let max_game_time_day: Option<i64> = game_state_from_session.as_ref().and_then(|gs| {
-            // gs is DbJson, which derefs to Json<Value> (or is a wrapper)
-            // Access the inner Value via .0
-            let value = &gs.0;
-            value
-                .get("game_time")
-                .and_then(|gt| gt.get("day"))
-                .and_then(|d| d.as_i64())
-        });
-        debug!(%session_id, ?max_game_time_day, "Determined max_game_time_day for RAG filtering.");
+        // Check dynamic Qdrant health flag before trying to load embeddings
+        let is_qdrant_healthy = state
+            .qdrant_healthy
+            .load(std::sync::atomic::Ordering::Relaxed);
 
-        // Retrieve Lorebook Chunks
-        if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
-            if !lorebook_ids.is_empty() {
-                info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
+        let qdrant_rag_selection = if !is_qdrant_healthy {
+            tracing::warn!(
+                event_type = "graceful_degradation_active",
+                session_id = ?session_id,
+                "Qdrant is marked as unhealthy by background job. Bypassing RAG context assembly to prevent upstream generation failure."
+            );
+            None
+        } else {
+            // Extract max_game_time_day from game_state for RAG filtering
+            let max_game_time_day: Option<i64> = game_state_from_session.as_ref().and_then(|gs| {
+                // gs is DbJson, which derefs to Json<Value> (or is a wrapper)
+                // Access the inner Value via .0
+                let value = &gs.0;
+                value
+                    .get("game_time")
+                    .and_then(|gt| gt.get("day"))
+                    .and_then(|d| d.as_i64())
+            });
+            debug!(%session_id, ?max_game_time_day, "Determined max_game_time_day for RAG filtering.");
+
+            // Retrieve Lorebook Chunks
+            if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
+                if !lorebook_ids.is_empty() {
+                    info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
+                    let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                        use secrecy::ExposeSecret;
+                        let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                        crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+                    });
+                    match state
+                        .embedding_pipeline_service
+                        .retrieve_relevant_chunks(
+                            state.clone(),
+                            user_id,
+                            None, // Not searching chat history here
+                            Some(lorebook_ids.clone()),
+                            None,            // Not searching chronicles here (done separately)
+                            &rag_query_text, // query_text (enriched)
+                            lorebook_search_limit,
+                            max_game_time_day, // Filter by game time
+                            session_dek_temp.as_ref(),
+                        )
+                        .await
+                    {
+                        Ok(lore_chunks) => {
+                            info!(%session_id, num_lore_chunks = lore_chunks.len(), "Retrieved lorebook chunks.");
+                            combined_rag_candidates.extend(lore_chunks);
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Failed to retrieve lorebook chunks for RAG. Proceeding without them.");
+                        }
+                    }
+                }
+            }
+
+            // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
+            if let Some(chronicle_id) = player_chronicle_id_from_session {
+                info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
                 let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
                     use secrecy::ExposeSecret;
                     let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
@@ -1419,107 +1466,73 @@ pub async fn get_session_data_for_generation(
                     .retrieve_relevant_chunks(
                         state.clone(),
                         user_id,
-                        None, // Not searching chat history here
-                        Some(lorebook_ids.clone()),
-                        None,            // Not searching chronicles here (done separately)
-                        &rag_query_text, // query_text (enriched)
-                        lorebook_search_limit,
-                        max_game_time_day, // Filter by game time
-                        session_dek_temp.as_ref(),
+                        None,               // Not searching chat history here
+                        None,               // Not searching lorebooks here
+                        Some(chronicle_id), // Search this chronicle
+                        &rag_query_text,
+                        chronicles_search_limit,
+                        max_game_time_day,         // Filter by game time
+                        session_dek_temp.as_ref(), // DEK for decryption
                     )
                     .await
                 {
-                    Ok(lore_chunks) => {
-                        info!(%session_id, num_lore_chunks = lore_chunks.len(), "Retrieved lorebook chunks.");
-                        combined_rag_candidates.extend(lore_chunks);
+                    Ok(chronicle_chunks) => {
+                        info!(%session_id, %chronicle_id, num_chronicle_chunks = chronicle_chunks.len(), "Retrieved semantically relevant chronicle events for RAG.");
+                        combined_rag_candidates.extend(chronicle_chunks);
                     }
                     Err(e) => {
-                        warn!(%session_id, error = %e, "Failed to retrieve lorebook chunks for RAG. Proceeding without them.");
+                        warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG using semantic search. Proceeding without them.");
                     }
                 }
+            } else {
+                debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
             }
-        }
 
-        // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
-        if let Some(chronicle_id) = player_chronicle_id_from_session {
-            info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
-            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
-                use secrecy::ExposeSecret;
-                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
-                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
-            });
-            match state
-                .embedding_pipeline_service
-                .retrieve_relevant_chunks(
-                    state.clone(),
-                    user_id,
-                    None,               // Not searching chat history here
-                    None,               // Not searching lorebooks here
-                    Some(chronicle_id), // Search this chronicle
-                    &rag_query_text,
-                    chronicles_search_limit,
-                    max_game_time_day,         // Filter by game time
-                    session_dek_temp.as_ref(), // DEK for decryption
-                )
-                .await
+            // Retrieve Older Chat History Chunks
+            // NOTE: We now allow this even if frontend_history is provided, to support the <older_chat_history> RAG section.
+            // If frontend_history is used, there is a risk of duplication if the frontend sends messages that are also in the database,
+            // but we prioritize providing the RAG context as requested.
             {
-                Ok(chronicle_chunks) => {
-                    info!(%session_id, %chronicle_id, num_chronicle_chunks = chronicle_chunks.len(), "Retrieved semantically relevant chronicle events for RAG.");
-                    combined_rag_candidates.extend(chronicle_chunks);
-                }
-                Err(e) => {
-                    warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG using semantic search. Proceeding without them.");
-                }
-            }
-        } else {
-            debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
-        }
+                info!(%session_id, "Retrieving older chat history chunks for RAG.");
+                let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                    use secrecy::ExposeSecret;
+                    let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                    crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+                });
+                match state
+                    .embedding_pipeline_service
+                    .retrieve_relevant_chunks(
+                        state.clone(),
+                        user_id,
+                        Some(session_id), // Searching chat history for the current session
+                        None,             // Not searching lorebooks here
+                        None,             // Not searching chronicles here (done separately above)
+                        &rag_query_text,  // query_text (enriched)
+                        older_chat_search_limit,
+                        max_game_time_day,         // Filter by game time
+                        session_dek_temp.as_ref(), // DEK for decryption
+                    )
+                    .await
+                {
+                    Ok(mut older_chat_chunks) => {
+                        info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
+                        let recent_message_ids: std::collections::HashSet<crate::db::DbId> =
+                            managed_recent_history.iter().map(|msg| msg.id).collect();
+                        debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
-        // Retrieve Older Chat History Chunks
-        // NOTE: We now allow this even if frontend_history is provided, to support the <older_chat_history> RAG section.
-        // If frontend_history is used, there is a risk of duplication if the frontend sends messages that are also in the database,
-        // but we prioritize providing the RAG context as requested.
-        {
-            info!(%session_id, "Retrieving older chat history chunks for RAG.");
-            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
-                use secrecy::ExposeSecret;
-                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
-                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
-            });
-            match state
-                .embedding_pipeline_service
-                .retrieve_relevant_chunks(
-                    state.clone(),
-                    user_id,
-                    Some(session_id), // Searching chat history for the current session
-                    None,             // Not searching lorebooks here
-                    None,             // Not searching chronicles here (done separately above)
-                    &rag_query_text,  // query_text (enriched)
-                    older_chat_search_limit,
-                    max_game_time_day,         // Filter by game time
-                    session_dek_temp.as_ref(), // DEK for decryption
-                )
-                .await
-            {
-                Ok(mut older_chat_chunks) => {
-                    info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                    let recent_message_ids: std::collections::HashSet<crate::db::DbId> =
-                        managed_recent_history.iter().map(|msg| msg.id).collect();
-                    debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
-
-                    debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
-                    for (i, chunk) in older_chat_chunks.iter().enumerate() {
-                        if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
-                            &chunk.metadata
-                        {
-                            debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_len = chunk.text.len(), "  Raw older chat RAG chunk");
-                        } else {
-                            debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_len = chunk.text.len(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                        debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
+                        for (i, chunk) in older_chat_chunks.iter().enumerate() {
+                            if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
+                                &chunk.metadata
+                            {
+                                debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_len = chunk.text.len(), "  Raw older chat RAG chunk");
+                            } else {
+                                debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_len = chunk.text.len(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                            }
                         }
-                    }
 
-                    let initial_older_chunk_count = older_chat_chunks.len();
-                    older_chat_chunks.retain(|chunk| {
+                        let initial_older_chunk_count = older_chat_chunks.len();
+                        older_chat_chunks.retain(|chunk| {
                     match &chunk.metadata {
                         crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
                             let is_recent = recent_message_ids.contains(&chat_meta.message_id);
@@ -1542,155 +1555,167 @@ pub async fn get_session_data_for_generation(
                         }
                     }
                 });
-                    debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
-                    info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
-                    combined_rag_candidates.extend(older_chat_chunks);
-                }
-                Err(e) => {
-                    warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
-                }
-            }
-        }
-
-        // Unified RAG Context Selection with Dynamic Budget Management
-        debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before dynamic selection.");
-
-        if combined_rag_candidates.is_empty() {
-            debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
-        } else {
-            info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting independent RAG selection with flexible budgets.");
-
-            // Create pricing-aware context budget planner for the current model
-            let budget_planner = ContextBudgetPlanner::new_for_model(
-                &session_model_name_db,
-                Some(context_total_token_limit),
-            );
-
-            // Separate candidates by source type
-            let mut lorebook_candidates = Vec::new();
-            let mut chronicle_candidates = Vec::new();
-            let mut older_chat_candidates = Vec::new();
-
-            for candidate in combined_rag_candidates {
-                match &candidate.metadata {
-                    RetrievedMetadata::Lorebook(_) => lorebook_candidates.push(candidate),
-                    RetrievedMetadata::Chronicle(_) => chronicle_candidates.push(candidate),
-                    RetrievedMetadata::Chat(_) => older_chat_candidates.push(candidate),
+                        debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
+                        info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
+                        combined_rag_candidates.extend(older_chat_chunks);
+                    }
+                    Err(e) => {
+                        warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
+                    }
                 }
             }
 
-            // Create dynamic RAG selector
-            let rag_selector =
-                DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+            // Unified RAG Context Selection with Dynamic Budget Management
+            debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before dynamic selection.");
 
-            let query_time = Some(chrono::Utc::now().into());
+            if combined_rag_candidates.is_empty() {
+                debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
+                Some(Vec::new())
+            } else {
+                info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting independent RAG selection with flexible budgets.");
 
-            // Waterfall Budgeting Strategy:
-            // Instead of strict pre-allocation, we use a "waterfall" approach.
-            // We define caps for specific types (Lorebooks, Chronicles) to prevent them from dominating,
-            // but if they use less than their cap, the remaining budget flows down to the next category.
-            // The final category (Older Chat) gets whatever is left.
+                // Create pricing-aware context budget planner for the current model
+                let budget_planner = ContextBudgetPlanner::new_for_model(
+                    &session_model_name_db,
+                    Some(context_total_token_limit),
+                );
 
-            let mut remaining_budget = available_rag_tokens;
-            let mut selected_items = Vec::new();
+                // Separate candidates by source type
+                let mut lorebook_candidates = Vec::new();
+                let mut chronicle_candidates = Vec::new();
+                let mut older_chat_candidates = Vec::new();
 
-            // 1. Lorebooks (Cap at 40% of TOTAL available, but take from remaining)
-            let lorebook_cap = (available_rag_tokens as f32 * 0.4) as usize;
-            let lorebook_limit = remaining_budget.min(lorebook_cap);
+                for candidate in combined_rag_candidates {
+                    match &candidate.metadata {
+                        RetrievedMetadata::Lorebook(_) => lorebook_candidates.push(candidate),
+                        RetrievedMetadata::Chronicle(_) => chronicle_candidates.push(candidate),
+                        RetrievedMetadata::Chat(_) => older_chat_candidates.push(candidate),
+                    }
+                }
 
-            if !lorebook_candidates.is_empty() {
-                match rag_selector
-                    .select_rag_content(lorebook_candidates, query_time, Some(lorebook_limit))
-                    .await
-                {
-                    Ok(items) => {
-                        // Calculate actual tokens used to update remaining budget
-                        let mut tokens_used = 0;
-                        for item in &items {
-                            if let Ok(estimate) = state
-                                .token_counter
-                                .count_tokens(
-                                    &item.text,
-                                    CountingMode::LocalOnly,
-                                    Some(&session_model_name_db),
-                                )
-                                .await
-                            {
-                                tokens_used += estimate.total;
+                // Create dynamic RAG selector
+                let rag_selector =
+                    DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+
+                let query_time = Some(chrono::Utc::now().into());
+
+                // Waterfall Budgeting Strategy:
+                // Instead of strict pre-allocation, we use a "waterfall" approach.
+                // We define caps for specific types (Lorebooks, Chronicles) to prevent them from dominating,
+                // but if they use less than their cap, the remaining budget flows down to the next category.
+                // The final category (Older Chat) gets whatever is left.
+
+                let mut remaining_budget = available_rag_tokens;
+                let mut selected_items = Vec::new();
+
+                // 1. Lorebooks (Cap at 40% of TOTAL available, but take from remaining)
+                let lorebook_cap = (available_rag_tokens as f32 * 0.4) as usize;
+                let lorebook_limit = remaining_budget.min(lorebook_cap);
+
+                if !lorebook_candidates.is_empty() {
+                    match rag_selector
+                        .select_rag_content(lorebook_candidates, query_time, Some(lorebook_limit))
+                        .await
+                    {
+                        Ok(items) => {
+                            // Calculate actual tokens used to update remaining budget
+                            let mut tokens_used = 0;
+                            for item in &items {
+                                if let Ok(estimate) = state
+                                    .token_counter
+                                    .count_tokens(
+                                        &item.text,
+                                        CountingMode::LocalOnly,
+                                        Some(&session_model_name_db),
+                                    )
+                                    .await
+                                {
+                                    tokens_used += estimate.total;
+                                }
                             }
+                            remaining_budget = remaining_budget.saturating_sub(tokens_used);
+                            selected_items.extend(items);
+                            debug!(
+                                %session_id,
+                                tokens_used,
+                                remaining_budget,
+                                "Lorebook selection complete (Waterfall Step 1)"
+                            );
                         }
-                        remaining_budget = remaining_budget.saturating_sub(tokens_used);
-                        selected_items.extend(items);
-                        debug!(
-                            %session_id,
-                            tokens_used,
-                            remaining_budget,
-                            "Lorebook selection complete (Waterfall Step 1)"
-                        );
+                        Err(e) => warn!(%session_id, error = %e, "Lorebook RAG selection failed."),
                     }
-                    Err(e) => warn!(%session_id, error = %e, "Lorebook RAG selection failed."),
                 }
-            }
 
-            // 2. Chronicles (Cap at 40% of TOTAL available, but take from remaining)
-            let chronicle_cap = (available_rag_tokens as f32 * 0.4) as usize;
-            let chronicle_limit = remaining_budget.min(chronicle_cap);
+                // 2. Chronicles (Cap at 40% of TOTAL available, but take from remaining)
+                let chronicle_cap = (available_rag_tokens as f32 * 0.4) as usize;
+                let chronicle_limit = remaining_budget.min(chronicle_cap);
 
-            if !chronicle_candidates.is_empty() {
-                match rag_selector
-                    .select_rag_content(chronicle_candidates, query_time, Some(chronicle_limit))
-                    .await
-                {
-                    Ok(items) => {
-                        let mut tokens_used = 0;
-                        for item in &items {
-                            if let Ok(estimate) = state
-                                .token_counter
-                                .count_tokens(
-                                    &item.text,
-                                    CountingMode::LocalOnly,
-                                    Some(&session_model_name_db),
-                                )
-                                .await
-                            {
-                                tokens_used += estimate.total;
+                if !chronicle_candidates.is_empty() {
+                    match rag_selector
+                        .select_rag_content(chronicle_candidates, query_time, Some(chronicle_limit))
+                        .await
+                    {
+                        Ok(items) => {
+                            let mut tokens_used = 0;
+                            for item in &items {
+                                if let Ok(estimate) = state
+                                    .token_counter
+                                    .count_tokens(
+                                        &item.text,
+                                        CountingMode::LocalOnly,
+                                        Some(&session_model_name_db),
+                                    )
+                                    .await
+                                {
+                                    tokens_used += estimate.total;
+                                }
                             }
+                            remaining_budget = remaining_budget.saturating_sub(tokens_used);
+                            selected_items.extend(items);
+                            debug!(
+                                %session_id,
+                                tokens_used,
+                                remaining_budget,
+                                "Chronicle selection complete (Waterfall Step 2)"
+                            );
                         }
-                        remaining_budget = remaining_budget.saturating_sub(tokens_used);
-                        selected_items.extend(items);
-                        debug!(
-                            %session_id,
-                            tokens_used,
-                            remaining_budget,
-                            "Chronicle selection complete (Waterfall Step 2)"
-                        );
+                        Err(e) => warn!(%session_id, error = %e, "Chronicle RAG selection failed."),
                     }
-                    Err(e) => warn!(%session_id, error = %e, "Chronicle RAG selection failed."),
                 }
-            }
 
-            // 3. Older Chat History (Take ALL remaining budget)
-            // This ensures we fill the context window if other categories were sparse
-            let older_chat_limit = remaining_budget;
+                // 3. Older Chat History (Take ALL remaining budget)
+                // This ensures we fill the context window if other categories were sparse
+                let older_chat_limit = remaining_budget;
 
-            if !older_chat_candidates.is_empty() {
-                match rag_selector
-                    .select_rag_content(older_chat_candidates, query_time, Some(older_chat_limit))
-                    .await
-                {
-                    Ok(items) => {
-                        selected_items.extend(items);
-                        debug!(
-                            %session_id,
-                            limit = older_chat_limit,
-                            "Older chat selection complete (Waterfall Step 3)"
-                        );
+                if !older_chat_candidates.is_empty() {
+                    match rag_selector
+                        .select_rag_content(
+                            older_chat_candidates,
+                            query_time,
+                            Some(older_chat_limit),
+                        )
+                        .await
+                    {
+                        Ok(items) => {
+                            selected_items.extend(items);
+                            debug!(
+                                %session_id,
+                                limit = older_chat_limit,
+                                "Older chat selection complete (Waterfall Step 3)"
+                            );
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Older chat RAG selection failed.")
+                        }
                     }
-                    Err(e) => warn!(%session_id, error = %e, "Older chat RAG selection failed."),
                 }
-            }
 
-            rag_context_items = selected_items;
+                Some(selected_items)
+            }
+        }; // End of Qdrant unhealthy bypass block
+
+        if let Some(items) = qdrant_rag_selection {
+            rag_context_items = items;
         }
     } else {
         debug!(target: "test_debug", %session_id, %available_rag_tokens, "Skipping RAG context assembly as available_rag_tokens is not > 0.");

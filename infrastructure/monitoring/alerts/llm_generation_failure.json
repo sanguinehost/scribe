@@ -1,0 +1,24 @@
+{
+    "name": "llm_generation_failure",
+    "description": "Alerts on repeated LLM provider or generation errors",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total, provider, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type = 'llm_generation_failure' GROUP BY provider HAVING count(*) > 5"
+    },
+    "row_template": "- Provider {provider}: {total} errors (Sample Trace: {trace_ref})",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 15,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}

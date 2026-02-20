@@ -143,6 +143,37 @@ def trigger_credit_anomaly():
     except Exception as e:
         print(f"Failed to trigger anomaly: {e}")
 
+def trigger_ttft(count=6):
+    TTFT_URL = f"{BASE_URL}/health/ttft"
+    print(f"Triggering {count} LLM TTFT anomalies (>3s) at {TTFT_URL}...")
+    for i in range(count):
+        try:
+            resp = requests.get(TTFT_URL, timeout=10)
+            print(f"Request {i+1}: Status {resp.status_code}")
+        except Exception as e:
+            print(f"Request {i+1} failed: {e}")
+        time.sleep(0.1)
+
+def trigger_frontend_errors(count=5, spoof_ip=False):
+    TELEMETRY_URL = f"{BASE_URL}/telemetry"
+    print(f"Triggering {count} frontend client errors at {TELEMETRY_URL}...")
+    payload = {
+        "component": "ChatContainer",
+        "error_message": "TypeError: Cannot read properties of undefined (reading 'text')",
+        "route": "/chat/123",
+        "severity": "fatal"
+    }
+    for i in range(count):
+        headers = {}
+        if spoof_ip:
+            headers["X-Forwarded-For"] = "192.168.1.10"
+        try:
+            resp = requests.post(TELEMETRY_URL, json=payload, headers=headers, timeout=10)
+            print(f"Request {i+1}: Status {resp.status_code}")
+        except Exception as e:
+            print(f"Request {i+1} failed: {e}")
+        time.sleep(0.1)
+
 def trigger_diagnostics():
     ROOT_BASE = "https://api.staging.scribe.sanguinehost.com"
     print(f"Running diagnostics...")
@@ -156,6 +187,7 @@ def trigger_diagnostics():
         f"{BASE_URL}/health/error",
         f"{BASE_URL}/health/slow",
         f"{BASE_URL}/health/anomaly",
+        f"{BASE_URL}/health/ttft",
         f"{BASE_URL}/payment/webhook/paddle",
     ]
 
@@ -180,6 +212,8 @@ if __name__ == "__main__":
     parser.add_argument('--latency', action='store_true', help='Trigger high latency')
     parser.add_argument('--anomaly', action='store_true', help='Trigger credit anomaly')
     parser.add_argument('--webhook', action='store_true', help='Trigger webhook security')
+    parser.add_argument('--ttft', action='store_true', help='Trigger LLM high TTFT mock')
+    parser.add_argument('--frontend', action='store_true', help='Trigger frontend client errors')
     parser.add_argument('--debug', action='store_true', help='Run diagnostic ping tests')
 
     # New flags
@@ -204,6 +238,10 @@ if __name__ == "__main__":
         trigger_500_errors(spoof_ip=args.spoof_ip)
     if args.all or args.webhook:
         trigger_webhook_failures()
+    if args.all or args.ttft:
+        trigger_ttft()
+    if args.all or args.frontend:
+        trigger_frontend_errors(spoof_ip=args.spoof_ip)
 
     if not any(vars(args).values()):
         parser.print_help()

@@ -95,6 +95,15 @@ pub async fn health_check(
     let db_health = check_database_health(&state).await;
     let db_duration = db_start.elapsed().as_millis() as u64;
 
+    if let Err(ref e) = db_health {
+        tracing::error!(
+            event_type = "health_check_failure",
+            dependency = "database",
+            error = %e,
+            "Database health check failed"
+        );
+    }
+
     health_response.add_component(
         "database".to_string(),
         ComponentHealthInfo {
@@ -112,6 +121,24 @@ pub async fn health_check(
     let qdrant_start = Instant::now();
     let qdrant_health = check_qdrant_health(&state).await;
     let qdrant_duration = qdrant_start.elapsed().as_millis() as u64;
+
+    if let Err(ref e) = qdrant_health {
+        // Toggle health flag so the system can gracefully degrade
+        state
+            .qdrant_healthy
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        tracing::error!(
+            event_type = "health_check_failure",
+            dependency = "qdrant",
+            error = %e,
+            "Qdrant health check failed"
+        );
+    } else {
+        // Ensure the flag restores its healthy state
+        state
+            .qdrant_healthy
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 
     health_response.add_component(
         "qdrant".to_string(),

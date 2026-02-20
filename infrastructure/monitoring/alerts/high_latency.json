@@ -6,9 +6,9 @@
     "enabled": true,
     "query_condition": {
         "type": "sql",
-        "sql": "SELECT avg(CAST(REGEXP_REPLACE(latency, '[^0-9.]', '', 'g') AS DOUBLE)) as lat, path, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') GROUP BY path HAVING lat > 2000"
+        "sql": "SELECT avg(CAST(REGEXP_REPLACE(latency, '[^0-9.]', '', 'g') AS DOUBLE)) as lat, count(*) as req_count, path, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') GROUP BY path HAVING lat > 2000 AND req_count > 5"
     },
-    "row_template": "- {path}: {lat}ms avg (Sample Trace: {trace_ref})",
+    "row_template": "- {path}: {lat}ms avg over {req_count} requests (Sample Trace: {trace_ref})",
     "trigger_condition": {
         "period": 5,
         "operator": ">",
