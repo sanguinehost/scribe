@@ -6,9 +6,9 @@
     "enabled": true,
     "query_condition": {
         "type": "sql",
-        "sql": "SELECT count(*) as total, dependency, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type IN ('database_error', 'qdrant_error', 'health_check_failure') GROUP BY dependency HAVING count(*) > 10"
+        "sql": "SELECT count(*) as total FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type IN ('database_error', 'qdrant_error', 'health_check_failure') HAVING count(*) > 10"
     },
-    "row_template": "- Dependency {dependency}: {total} failures (Sample Trace: {trace_ref})",
+    "row_template": "- {total} external dependency failures detected",
     "trigger_condition": {
         "period": 5,
         "operator": ">",
