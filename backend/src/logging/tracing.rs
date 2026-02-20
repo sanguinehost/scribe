@@ -233,8 +233,18 @@ where
         .build()
         .expect("Failed to create log exporter");
 
+        use opentelemetry::KeyValue;
+        use opentelemetry_sdk::Resource;
+
+        let service_name =
+            env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "scribe-backend".to_string());
+
         let logger_provider = SdkLoggerProvider::builder()
-            //.with_resource(opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new("service.name", "scribe-backend")]))
+            .with_resource(
+                Resource::builder()
+                    .with_attributes(vec![KeyValue::new("service.name", service_name.clone())])
+                    .build(),
+            )
             .with_log_processor(BatchLogProcessor::builder(log_exporter).build())
             .build();
 
@@ -247,7 +257,9 @@ where
     // Create the logging layer
     let logging_layer = OpenTelemetryTracingBridge::new(&logger_provider);
 
-    let tracer = opentelemetry::global::tracer("scribe-backend");
+    let service_name =
+        env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| "scribe-backend".to_string());
+    let tracer = opentelemetry::global::tracer(service_name);
 
     // Combine layers
     Some(

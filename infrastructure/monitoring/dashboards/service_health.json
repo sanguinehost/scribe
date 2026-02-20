@@ -1,0 +1,263 @@
+{
+    "version": 8,
+    "title": "Service Health",
+    "description": "Scribe Backend Service Health Dashboard",
+    "tabs": [
+        {
+            "tabId": "main",
+            "name": "Main",
+            "panels": [
+                {
+                    "id": "panel1",
+                    "type": "area",
+                    "title": "Total Requests (5m)",
+                    "description": "Rate of incoming requests",
+                    "layout": {
+                        "x": 0,
+                        "y": 0,
+                        "w": 96,
+                        "h": 50,
+                        "i": 1
+                    },
+                    "config": {
+                        "show_legends": true
+                    },
+                    "queries": [
+                        {
+                            "query": "SELECT histogram(_timestamp, '1m') as ts, COUNT(*) as count FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') GROUP BY ts",
+                            "fields": {
+                                "stream": "default",
+                                "stream_type": "logs",
+                                "x": [
+                                    {
+                                        "label": "ts",
+                                        "alias": "ts",
+                                        "column": "ts"
+                                    }
+                                ],
+                                "y": [
+                                    {
+                                        "label": "count",
+                                        "alias": "count",
+                                        "column": "count"
+                                    }
+                                ],
+                                "z": [],
+                                "filter": {
+                                    "type": "condition",
+                                    "values": [],
+                                    "logicalOperator": "AND",
+                                    "filterType": "all"
+                                }
+                            },
+                            "config": {
+                                "promql_legend": ""
+                            },
+                            "customQuery": true
+                        }
+                    ]
+                },
+                {
+                    "id": "panel2",
+                    "type": "area",
+                    "title": "Error Rate",
+                    "description": "Count of error logs (status >= 400 or level=ERROR)",
+                    "layout": {
+                        "x": 96,
+                        "y": 0,
+                        "w": 96,
+                        "h": 50,
+                        "i": 2
+                    },
+                    "config": {
+                        "show_legends": true
+                    },
+                    "queries": [
+                        {
+                            "query": "SELECT histogram(_timestamp, '1m') as ts, COUNT(*) as count FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND CAST(REGEXP_REPLACE(status, '[^0-9]', '', 'g') AS INTEGER) >= 400 GROUP BY ts",
+                            "fields": {
+                                "stream": "default",
+                                "stream_type": "logs",
+                                "x": [
+                                    {
+                                        "label": "ts",
+                                        "alias": "ts",
+                                        "column": "ts"
+                                    }
+                                ],
+                                "y": [
+                                    {
+                                        "label": "count",
+                                        "alias": "count",
+                                        "column": "count"
+                                    }
+                                ],
+                                "z": [],
+                                "filter": {
+                                    "type": "condition",
+                                    "values": [],
+                                    "logicalOperator": "AND",
+                                    "filterType": "all"
+                                }
+                            },
+                            "config": {
+                                "promql_legend": ""
+                            },
+                            "customQuery": true
+                        }
+                    ]
+                },
+                {
+                    "id": "panel3",
+                    "type": "bar",
+                    "title": "Latency (P99)",
+                    "description": "99th percentile of response time",
+                    "layout": {
+                        "x": 0,
+                        "y": 50,
+                        "w": 96,
+                        "h": 50,
+                        "i": 3
+                    },
+                    "config": {
+                        "show_legends": true
+                    },
+                    "queries": [
+                        {
+                            "query": "SELECT histogram(_timestamp, '1m') as ts, avg(CAST(REGEXP_REPLACE(latency, '[^0-9.]', '', 'g') AS DOUBLE)) as latency FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') GROUP BY ts",
+                            "fields": {
+                                "stream": "default",
+                                "stream_type": "logs",
+                                "x": [
+                                    {
+                                        "label": "ts",
+                                        "alias": "ts",
+                                        "column": "ts"
+                                    }
+                                ],
+                                "y": [
+                                    {
+                                        "label": "latency",
+                                        "alias": "latency",
+                                        "column": "latency"
+                                    }
+                                ],
+                                "z": [],
+                                "filter": {
+                                    "type": "condition",
+                                    "values": [],
+                                    "logicalOperator": "AND",
+                                    "filterType": "all"
+                                }
+                            },
+                            "config": {
+                                "promql_legend": ""
+                            },
+                            "customQuery": true
+                        }
+                    ]
+                },
+                {
+                    "id": "panel4",
+                    "type": "pie",
+                    "title": "Auth Methods",
+                    "description": "Distribution of authentication methods used",
+                    "layout": {
+                        "x": 96,
+                        "y": 50,
+                        "w": 96,
+                        "h": 50,
+                        "i": 4
+                    },
+                    "config": {
+                        "show_legends": true
+                    },
+                    "queries": [
+                        {
+                            "query": "SELECT event_type, COUNT(*) as count FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type != 'none' GROUP BY event_type",
+                            "fields": {
+                                "stream": "default",
+                                "stream_type": "logs",
+                                "x": [
+                                    {
+                                        "label": "auth_method",
+                                        "alias": "auth_method",
+                                        "column": "event_type"
+                                    }
+                                ],
+                                "y": [
+                                    {
+                                        "label": "count",
+                                        "alias": "count",
+                                        "column": "count"
+                                    }
+                                ],
+                                "z": [],
+                                "filter": {
+                                    "type": "condition",
+                                    "values": [],
+                                    "logicalOperator": "AND",
+                                    "filterType": "all"
+                                }
+                            },
+                            "config": {
+                                "promql_legend": ""
+                            },
+                            "customQuery": true
+                        }
+                    ]
+                },
+                {
+                    "id": "panel5",
+                    "type": "line",
+                    "title": "Active Users (Approx)",
+                    "description": "Unique user IDs seen in the last 5 minutes",
+                    "layout": {
+                        "x": 0,
+                        "y": 100,
+                        "w": 192,
+                        "h": 50,
+                        "i": 5
+                    },
+                    "config": {
+                        "show_legends": true
+                    },
+                    "queries": [
+                        {
+                            "query": "SELECT histogram(_timestamp, '5m') as ts, COUNT(DISTINCT client_ip) as users FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') GROUP BY ts",
+                            "fields": {
+                                "stream": "default",
+                                "stream_type": "logs",
+                                "x": [
+                                    {
+                                        "label": "ts",
+                                        "alias": "ts",
+                                        "column": "ts"
+                                    }
+                                ],
+                                "y": [
+                                    {
+                                        "label": "users",
+                                        "alias": "users",
+                                        "column": "users"
+                                    }
+                                ],
+                                "z": [],
+                                "filter": {
+                                    "type": "condition",
+                                    "values": [],
+                                    "logicalOperator": "AND",
+                                    "filterType": "all"
+                                }
+                            },
+                            "config": {
+                                "promql_legend": ""
+                            },
+                            "customQuery": true
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}

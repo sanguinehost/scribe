@@ -1594,7 +1594,12 @@ pub async fn paddle_webhook(
         };
 
         if let Ok(json) = security_event.to_json() {
-            tracing::warn!(event_type = "security_event", severity = "P1", "{}", json);
+            tracing::warn!(
+                event_type = "webhook_signature_failure",
+                severity = "P1",
+                "{}",
+                json
+            );
         }
 
         return Err(e);
@@ -1696,7 +1701,8 @@ pub async fn paddle_webhook(
                 // Same event_type but different payload = Tampering attempt
                 tracing::warn!(
                     event_id = %event_id,
-                    event_type = %event_type_str,
+                    event_type = "webhook_replay_attack",
+                    paddle_event_type = %event_type_str,
                     expected_hash = %existing.payload_hash,
                     received_hash = %payload_hash,
                     "Webhook replay detected with modified payload - rejecting"

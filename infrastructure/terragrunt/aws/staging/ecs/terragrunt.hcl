@@ -111,7 +111,7 @@ inputs = {
     },
     {
       name  = "OTEL_SERVICE_NAME"
-      value = "scribe-backend"
+      value = "scribe_backend"
     },
     {
       name  = "TOKENIZER_MODEL_PATH"

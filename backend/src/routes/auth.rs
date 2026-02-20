@@ -414,7 +414,7 @@ pub async fn login_handler(
             };
 
             if let Ok(json) = security_event.to_json() {
-                tracing::warn!(event_type = "security_event", severity = "P2", "{}", json);
+                tracing::warn!(event_type = "auth_failure", severity = "P2", "{}", json);
             }
 
             Err(AppError::Unauthorized(

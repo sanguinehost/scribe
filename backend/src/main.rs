@@ -9,7 +9,7 @@ use deadpool_diesel::Pool as DeadpoolPool;
 use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
 use std::net::SocketAddr;
 use tower_http::cors::CorsLayer;
-use tower_http::trace::{DefaultMakeSpan, TraceLayer};
+use tower_http::trace::TraceLayer;
 
 // Use modules from the library crate
 use anyhow::Context;
@@ -140,8 +140,93 @@ async fn load_cloud_certificate() -> Result<RustlsConfig> {
 }
 
 async fn main_request_logging_middleware(req: AxumRequest, next: Next) -> AxumResponse {
-    tracing::info!(target: "main_router_debug", "MAIN ROUTER: Method={}, URI={}", req.method(), req.uri());
-    next.run(req).await
+    let start = std::time::Instant::now();
+    let method = req.method().clone();
+    let uri = req.uri().clone();
+    let path = uri.path().to_string();
+    let query = uri.query().unwrap_or("").to_string();
+    let client_ip = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .unwrap_or("unknown")
+        .to_string();
+
+    // Attempt to identify event_type for logging/alerting
+    let event_type = if path.contains("/auth/login") {
+        Some("auth_attempt")
+    } else if path.contains("/payment/webhook") {
+        Some("payment_webhook")
+    } else {
+        None
+    };
+
+    // Debug X-Forwarded-For to solve IP resolution issues
+    // Must be cloned before req is moved into next.run(req)
+    let xff_header = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("none")
+        .to_string();
+
+    // DEBUG: Log all headers to find where the IP is hiding
+    let all_headers = req
+        .headers()
+        .iter()
+        .map(|(k, v)| format!("{}: {}", k, v.to_str().unwrap_or("?")))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    tracing::info!(
+        target: "main_router_debug",
+        method = %method,
+        uri = %uri,
+        path = %path,
+        query = %query,
+        client_ip = %client_ip,
+        xff_header = %xff_header,
+        all_headers = %all_headers,
+        event_type = %event_type.unwrap_or("none"),
+        "MAIN ROUTER: Received request"
+    );
+
+    let res = next.run(req).await;
+    let latency = start.elapsed().as_millis() as u64;
+    let status = res.status();
+
+    // Enrich response log with event_type if it was unsuccessful
+    let response_event_type = if !status.is_success() {
+        match (event_type, status.as_u16()) {
+            (Some("auth_attempt"), 401 | 403) => Some("auth_failure"),
+            (Some("payment_webhook"), _) => Some("payment_webhook_error"),
+            _ => None,
+        }
+    } else {
+        event_type
+    };
+
+    // Extract user_id from response extensions (propagated from capture_user_id_middleware via inner layers)
+    let user_id = res
+        .extensions()
+        .get::<scribe_backend::middleware::PrivacySafeUserId>()
+        .map(|uid| uid.0.clone());
+
+    tracing::info!(
+        target: "main_router_debug",
+        status = status.as_u16(),
+        method = %method,
+        latency = latency,
+        path = %path,
+        client_ip = %client_ip,
+        xff_header = %xff_header, // Logging raw XFF for debugging
+        user_id = %user_id.unwrap_or_else(|| "none".to_string()),
+        event_type = %response_event_type.unwrap_or("none"),
+        "MAIN ROUTER: Response sent"
+    );
+
+    res
 }
 
 // Removed custom rejection handler functions (handle_auth_rejection, handle_unauthorized_rejection)
@@ -672,8 +757,7 @@ fn build_router(
         .nest("/generation", generation_routes::router()) // AI generation routes
         .nest("/llm", llm_router()); // LLM management routes
 
-    #[cfg(feature = "payment")]
-    let protected_api_routes = protected_api_routes.nest("/payment", payment_routes()); // Payment routes
+    // Note: Payment routes moved to central consolidation below
 
     let protected_api_routes = protected_api_routes
         .nest("/personas", user_personas_router(app_state.clone()))
@@ -691,16 +775,14 @@ fn build_router(
             unified_login_required,
         ));
 
-    // Health endpoint - not rate limited for monitoring purposes
-    let health_routes = Router::new()
-        .route("/api/health", get(health_check))
-        .with_state(app_state.clone());
-
     // Public auth routes (no authentication required) - rate limited
     // NOTE: Auth layer provides session/auth_session extractors but doesn't enforce authentication
     // The actual authentication requirement is enforced by protected routes or handler logic
     let public_auth_routes = Router::new()
         .nest("/auth", auth_routes()) // Auth routes under /api/auth (login, register, desktop config, auto-login, etc.)
+        .layer(axum_middleware::from_fn(
+            scribe_backend::middleware::capture_user_id_middleware,
+        ))
         .layer(auth_layer.clone()) // Auth layer for session/auth_session extractors
         .layer(GovernorLayer::new(std::sync::Arc::new(
             GovernorConfigBuilder::default()
@@ -725,13 +807,10 @@ fn build_router(
 
     // Webhook routes (no authentication, no rate limiting - signature verified in handler)
     #[cfg(feature = "payment")]
-    tracing::info!("🎯 Setting up webhook routes in main.rs");
-    #[cfg(feature = "payment")]
-    let webhook_routes = Router::new()
-        .nest("/api/payment", payment_webhook_routes()) // Webhook routes under /api/payment
-        .with_state(app_state.clone());
-    #[cfg(feature = "payment")]
-    tracing::info!("🎯 Webhook routes configured");
+    let payment_router = {
+        // Build a consolidated payment router
+        payment_webhook_routes().merge(payment_routes())
+    };
 
     // Configure CORS for the frontend
     let cors = if app_state.config.environment.as_deref() == Some("desktop") {
@@ -798,53 +877,136 @@ fn build_router(
             ])
             .allow_credentials(true)
     };
-
-    // Build API routes with proper auth layering
-    // Public auth routes (no auth layer) + Protected routes (with auth layer)
-    let api_routes = Router::new()
-        .nest("/api", public_auth_routes) // Public auth routes - NO auth required
-        .nest(
-            "/api",
-            protected_rate_limited_routes.layer(auth_layer.clone()), // Auth layer ONLY on protected routes
+    // Build a consolidated API router to avoid conflicting nests and shadowing
+    let mut api_router = Router::new()
+        // Health/Diagnostic routes (Highest priority inside /api)
+        .route("/health", get(health_check))
+        .route(
+            "/health/error",
+            get(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "Diagnostic Error",
+                )
+            }),
         )
-        .with_state(app_state.clone());
+        .route(
+            "/health/slow",
+            get(|| async {
+                tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                "Health Slow OK"
+            }),
+        )
+        .route(
+            "/health/anomaly",
+            get(|| async {
+                use scribe_backend::logging::security_events::SecurityEvent;
+                let event = SecurityEvent::CreditOperationAnomaly {
+                    timestamp: chrono::Utc::now().into(),
+                    user_hash: "user#paperboy_hashed".to_string(),
+                    operation_type: "add".to_string(),
+                    amount: 1000000.0,
+                    anomaly_reason: "diagnostic_manual_trigger".to_string(),
+                    baseline_deviation: 10.0,
+                };
+                if let Ok(json) = event.to_json() {
+                    tracing::warn!(
+                        event_type = "credit_operation_anomaly",
+                        severity = "P0",
+                        "{}",
+                        json
+                    );
+                }
+                "Credit Anomaly Triggered"
+            }),
+        )
+        .route("/health/debug", get(|| async { "Health Debug OK" }))
+        .route("/ping", get(|| async { "API Ping OK" }))
+        // Auth routes (Public)
+        .merge(public_auth_routes);
 
-    // Combine all routes
+    // Payment routes (Priority nesting under /payment)
     #[cfg(feature = "payment")]
-    let final_router = {
-        let base_router = Router::new()
-            .merge(health_routes) // Health endpoint not rate limited
-            .merge(api_routes); // All API routes (public + protected)
-        base_router.merge(webhook_routes) // Webhook routes without auth
-    };
+    {
+        // payment_router already merges webhook and protected payment routes in main()
+        api_router = api_router.nest("/payment", payment_router);
+    }
 
-    #[cfg(not(feature = "payment"))]
-    let final_router = Router::new()
-        .merge(health_routes) // Health endpoint not rate limited
-        .merge(api_routes); // All API routes (public + protected)
+    // Merge all other protected routes with auth layer
+    api_router = api_router.merge(
+        protected_rate_limited_routes
+            .layer(axum_middleware::from_fn(
+                scribe_backend::middleware::capture_user_id_middleware,
+            ))
+            .layer(auth_layer),
+    );
 
-    final_router
+    // Final top-level router assembly
+    // Priority:
+    // 1. Critical Diagnostics (directly on root and /probe)
+    // 2. Main API (/api)
+    // 3. 404 Fallback
+    Router::new()
+        // Highest priority: Critical diagnostics to avoid any shadowing
+        .route("/probe/ping", get(|| async { "Probe Ping OK 12345" }))
+        .route("/probe/root", get(|| async { "Probe Root OK 12345" }))
+        .route("/ping", get(|| async { "Root Ping OK 12345" }))
+        // Main API nesting
+        .nest("/api", api_router)
+        // Fallback for everything else
         .fallback(fallback_404)
+        // Layers applied from outside in
         .layer(cors)
         .layer(CookieManagerLayer::new())
         .with_state(app_state)
         .layer(axum_middleware::from_fn(
             scribe_backend::middleware::security_headers_middleware,
         ))
+        // Logging middleware runs INSIDE the TraceLayer span so it can access/record fields
+        .layer(axum_middleware::from_fn(main_request_logging_middleware))
+        // TraceLayer should be outermost of the logging layers to ensure span exists for inner layers
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+                .make_span_with(|request: &axum::http::Request<_>| {
+                    tracing::info_span!(
+                        "http.request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        status_code = tracing::field::Empty,
+                        "otel.status_code" = tracing::field::Empty,
+                        user_id = tracing::field::Empty,
+                    )
+                })
+                .on_response(
+                    |_res: &AxumResponse, _latency: std::time::Duration, span: &tracing::Span| {
+                        let status = _res.status();
+                        span.record("status_code", status.as_u16() as u64);
+                        // Set span status to error if status code is 5xx
+                        if status.is_server_error() {
+                            span.record("otel.status_code", "ERROR");
+                            span.record("status_code", 2u64); // OpenObserve alert specifically looks for status_code=2
+                        }
+                    },
+                ),
         )
-        .layer(axum_middleware::from_fn(main_request_logging_middleware))
 }
 
 /// Global 404 fallback handler that returns JSON
-async fn fallback_404() -> impl IntoResponse {
+async fn fallback_404(method: axum::http::Method, uri: axum::http::Uri) -> impl IntoResponse {
+    let path = uri.path();
+    tracing::warn!(
+        target: "main_router_debug",
+        method = %method,
+        path = %path,
+        "ROUTING ERROR: Request matched no routes (Returning 404)"
+    );
     (
         StatusCode::NOT_FOUND,
         Json(serde_json::json!({
             "error": "Not Found",
-            "error_code": "NOT_FOUND"
+            "error_code": "NOT_FOUND",
+            "path": path,
+            "method": method.as_str()
         })),
     )
 }

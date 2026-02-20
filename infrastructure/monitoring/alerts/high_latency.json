@@ -1,0 +1,24 @@
+{
+    "name": "high_latency",
+    "description": "Detects sustained high P95 latency (>2s)",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT avg(CAST(REGEXP_REPLACE(latency, '[^0-9.]', '', 'g') AS DOUBLE)) as lat, path, min(trace_id) as trace_ref FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') GROUP BY path HAVING lat > 2000"
+    },
+    "row_template": "- {path}: {lat}ms avg (Sample Trace: {trace_ref})",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 10,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}
