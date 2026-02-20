@@ -109,6 +109,38 @@ pre-commit install
 print_status "Installing commit message validation hook..."
 pre-commit install --hook-type commit-msg
 
+# Append Scribe auto-formatter wrapper to the pre-commit hook
+print_status "Configuring auto-formatter bypass in pre-commit hook..."
+HOOK_FILE=".git/hooks/pre-commit"
+if [ -f "$HOOK_FILE" ]; then
+    AUTO_FORMAT_BLOCK='
+# --- SCRIBE AUTO-FORMATTER WRAPPER ---
+# Format modified backend Rust files
+if git diff --cached --name-only | grep -q "^backend/.*\.rs$"; then
+    echo "🦀 Auto-formatting backend Rust code..."
+    cargo fmt -p scribe-backend
+    git add -u
+fi
+
+# Format modified frontend files
+if git diff --cached --name-only | grep -E -q "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$"; then
+    echo "⚡ Auto-formatting frontend code..."
+    (cd frontend && pnpm format > /dev/null 2>&1)
+    git add -u
+fi
+# --- END SCRIBE AUTO-FORMATTER WRAPPER ---
+'
+    if ! grep -q "SCRIBE AUTO-FORMATTER WRAPPER" "$HOOK_FILE"; then
+        awk -v block="$AUTO_FORMAT_BLOCK" "NR==1{print; print block; next} 1" "$HOOK_FILE" > "$HOOK_FILE.tmp"
+        mv "$HOOK_FILE.tmp" "$HOOK_FILE"
+        chmod +x "$HOOK_FILE"
+        print_success "Auto-formatter wrapper installed successfully"
+    else
+        print_status "Auto-formatter wrapper already installed"
+    fi
+fi
+
+
 # Verify Rust tools are available
 print_status "Verifying Rust tools (cargo, rustfmt, clippy)..."
 
