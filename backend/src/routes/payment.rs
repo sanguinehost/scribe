@@ -1659,7 +1659,7 @@ pub async fn paddle_webhook(
 
     // Check if this event has already been processed
     let event_id = &webhook_data.event_id;
-    let event_type_str = format!("{:?}", webhook_data.event_type);
+    let event_type_str = webhook_data.event_type.to_string();
 
     tracing::debug!(
         event_id = %event_id,
@@ -1749,7 +1749,6 @@ pub async fn paddle_webhook(
             .await
             .map_err(|e| AppError::DbPoolError(e.to_string()))?;
 
-        let event_type_str = format!("{:?}", webhook_data.event_type);
         let external_ref = webhook_data
             .data
             .get("transaction")
@@ -1757,9 +1756,16 @@ pub async fn paddle_webhook(
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
+        let event_type_str_audit = webhook_data.event_type.to_string();
+        let external_ref_audit = external_ref.clone();
+
         if let Err(e) = conn
             .interact(move |conn| {
-                audit_service.log_webhook_event(conn, &event_type_str, external_ref.as_deref())
+                audit_service.log_webhook_event(
+                    conn,
+                    &event_type_str_audit,
+                    external_ref_audit.as_deref(),
+                )
             })
             .await
             .map_err(|e| AppError::DbInteractError(e.to_string()))
@@ -2288,6 +2294,41 @@ async fn process_transaction_completed(
             "Successfully stored transaction {} in database",
             transaction_id
         );
+
+        // Log transaction storage in audit log
+        let audit_service = crate::services::payment::PaymentAuditService::new();
+        let audit_conn = app_state
+            .pool
+            .get()
+            .await
+            .map_err(|e| AppError::DbPoolError(e.to_string()))?;
+
+        let tx_id_clone = transaction_id.clone();
+        let user_id_clone = user.id;
+        let event_id = webhook_data.event_id.clone();
+        let event_type = webhook_data.event_type.clone();
+
+        let event_type_str = event_type.to_string();
+        let event_id_str = event_id.clone();
+
+        if let Err(e) = audit_conn
+            .interact(move |conn| {
+                // Log generic webhook event for transaction completion
+                audit_service.log_webhook_event(conn, &event_type_str, Some(&event_id_str))?;
+
+                // Log transaction event for enhanced observability
+                audit_service.log_transaction_event(
+                    conn,
+                    user_id_clone,
+                    &tx_id_clone,
+                    &event_type_str,
+                    Some(&event_id_str),
+                )
+            })
+            .await
+        {
+            tracing::warn!("Failed to log transaction completion to audit log: {:?}", e);
+        }
     }
 
     // Extract price_id to determine plan type
@@ -3428,6 +3469,23 @@ async fn process_subscription_updated(
             subscription.id,
             paddle_subscription_id
         );
+
+        // Log subscription updated event
+        let user_id = subscription.user_id;
+        let event_id = webhook_data.event_id.clone();
+
+        let _ = conn
+            .interact(move |conn| {
+                let audit_service = PaymentAuditService::new();
+                audit_service.log_subscription_event(
+                    conn,
+                    user_id,
+                    AuditEventType::SubscriptionUpdated,
+                    Some(&event_id),
+                )?;
+                Ok::<(), AppError>(())
+            })
+            .await;
 
         // Update subscription with new data
         let subscription_id = subscription.id;
