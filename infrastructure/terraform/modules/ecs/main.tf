@@ -39,6 +39,14 @@ resource "aws_ecr_repository" "qdrant_repo" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+locals {
+  account_id = data.aws_caller_identity.current.account_id
+  region     = data.aws_region.current.name
+}
+
 # ECS Cluster
 resource "aws_ecs_cluster" "scribe_cluster" {
   name = "${var.environment}-scribe-cluster"
@@ -195,7 +203,7 @@ resource "aws_iam_role_policy" "ecs_task_ses_policy" {
           "ses:SendRawEmail"
         ]
         Resource = [
-          "arn:aws:ses:ap-southeast-2:058264339990:identity/sanguinehost.com"
+          "arn:aws:ses:${local.region}:${local.account_id}:identity/sanguinehost.com"
         ]
       }
     ]

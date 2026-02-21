@@ -39,6 +39,35 @@ output "backend_secrets_list" {
     {
       name      = "QDRANT_API_KEY"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:qdrant_api_key::"
+    },
+    {
+      name      = "TLS_CERT_PEM"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:tls_cert_pem::"
+    },
+    {
+      name      = "TLS_KEY_PEM"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:tls_key_pem::"
     }
-  ]
+  ], var.enable_payments ? [
+    {
+      name      = "PAYMENT_PADDLE_API_KEY"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_api_key::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_WEBHOOK_SECRET"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_webhook_secret::"
+    },
+    {
+      name      = "PAYMENT_DATA_ENCRYPTION_KEY"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:PAYMENT_DATA_ENCRYPTION_KEY::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_BASIC_MONTHLY_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_basic_monthly_price_id::"
+    },
+    {
+      name      = "PAYMENT_PADDLE_BASIC_YEARLY_PRICE_ID"
+      valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_basic_yearly_price_id::"
+    }
+  ] : [])
 }
