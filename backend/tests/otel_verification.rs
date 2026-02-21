@@ -26,7 +26,7 @@ async fn test_otel_redaction_flow() {
     } // Span ends here
 
     // 3. Keep it alive briefly to allow the flush
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // 4. Force shutdown to flush spans
     opentelemetry::global::shutdown_tracer_provider();
