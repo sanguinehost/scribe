@@ -43,7 +43,9 @@ export default defineConfig({
 		// Reads from environment at build time (passed during Docker build)
 		// NOTE: Must use VITE_ prefix for Vite to expose this to process.env
 		PUBLIC_API_URL: JSON.stringify(
-			process.env.VITE_PUBLIC_API_URL || 'https://api.staging.scribe.sanguinehost.com'
+			process.env.PUBLIC_API_URL ||
+				process.env.VITE_PUBLIC_API_URL ||
+				'https://api.staging.scribe.sanguinehost.com'
 		)
 	},
 	server: {

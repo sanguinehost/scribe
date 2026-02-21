@@ -77,8 +77,12 @@
 					toast.error(errorMessage);
 				}
 			} else {
+				// In desktop mode, we hide the email field but the API still requires it.
+				// Provide a safe default for local-only registration.
+				const registrationEmail = inDesktopMode ? (email || `${username}@local.scribe`) : email;
+
 				const result = await apiClient.createUser({
-					email,
+					email: registrationEmail,
 					username,
 					password
 				});
