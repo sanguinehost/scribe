@@ -934,6 +934,40 @@ fn build_router(
                 "Mock TTFT Triggered"
             }),
         )
+        .route(
+            "/health/llm_failure",
+            get(|| async {
+                tracing::error!(
+                    event_type = "llm_generation_failure",
+                    provider = "gemini",
+                    error = "mock api timeout",
+                    "Failed to generate LLM response"
+                );
+                "Mock LLM Failure Triggered"
+            }),
+        )
+        .route(
+            "/health/db_error",
+            get(|| async {
+                tracing::error!(
+                    event_type = "database_error",
+                    error = "mock connection timeout",
+                    "Database connection failure simulated"
+                );
+                "Mock Database Error Triggered"
+            }),
+        )
+        .route(
+            "/health/payment_fail",
+            get(|| async {
+                tracing::error!(
+                    event_type = "payment_failed",
+                    reason = "mock card rejection",
+                    "Payment failure event simulated"
+                );
+                "Mock Payment Failure Triggered"
+            }),
+        )
         .route("/health/debug", get(|| async { "Health Debug OK" }))
         .route("/ping", get(|| async { "API Ping OK" }))
         // Auth routes (Public)
