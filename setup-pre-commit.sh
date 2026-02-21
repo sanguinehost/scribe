@@ -119,14 +119,14 @@ if [ -f "$HOOK_FILE" ]; then
 if git diff --cached --name-only | grep -q "^backend/.*\.rs$"; then
     echo "🦀 Auto-formatting backend Rust code..."
     cargo fmt -p scribe-backend
-    git add -u
+    git add $(git diff --cached --name-only)
 fi
 
 # Format modified frontend files
 if git diff --cached --name-only | grep -E -q "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$"; then
     echo "⚡ Auto-formatting frontend code..."
     (cd frontend && pnpm format > /dev/null 2>&1)
-    git add -u
+    git add $(git diff --cached --name-only)
 fi
 # --- END SCRIBE AUTO-FORMATTER WRAPPER ---
 '
