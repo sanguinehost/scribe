@@ -6,9 +6,9 @@
     "enabled": true,
     "query_condition": {
         "type": "sql",
-        "sql": "SELECT count(*) as count, min(trace_id) as trace_ref FROM default WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type = 'webhook_signature_invalid' HAVING count > 5"
+        "sql": "SELECT count(*) as total FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type = 'webhook_signature_failure' HAVING count(*) > 5"
     },
-    "row_template": "- {count} signature failures! (Sample Trace: {trace_ref})",
+    "row_template": "- {total} signature failures!",
     "trigger_condition": {
         "period": 10,
         "operator": ">",

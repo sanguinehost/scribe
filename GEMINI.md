@@ -372,6 +372,53 @@ aws ecs execute-command \
     --region ap-southeast-4
 ```
 
+### OpenObserve (OBS) Operations
+Common tasks for monitoring, querying, and managing alerts in OpenObserve.
+
+#### 1. Connecting and API Calls
+OpenObserve provides a REST API. You need your organization name, stream name, and basic auth credentials token.
+
+```bash
+# Set your OpenObserve URL and credentials
+export OBS_URL="https://api.openobserve.ai"
+export OBS_ORG="default"
+export OBS_STREAM="scribe_logs"
+export OBS_TOKEN="Basic <base64_encoded_email:password>"
+
+# Test Connection / Get Streams
+curl -X GET "${OBS_URL}/api/${OBS_ORG}/streams" \
+  -H "Authorization: ${OBS_TOKEN}" \
+  -H "Accept: application/json"
+
+# Search Logs using SQL via API
+curl -X POST "${OBS_URL}/api/${OBS_ORG}/_search" \
+  -H "Authorization: ${OBS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "sql": "SELECT * FROM scribe_logs WHERE level = '\''ERROR'\'' LIMIT 10",
+      "start_time": <START_TIMESTAMP_MICROSECONDS>,
+      "end_time": <END_TIMESTAMP_MICROSECONDS>
+    }
+  }'
+```
+
+#### 2. Configuring Alerts
+Alerts in OpenObserve monitor streams using SQL queries and trigger destinations (e.g., webhooks, Slack) when conditions are met. Alert configurations are stored as JSON files in `infrastructure/monitoring/alerts/`.
+
+```bash
+# Example: Create or Update an Alert via API
+curl -X POST "${OBS_URL}/api/${OBS_ORG}/alerts/scribe_external_dependency" \
+  -H "Authorization: ${OBS_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d @infrastructure/monitoring/alerts/external_dependency_failure.json
+```
+
+**Key Alerting Principles:**
+- Store all alert configurations in version control (`infrastructure/monitoring/alerts`).
+- Use structured JSON logging to extract the right metrics (e.g., `event_type = 'payment_failed'`).
+- Ensure every alert has a clear destination (e.g., Discord webhook) and action plan.
+
 ### Manual User Management
 Common tasks for support or debugging.
 

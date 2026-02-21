@@ -1,0 +1,24 @@
+{
+    "name": "payment_failure_alert",
+    "description": "Alerts on recurring payment failures or subscription issues",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type IN ('payment_failed', 'subscription_past_due') HAVING count(*) > 3"
+    },
+    "row_template": "- {total} payment failure events detected in the last window",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 15,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}
