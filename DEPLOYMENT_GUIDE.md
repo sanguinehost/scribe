@@ -161,7 +161,7 @@ enforce_payment_limits = true  # Enable for production
 
 To test without payments:
 1. Set `enable_payments = false` in terraform.tfvars
-2. Set `PUBLIC_ENABLE_PAYMENTS=false` in Vercel
+2. Set `PUBLIC_ENABLE_PAYMENTS=false` in deployment script or environment
 3. Backend will compile without payment routes
 4. Frontend will show "Payments Not Available" buttons
 

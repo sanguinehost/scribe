@@ -23,8 +23,8 @@
 	async function handleSignOut() {
 		// Use comprehensive logout that clears both state and cookies immediately
 		await performLogout('manual', false);
-		// Then navigate to logout route for backend cleanup and final redirect
-		_goto('/logout');
+		// Redirect to signin page - backend cleanup is now handled inside performLogout
+		_goto('/signin');
 	}
 
 	function openMembershipSettings() {

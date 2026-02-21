@@ -21,66 +21,104 @@
 </script>
 
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { Input } from '$lib/components/ui/input';
-	import type { SubmitFunction } from '@sveltejs/kit';
 	import type { Snippet } from 'svelte'; // Keep this import
 	import { toast } from 'svelte-sonner';
 	import { isDesktopMode } from '$lib/utils/features';
+	import { apiClient } from '$lib/api';
+	import { goto } from '$app/navigation';
+	import { setAuthenticated, initializeAuth } from '$lib/auth.svelte';
 
 	// Correctly destructure props using Svelte 5 syntax
-	let { authType, form, submitButton, children }: AuthFormProps = $props();
+	let { authType, submitButton, children }: AuthFormProps = $props();
 
 	// Correctly declare state using Svelte 5 syntax
 	let pending = $state(false);
+	let success = $state(false);
+	let errorMessage = $state<string | null>(null);
+
+	// Form field values
+	let identifier = $state('');
+	let email = $state('');
+	let username = $state('');
+	let password = $state('');
 
 	// Check if running in desktop mode
 	const inDesktopMode = isDesktopMode();
 
-	const enhanceCallback: SubmitFunction<FormSuccessData, FormFailureData> = () => {
+	async function handleSubmit(event: Event) {
+		event.preventDefault();
+		event.stopPropagation();
+
 		pending = true;
-		return async ({ result, update }) => {
-			if (result.type === 'failure' && result.data?.message) {
-				toast.error(result.data.message, { duration: 5000 });
+		errorMessage = null;
+
+		try {
+			if (authType === 'login') {
+				const result = await apiClient.authenticateUser({
+					identifier,
+					password
+				});
+
+				if (result.isOk()) {
+					success = true;
+					const loginData = result.value;
+
+					// Update auth store
+					setAuthenticated(loginData.user);
+
+					// Force initialize auth to ensure all state is synced
+					await initializeAuth(true);
+
+					toast.success('Successfully signed in');
+					goto('/'); // Redirect to home/chat on success
+				} else {
+					errorMessage = result.error.message;
+					toast.error(errorMessage);
+				}
+			} else {
+				// In desktop mode, we hide the email field but the API still requires it.
+				// Provide a safe default for local-only registration.
+				const registrationEmail = inDesktopMode ? (email || `${username}@local.scribe`) : email;
+
+				const result = await apiClient.createUser({
+					email: registrationEmail,
+					username,
+					password
+				});
+
+				if (result.isOk()) {
+					success = true;
+					toast.success('Registration successful!', {
+						description: 'Please check your email to verify your account before signing in.',
+						duration: 8000
+					});
+
+					// Redirect to signin with success message
+					goto('/signin?registration=success');
+				} else {
+					errorMessage = result.error.message;
+					toast.error(errorMessage);
+				}
 			}
+		} catch (error) {
+			console.error('Auth submission error:', error);
+			errorMessage = 'An unexpected error occurred. Please try again.';
+			toast.error(errorMessage);
+		} finally {
 			pending = false;
-			// Don't call update() on success for auth forms, rely on redirect/navigation
-			if (result.type !== 'success') {
-				await update();
-			}
-		};
-	};
+		}
+	}
 
 	// Determine identifier field properties based on authType
 	const identifierLabel = $derived(authType === 'login' ? 'Email or Username' : 'Email Address');
 	const identifierName = $derived(authType === 'login' ? 'identifier' : 'email');
-	const identifierType = $derived(authType === 'login' ? 'text' : 'email');
 	const identifierPlaceholder = $derived(
 		authType === 'login' ? 'user@acme.com or username' : 'user@acme.com'
 	);
-	const identifierAutocomplete = $derived(authType === 'login' ? 'username' : 'email'); // Use 'username' as it's a valid value and common hint
-
-	const identifierDefaultValue = $derived.by(() => {
-		// Repopulate identifier field on error
-		if (!form?.success) {
-			// For login, the backend might send back the attempted identifier in the 'email' field (if it was an email)
-			// or potentially a different field if it was a username. Assuming 'email' for now.
-			// For register, it's definitely the email.
-			return form?.email; // Use optional chaining
-		}
-		return undefined;
-	});
-
-	const usernameDefaultValue = $derived.by(() => {
-		// Repopulate username field on registration error
-		if (authType === 'register' && !form?.success) {
-			return form?.username; // Use optional chaining
-		}
-		return undefined;
-	});
 </script>
 
-<form method="POST" class="flex flex-col gap-4 px-4 sm:px-16" use:enhance={enhanceCallback}>
+<form onsubmit={handleSubmit} class="flex flex-col gap-4 px-4 sm:px-16" novalidate>
 	<!-- Email/Identifier field: Hidden in desktop mode for registration -->
 	{#if !inDesktopMode || authType === 'login'}
 		<div class="flex flex-col gap-2">
@@ -90,17 +128,31 @@
 				>{identifierLabel}</label
 			>
 
-			<Input
-				id={identifierName}
-				name={identifierName}
-				class="text-md bg-muted md:text-sm"
-				type={identifierType}
-				placeholder={identifierPlaceholder}
-				autocomplete={identifierAutocomplete}
-				required
-				autofocus={!inDesktopMode || authType === 'login'}
-				value={identifierDefaultValue}
-			/>
+			{#if authType === 'login'}
+				<Input
+					id="identifier"
+					name="identifier"
+					class="text-md bg-muted md:text-sm"
+					type="text"
+					placeholder={identifierPlaceholder}
+					autocomplete="username"
+					required
+					autofocus={!inDesktopMode}
+					bind:value={identifier}
+				/>
+			{:else}
+				<Input
+					id="email"
+					name="email"
+					class="text-md bg-muted md:text-sm"
+					type="email"
+					placeholder={identifierPlaceholder}
+					autocomplete="email"
+					required
+					autofocus={!inDesktopMode}
+					bind:value={email}
+				/>
+			{/if}
 		</div>
 	{/if}
 
@@ -120,7 +172,7 @@
 				autocomplete="username"
 				required
 				autofocus={inDesktopMode}
-				value={usernameDefaultValue}
+				bind:value={username}
 			/>
 		</div>
 	{/if}
@@ -138,9 +190,10 @@
 			class="text-md bg-muted md:text-sm"
 			type="password"
 			required
+			bind:value={password}
 		/>
 	</div>
 
-	{@render submitButton({ pending, success: !!form?.success })}
+	{@render submitButton({ pending, success })}
 	{@render children()}
 </form>

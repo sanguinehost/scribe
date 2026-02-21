@@ -5,8 +5,9 @@ pub mod sql_types {
     #[diesel(postgres_type(name = "account_status"))]
     pub struct AccountStatus;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "message_type"))]
+    #[derive(diesel::query_builder::QueryId)]
     pub struct MessageType;
 
     #[derive(diesel::sql_types::SqlType)]
@@ -613,6 +614,26 @@ diesel::table! {
     use diesel::sql_types::*;
     use diesel_derive_enum::DbEnum;
 
+    narrative_tasks (id) {
+        id -> Uuid,
+        user_id -> Uuid,
+        session_id -> Uuid,
+        workflow_type -> Text,
+        current_state -> Bytea,
+        status -> Text,
+        worker_id -> Nullable<Text>,
+        trace_context -> Nullable<Text>,
+        expires_at -> Timestamptz,
+        last_step_at -> Timestamptz,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    use diesel_derive_enum::DbEnum;
+
     old_documents (id, created_at) {
         id -> Uuid,
         created_at -> Timestamptz,
@@ -1139,6 +1160,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     lorebook_entries,
     lorebooks,
     message_variants,
+    narrative_tasks,
     old_documents,
     old_suggestions,
     old_votes,

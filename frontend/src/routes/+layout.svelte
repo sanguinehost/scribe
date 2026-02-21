@@ -12,6 +12,7 @@
 		setUnauthenticated,
 		setAuthenticated,
 		getIsAuthenticated,
+		getIsLoadingAuth,
 		getCurrentUser,
 		setAuthReady
 	} from '$lib/auth.svelte'; // Import from new auth store
@@ -21,6 +22,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { User } from '$lib/types';
 	import ReAuthModal from '$lib/components/ReAuthModal.svelte';
+	import { isReAuthInProgress } from '$lib/stores/authState';
 
 	let { children } = $props<{ data?: { user?: User | null }; children: unknown }>();
 
@@ -541,6 +543,15 @@
 				endpoint?: string;
 			}>;
 
+			// Check global auth state to prevent duplicate modals
+			// If re-auth is already in progress, ignore this event
+			if (isReAuthInProgress()) {
+				console.log(
+					'[Layout] DEK missing detected but re-auth already in progress, ignoring duplicate event'
+				);
+				return;
+			}
+
 			// Prevent showing modal multiple times (can happen if multiple API calls fail simultaneously)
 			if (reAuthModalShownOnce && showReAuthModal) {
 				console.log(
@@ -626,6 +637,29 @@
 		};
 	});
 
+	// AUTH REDIRECTION: Protect private routes by redirecting unauthenticated users to signin
+	$effect(() => {
+		const loading = getIsLoadingAuth();
+		const authenticated = getIsAuthenticated();
+		const isPublic = isPublicRoute;
+		const path = $page.url.pathname;
+		const ready = isAppReady;
+
+		console.log(`[AuthRedirectCheck] path=${path}, ready=${ready}, loading=${loading}, auth=${authenticated}, isPublic=${isPublic}`);
+
+		// Only redirect if auth initialization is complete and we're not on a public route
+		if (ready && !loading && !authenticated && !isPublic) {
+			console.warn(`[AuthRedirect] Unauthenticated access to private route ${path}, redirecting to /signin`);
+			_goto('/signin');
+		}
+
+		// Also handle the edge case where we are at / and not authenticated - usually / should redirect to /signin
+		if (ready && !loading && !authenticated && path === '/') {
+			console.warn(`[AuthRedirect] Root access while unauthenticated, redirecting to /signin`);
+			_goto('/signin');
+		}
+	});
+
 	// Handler for successful re-authentication
 	function handleReAuthSuccess() {
 		console.log('[Layout] Re-authentication successful, reinitializing auth');
@@ -655,8 +689,18 @@
 			reason={reAuthReason}
 			onSuccess={handleReAuthSuccess}
 		/>
-		{#if isAppReady || isPublicRoute}
+		{#if isPublicRoute}
 			{@render children()}
+		{:else if isAppReady}
+			{#if getIsAuthenticated()}
+				{@render children()}
+			{:else}
+				<div class="flex h-screen items-center justify-center">
+					<div class="loading-content">
+						<div class="loading-text">Redirecting...</div>
+					</div>
+				</div>
+			{/if}
 		{:else}
 			<div class="flex h-screen items-center justify-center">
 				<div class="loading-content">

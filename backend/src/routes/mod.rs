@@ -12,6 +12,7 @@ pub mod health;
 pub mod llm_routes;
 pub mod lorebook_routes;
 pub mod payment;
+pub mod telemetry_routes;
 pub mod template_preferences_routes;
 pub mod templates;
 pub mod user_persona_routes;

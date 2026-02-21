@@ -11,7 +11,7 @@ use std::ops::{Deref, DerefMut};
 
 #[cfg(feature = "postgres-backend")]
 use diesel::sql_types::Jsonb;
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 use diesel::sql_types::Text;
 
 /// Generic JSON wrapper for database storage
@@ -20,15 +20,11 @@ use diesel::sql_types::Text;
 /// Provides Deref/DerefMut for ergonomic access to the inner value.
 #[derive(Clone, PartialEq, Eq, Default)]
 #[cfg_attr(
-    feature = "postgres-backend",
+    any(feature = "postgres-backend", feature = "sqlite-backend"),
     derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
 )]
 #[cfg_attr(feature = "postgres-backend", diesel(sql_type = Jsonb))]
-#[cfg_attr(
-    all(feature = "sqlite-backend", not(feature = "postgres-backend")),
-    derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)
-)]
-#[cfg_attr(all(feature = "sqlite-backend", not(feature = "postgres-backend")), diesel(sql_type = Text))]
+#[cfg_attr(feature = "sqlite-backend", diesel(sql_type = Text))]
 #[repr(transparent)]
 pub struct Json<T>(pub T);
 
@@ -174,7 +170,7 @@ mod pg_impl {
 // SQLite Backend Implementations
 // ============================================================================
 
-#[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+#[cfg(feature = "sqlite-backend")]
 mod sqlite_impl {
     use super::*;
     use diesel::{

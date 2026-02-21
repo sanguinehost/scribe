@@ -226,6 +226,14 @@ pub struct SaveMessageParams<'a> {
 pub async fn save_message(
     params: SaveMessageParams<'_>,
 ) -> Result<(ChatMessage, Option<crate::db::DbId>), AppError> {
+    tracing::info!(
+        session_id = %params.session_id,
+        has_reasoning = params.reasoning_content.is_some(),
+        reasoning_len = params.reasoning_content.map(|r| r.len()).unwrap_or(0),
+        status = ?params.status,
+        "Saving chat message"
+    );
+
     let SaveMessageParams {
         state,
         session_id,
@@ -887,6 +895,7 @@ pub async fn save_message(
             content,
             user_id,
             dek_arc,
+            reasoning_content,
         )
         .await?
     } else {

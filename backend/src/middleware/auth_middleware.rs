@@ -4,7 +4,6 @@
 use crate::privacy::logging::loggable_user_id;
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -35,7 +34,10 @@ pub async fn unified_login_required(
     // Check if user is authenticated
     if !auth.is_authenticated() {
         info!("unified_login_required: No authenticated user found - returning 401");
-        return Err((StatusCode::UNAUTHORIZED, "Authentication required").into_response());
+        return Err(
+            crate::errors::AppError::Unauthorized("Authentication required".to_string())
+                .into_response(),
+        );
     }
 
     let auth_type = if auth.is_token_auth { "JWT" } else { "cookie" };

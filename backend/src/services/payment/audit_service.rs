@@ -316,6 +316,44 @@ impl PaymentAuditService {
         Ok(())
     }
 
+    /// Log a transaction-specific event
+    pub fn log_transaction_event(
+        &self,
+        conn: &mut PgConnection,
+        user_id: crate::db::DbId,
+        transaction_id: &str,
+        event_type: &str,
+        external_ref: Option<&str>,
+    ) -> Result<(), AppError> {
+        use crate::schema::payment_audit_logs;
+
+        let log_entry = PaymentAuditLog {
+            id: DbId::new(),
+            user_id_hash: Self::hash_user_id(&user_id),
+            event_type: event_type.to_string(),
+            amount: None,
+            event_category: "transaction".to_string(),
+            success: true,
+            error_code: None,
+            external_reference_hash: external_ref.map(Self::hash_reference),
+            created_at: crate::DbTimestamp::now(),
+        };
+
+        diesel::insert_into(payment_audit_logs::table)
+            .values(&log_entry)
+            .execute(conn)
+            .map_err(|e| {
+                error!("Failed to insert audit log: {}", e);
+                AppError::DatabaseQueryError(e.to_string())
+            })?;
+
+        debug!(
+            "Transaction event logged: {} ({})",
+            event_type, transaction_id
+        );
+        Ok(())
+    }
+
     /// Log a webhook event (minimal info only)
     pub fn log_webhook_event(
         &self,

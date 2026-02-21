@@ -55,6 +55,7 @@ pub async fn get_message_variants(
     Ok(decrypted_variants)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn create_message_variant(
     state: Arc<AppState>,
     message_id: crate::db::DbId,
@@ -412,6 +413,9 @@ pub async fn get_variant_count(
             // .filter(message_variants::user_id.eq(user_id))
             .count()
             .get_result::<i64>(conn)
+            .inspect(|c| {
+                tracing::info!(message_id = %message_id, count = c, "Checked variant count");
+            })
             .map_err(|e| {
                 AppError::DatabaseQueryError(format!("Failed to count message variants: {e}"))
             })
@@ -491,10 +495,17 @@ pub async fn ensure_original_variant_exists(
     original_content: &str,
     user_id: crate::db::DbId,
     dek: &SecretBox<Vec<u8>>,
+    reasoning: Option<&str>,
 ) -> Result<Option<crate::db::DbId>, AppError> {
     let variant_count = get_variant_count(state.clone(), message_id, user_id).await?;
 
     if variant_count == 0 {
+        tracing::info!(
+            message_id = %message_id,
+            has_reasoning = reasoning.is_some(),
+            reasoning_len = reasoning.map(|r| r.len()).unwrap_or(0),
+            "Creating original variant (index 0)"
+        );
         // Create original variant with encryption outside the closure
         let original_variant = NewMessageVariant::new(
             message_id,
@@ -504,7 +515,7 @@ pub async fn ensure_original_variant_exists(
             dek,
             None, // No raw_prompt for old variants
             None, // No game state for old variants
-            None, // No reasoning for old variants
+            reasoning,
         )?;
 
         #[cfg(feature = "postgres-backend")]
@@ -535,6 +546,11 @@ pub async fn ensure_original_variant_exists(
 
         Ok(Some(variant_id))
     } else {
+        tracing::debug!(
+            message_id = %message_id,
+            variant_count,
+            "Original variant already exists, skipping creation"
+        );
         Ok(None)
     }
 }
@@ -571,7 +587,6 @@ pub async fn select_message_variant(
         )));
     }
 
-    // Get variant content, token counts, AND raw_prompt - if index 0, use original message; otherwise get from variants table
     let (
         variant_content,
         variant_prompt_tokens,
@@ -579,6 +594,7 @@ pub async fn select_message_variant(
         variant_model_name,
         variant_raw_prompt,
         variant_game_state,
+        variant_reasoning,
     ) = if variant_index == 0 {
         // Index 0 is the original message content - decrypt from parent message and use parent's tokens AND raw_prompt
         use crate::crypto;
@@ -616,6 +632,23 @@ pub async fn select_message_variant(
             _ => None,
         };
 
+        // Decrypt parent's reasoning if available
+        let reasoning = match (
+            &parent_message.reasoning_content,
+            &parent_message.reasoning_content_nonce,
+        ) {
+            (Some(ciphertext), Some(nonce)) if !ciphertext.is_empty() && !nonce.is_empty() => {
+                match crate::crypto::decrypt_gcm(ciphertext, nonce, dek) {
+                    Ok(decrypted_secret_box) => {
+                        let decrypted_bytes = decrypted_secret_box.expose_secret();
+                        String::from_utf8(decrypted_bytes.clone()).ok()
+                    }
+                    Err(_) => None,
+                }
+            }
+            _ => None,
+        };
+
         (
             content,
             parent_message.prompt_tokens,
@@ -623,6 +656,7 @@ pub async fn select_message_variant(
             Some(parent_message.model_name.clone()),
             raw_prompt,
             None, // No game state for original variant
+            reasoning,
         )
     } else {
         // Get content, token data, AND raw_prompt from variants table
@@ -638,6 +672,7 @@ pub async fn select_message_variant(
                 dto.model_name,
                 dto.raw_prompt,
                 dto.game_state,
+                dto.reasoning_content,
             ),
             None => {
                 return Err(AppError::BadRequest(format!(
@@ -745,6 +780,7 @@ pub async fn select_message_variant(
         parent_message_id: None,
         variants: None, // Don't include full variant data in selection response
         game_state: variant_game_state,
+        reasoning_content: variant_reasoning,
     };
 
     Ok(response)

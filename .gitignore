@@ -1,5 +1,6 @@
 # General
 .env
+*.lock.hcl
 .DS_Store
 *.log
 
@@ -63,7 +64,9 @@ uploads/
 # Downloaded LLM models (GGUF files)
 /models/
 .vercel
+# Terraform
 terraform.tfstate
+.terragrunt-cache/
 
 # Tauri / Desktop
 /desktop/target/
@@ -77,3 +80,4 @@ terraform.tfstate
 
 # Test database files (in-memory SQLite URIs that get materialized)
 backend/:memory:*
+infrastructure/terragrunt/backend.tf

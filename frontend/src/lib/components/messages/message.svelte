@@ -6,7 +6,7 @@
 	import { Markdown } from '../markdown';
 	import MessageActions from './message-actions.svelte';
 	import TypewriterMessage from '../TypewriterMessage.svelte';
-	import { fly } from 'svelte/transition';
+	import { fly, fade, slide } from 'svelte/transition';
 	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import ImageLightbox from '$lib/components/ui/image-lightbox.svelte';
@@ -26,8 +26,8 @@
 			sender: msg.message_type === 'User' ? 'user' : 'assistant',
 			created_at: msg.created_at || new Date().toISOString(),
 			isAnimating: false,
-			shouldAnimate: msg.shouldAnimate ?? false,
-			isRegenerating: msg.loading,
+			shouldAnimate: msg.shouldAnimate ?? (msg.message_type === 'Assistant' && msg.loading), // Use defensive default
+			isRegenerating: msg.isRegenerating ?? msg.loading,
 			error: msg.error || undefined,
 			retryable: msg.retryable,
 			prompt_tokens: msg.prompt_tokens || undefined,
@@ -37,7 +37,7 @@
 			status: msg.status,
 			contentVersion: msg.contentVersion ?? 0, // Preserve from source message for reactivity tracking
 			reasoningContent: msg.reasoning_content || undefined,
-			isThinking: msg.is_thinking || (msg.loading && !msg.content)
+			isThinking: msg.isThinking ?? msg.is_thinking ?? (msg.loading && !msg.content)
 		};
 	}
 
@@ -311,38 +311,72 @@
 					<!-- Normal message display -->
 					<div
 						class={cn(
-							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 group relative w-full max-w-none break-words rounded-md border bg-background px-3 py-2 pb-8',
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 group relative w-full max-w-none break-words rounded-md border bg-background px-3 py-2',
 							{
+								'pb-8': !message.loading, // Only add large bottom padding when complete
+								'pb-4': message.loading,   // Use tighter padding during streaming
 								'border-primary/10 bg-primary/10': message.message_type === 'User',
 								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
 							}
 						)}
 					>
 						{#if message.reasoning_content}
-							<div class="mb-4 rounded-md border border-border/50 bg-background/50">
-								<details class="group/reasoning">
-									<summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+							{@const isReasoningOpen = message.isThinking || message.is_thinking || (message.loading && !message.content)}
+							<div class="mb-4 overflow-hidden rounded-md border border-border/50 bg-background/50" transition:slide={{ duration: 300 }}>
+								<div class="group/reasoning">
+									<button
+										type="button"
+										class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+										onclick={(e) => {
+											// Allow manual toggle for historical messages, but keep auto-open for active thinking
+											const target = e.currentTarget.nextElementSibling;
+											if (target) {
+												target.classList.toggle('hidden');
+											}
+										}}
+									>
 										<div class="flex items-center gap-2">
-											{#if (message.loading || message.isThinking || message.is_thinking) && !message.content}
-												<span class="relative flex h-2 w-2">
-													<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-purple-500 opacity-75"></span>
-													<span class="relative inline-flex h-2 w-2 rounded-full bg-purple-500"></span>
-												</span>
-												<span class="text-purple-600 dark:text-purple-400">Thinking...</span>
+											{#if (message.isThinking || message.is_thinking || (message.loading && !message.content))}
+												<div class="flex items-center gap-2" in:fade={{ duration: 200 }}>
+													<span class="relative flex h-2 w-2">
+														<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-purple-500 opacity-75"></span>
+														<span class="relative inline-flex h-2 w-2 rounded-full bg-purple-500"></span>
+													</span>
+													{#key 'thinking'}
+														<span class="text-purple-600 dark:text-purple-400" in:fade={{ duration: 300 }}>Thinking...</span>
+													{/key}
+												</div>
 											{:else}
-												<svg class="h-3 w-3 transition-transform group-open/reasoning:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-												</svg>
-												<span>Thought Process</span>
+												<div class="flex items-center gap-2" in:fade={{ duration: 200 }}>
+													<svg class="h-3 w-3 transition-transform" class:rotate-90={isReasoningOpen} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+													</svg>
+													{#key 'processed'}
+														<span in:fade={{ duration: 300 }}>Thought Process</span>
+													{/key}
+												</div>
 											{/if}
 										</div>
-									</summary>
-									<div class="border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-										<div class="prose prose-sm prose-invert max-w-none dark:prose-invert">
-											<p class="whitespace-pre-wrap text-xs leading-relaxed">{message.reasoning_content}</p>
+									</button>
+
+									{#if isReasoningOpen}
+										<div
+											class="max-h-60 overflow-y-auto border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground"
+											transition:slide={{ duration: 300 }}
+										>
+											<div class="prose prose-sm prose-invert max-w-none dark:prose-invert">
+												<p class="whitespace-pre-wrap text-xs leading-relaxed">{message.reasoning_content}</p>
+											</div>
 										</div>
-									</div>
-								</details>
+									{:else}
+										<!-- For non-thinking messages that still have content, allow manual collapse/expand via hidden class (simplest for now) -->
+										<div class="hidden max-h-60 overflow-y-auto border-t border-border/50 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+											<div class="prose prose-sm prose-invert max-w-none dark:prose-invert">
+												<p class="whitespace-pre-wrap text-xs leading-relaxed">{message.reasoning_content}</p>
+											</div>
+										</div>
+									{/if}
+								</div>
 							</div>
 						{/if}
 

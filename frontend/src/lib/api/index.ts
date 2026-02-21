@@ -5,10 +5,16 @@ import {
 	ApiResponseError,
 	ApiNetworkError,
 	ApiServerRestartError,
-	ApiAuthError,
-	ApiDekMissingError
+	ApiAuthError
+	// ApiDekMissingError - Removed to fix lint, enable if needed later
 } from '$lib/errors/api';
 import { ENABLE_LOCAL_LLM, PAYMENT_FEATURES, isDesktopMode } from '$lib/utils/features';
+import {
+	setDekMissing,
+	ensureValidAuthentication,
+	isReAuthInProgress,
+	isDekMissing
+} from '$lib/stores/authState';
 import type {
 	User,
 	Message,
@@ -130,8 +136,13 @@ import {
 	debugCookies
 } from '$lib/auth.svelte'; // Import the new auth store functions
 import { browser as _browser } from '$app/environment'; // To check if in browser context
-import * as env from '$env/static/public';
+import { env } from '$env/dynamic/public';
 import { logger } from '$lib/utils/logger';
+
+// Custom request options to track internal state
+interface ScribeRequestInit extends RequestInit {
+	_dekRetryCount?: number;
+}
 
 // Actual API client
 class ApiClient {
@@ -147,7 +158,7 @@ class ApiClient {
 
 	constructor(baseUrl: string = '') {
 		// Handle undefined/null environment variables gracefully
-		const apiUrl = env?.PUBLIC_API_URL;
+		const apiUrl = env.PUBLIC_API_URL || '';
 
 		// Always prioritize PUBLIC_API_URL over the passed baseUrl for production
 		// This ensures the client always uses the correct API URL from environment
@@ -432,18 +443,58 @@ class ApiClient {
 							'401 DEK Missing detected - session valid but encryption key lost'
 						);
 
-						// IMMEDIATELY dispatch global event to show re-auth modal
-						// This ensures ANY API call that hits DEK missing triggers the modal
-						if (_browser) {
-							logger.info('api-client', 'Dispatching global auth:dek-missing event');
-							window.dispatchEvent(
-								new CustomEvent('auth:dek-missing', {
-									detail: { reason: 'dek_missing', immediate: true, endpoint }
-								})
+						// Use centralized auth state to prevent duplicate re-authentication modals
+						// Mark DEK as missing in global state
+						setDekMissing();
+
+						// Check if re-auth is already in progress to avoid duplicate flows
+						if (!isReAuthInProgress()) {
+							// Trigger re-auth flow
+							logger.info('api-client', 'Triggering re-authentication flow');
+							ensureValidAuthentication();
+						} else {
+							logger.debug('api-client', 'Re-auth already in progress, waiting for completion');
+						}
+
+						// Increment retry counter stored in options for tracking across recursive calls
+						const scribeOptions = options as ScribeRequestInit;
+						const retryCount = scribeOptions._dekRetryCount || 0;
+						const MAX_RETRIES = 3;
+
+						if (retryCount >= MAX_RETRIES) {
+							logger.error('api-client', 'Max re-authentication retries exceeded', { endpoint });
+							return err(
+								new ApiResponseError(401, 'Re-authentication failed after multiple attempts')
 							);
 						}
 
-						return err(new ApiDekMissingError(errorMessage));
+						// Wait for re-authentication to complete
+						await new Promise<void>((resolve) => {
+							const checkReAuth = () => {
+								if (!isReAuthInProgress() && !isDekMissing()) {
+									logger.info('api-client', 'Re-authentication completed, retrying request');
+									resolve();
+								} else {
+									// Poll every 100ms
+									setTimeout(checkReAuth, 100);
+								}
+							};
+							checkReAuth();
+						});
+
+						// Re-authentication complete, retry the original request with incremented counter
+						logger.info(
+							'api-client',
+							`Retrying request after re-auth: ${endpoint} (attempt ${retryCount + 1})`
+						);
+						return this.fetch<T>(
+							endpoint,
+							{
+								...scribeOptions,
+								_dekRetryCount: retryCount + 1
+							} as ScribeRequestInit,
+							fetchFn
+						);
 					} else {
 						// Check if we're in desktop mode with JWT authentication
 						if (isDesktopMode() && this.desktopAuthService) {

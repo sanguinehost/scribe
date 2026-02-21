@@ -28,6 +28,12 @@ variable "qdrant_security_group_id" {
   type        = string
 }
 
+variable "frontend_security_group_id" {
+  description = "Security group ID for frontend ECS tasks"
+  type        = string
+}
+
+
 # EFS security group no longer needed - using EBS volumes instead
 # variable "efs_security_group_id" {
 #   description = "Security group ID for EFS"
@@ -113,6 +119,12 @@ variable "from_email" {
   default     = ""
 }
 
+variable "enable_execute_command" {
+  description = "Enable ECS Exec for the backend service"
+  type        = bool
+  default     = false
+}
+
 variable "domain_name" {
   description = "Primary domain name for the frontend"
   type        = string
@@ -121,4 +133,53 @@ variable "domain_name" {
 variable "api_domain_name" {
   description = "API domain name (extracted from subject_alternative_names)"
   type        = string
+}
+
+
+variable "backend_env_vars" {
+  description = "List of environment variables for backend container"
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  default = []
+}
+
+variable "docker_labels" {
+  description = "Docker labels for the backend container (used for Traefik routing)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "frontend_cpu" {
+  description = "CPU units for frontend task (1024 = 1 vCPU)"
+  type        = number
+  default     = 256
+}
+
+variable "frontend_memory" {
+  description = "Memory for frontend task in MiB"
+  type        = number
+  default     = 512
+}
+
+variable "frontend_desired_count" {
+  description = "Desired number of frontend tasks"
+  type        = number
+  default     = 1
+}
+
+variable "frontend_docker_labels" {
+  description = "Docker labels for the frontend container (used for Traefik routing)"
+  type        = map(string)
+  default     = {}
+}
+
+variable "frontend_env_vars" {
+  description = "List of environment variables for frontend container"
+  type = list(object({
+    name  = string
+    value = string
+  }))
+  default = []
 }

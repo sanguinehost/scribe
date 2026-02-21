@@ -1,3 +1,4 @@
+#![allow(clippy::diverging_sub_expression)]
 #![allow(clippy::items_after_statements)]
 use crate::privacy::logging::loggable_user_id;
 use axum::{

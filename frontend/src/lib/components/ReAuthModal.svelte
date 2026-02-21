@@ -11,6 +11,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { apiClient } from '$lib/api';
 	import { setAuthenticated } from '$lib/auth.svelte';
+	import { clearDekMissing } from '$lib/stores/authState';
 	import { AlertCircle } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
@@ -77,6 +78,16 @@
 
 				// Close modal
 				open = false;
+
+				// Clear DEK missing flag in global state
+				clearDekMissing();
+
+				// Dispatch event to trigger queued request retries
+				window.dispatchEvent(
+					new CustomEvent('auth:reauth-complete', {
+						detail: { success: true }
+					})
+				);
 
 				// Call success callback if provided
 				if (onSuccess) {

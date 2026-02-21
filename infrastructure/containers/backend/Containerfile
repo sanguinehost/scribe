@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.87-slim AS builder
+FROM rust:1.88-slim AS builder
 
 # Build arguments
 ARG FEATURES=""
@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     libc6-dev \
     clang \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
@@ -43,11 +44,11 @@ COPY backend/config ./backend/config
 
 # Build the application with optional features
 RUN if [ -n "$FEATURES" ]; then \
-        echo "Building with features: $FEATURES" && \
-        cargo build --release --bin scribe-backend --features "$FEATURES"; \
+    echo "Building with features: $FEATURES" && \
+    cargo build -j 2 --release --no-default-features --bin scribe-backend --features "$FEATURES"; \
     else \
-        echo "Building with default features" && \
-        cargo build --release --bin scribe-backend; \
+    echo "Building with default features" && \
+    cargo build -j 2 --release --bin scribe-backend; \
     fi
 
 # Runtime stage - Using Debian for broader compatibility

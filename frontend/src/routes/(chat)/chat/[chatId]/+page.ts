@@ -99,7 +99,9 @@ export async function load({ params: { chatId }, parent }) {
 				variants: rawMsg.variants,
 				status: rawMsg.status,
 				superseded_at: rawMsg.superseded_at,
-				game_state: rawMsg.game_state // CRITICAL: Include game_state from backend
+				game_state: rawMsg.game_state, // CRITICAL: Include game_state from backend
+				reasoning_content: rawMsg.reasoning_content,
+				reasoningContent: rawMsg.reasoning_content
 			})
 		);
 

@@ -61,13 +61,11 @@ QUICK COMMANDS:
   ./scripts/dev.sh help           # Show this help
 
 NEW UNIFIED DEPLOYMENT SCRIPTS:
-  ./scripts/deploy/local.sh       # Local development (containers + cargo run)
-  ./scripts/deploy/container.sh   # Full container stack
-  ./scripts/deploy/quadlet.sh     # Systemd quadlet management
-  ./scripts/deploy/aws.sh         # AWS ECS deployment
+  ./scripts/deploy/podman.sh       # Local development (containers + cargo run)
+  ./scripts/deploy/aws.sh          # AWS ECS deployment (Backend, Frontend, Qdrant)
 
 INDIVIDUAL TOOLS (also available):
-  ./scripts/podman-dev.sh         # Modern Podman workflow
+  ./scripts/podman-dev.sh         # Infrastructure only (Postgres, Qdrant)
   ./scripts/quadlet-dev.sh        # Systemd Quadlet management
   ./scripts/dev_db.sh             # Legacy script (updated for Podman)
 

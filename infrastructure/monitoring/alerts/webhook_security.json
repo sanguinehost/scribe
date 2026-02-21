@@ -1,0 +1,24 @@
+{
+    "name": "webhook_security",
+    "description": "Detects webhook signature verification failures",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type = 'webhook_signature_failure' HAVING count(*) > 5"
+    },
+    "row_template": "- {total} signature failures!",
+    "trigger_condition": {
+        "period": 10,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 30,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}

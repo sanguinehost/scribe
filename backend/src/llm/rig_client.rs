@@ -65,6 +65,24 @@ impl RigClient {
         mistralrs: Option<Arc<MistralRsService>>,
         model: Option<String>,
     ) -> Self {
+        let api_key = api_key.map(|k| k.trim().to_string());
+
+        if let Some(ref key) = api_key {
+            let len = key.len();
+            if len >= 8 {
+                tracing::info!(
+                    "RigClient initialized with API key (len: {}, mask: {}...{})",
+                    len,
+                    &key[0..4],
+                    &key[len - 4..]
+                );
+            } else {
+                tracing::info!("RigClient initialized with short API key (len: {})", len);
+            }
+        } else {
+            tracing::warn!("RigClient initialized WITHOUT API key - will fallback to environment");
+        }
+
         Self {
             api_key,
             mistralrs,
@@ -129,7 +147,7 @@ impl RigClient {
 
                     // Add thinkingLevel if present (Gemini 3)
                     if let Some(level) = &req.thinking_level {
-                        if level != "dynamic" {
+                        if level != "dynamic" && !level.is_empty() {
                             thinking_config
                                 .insert("thinkingLevel".to_string(), serde_json::json!(level));
                         }
@@ -174,7 +192,18 @@ impl RigClient {
                     tool_choice: None,
                 };
 
-                let response = model.completion(completion_req).await?;
+                let response = match model.completion(completion_req).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = "gemini",
+                            error = %e,
+                            "LLM completion failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 // Extract the first choice content
                 let content = response
@@ -207,6 +236,14 @@ impl RigClient {
                         _ => None,
                     });
                 }
+
+                tracing::info!(
+                    event_type = "llm_generation_success",
+                    provider = "gemini",
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    "LLM completion successful"
+                );
 
                 Ok(rig_response)
             }
@@ -277,7 +314,19 @@ impl RigClient {
                     tool_choice: None,
                 };
 
-                let response = adapter.completion(completion_req).await?;
+                let response = match adapter.completion(completion_req).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let prov = req.provider.as_str();
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = %prov,
+                            error = %e,
+                            "LLM completion failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 // Extract the first choice content
                 let content = response
@@ -289,11 +338,23 @@ impl RigClient {
                     })
                     .ok_or_else(|| anyhow::anyhow!("No text response received"))?;
 
+                let prompt_tokens = response.usage.input_tokens;
+                let completion_tokens = response.usage.output_tokens;
+                let prov = req.provider.as_str();
+
+                tracing::info!(
+                    event_type = "llm_generation_success",
+                    provider = %prov,
+                    prompt_tokens = prompt_tokens,
+                    completion_tokens = completion_tokens,
+                    "LLM completion successful"
+                );
+
                 Ok(RigChatResponse {
                     content,
-                    prompt_tokens: Some(response.usage.input_tokens),
-                    completion_tokens: Some(response.usage.output_tokens),
-                    total_tokens: Some(response.usage.input_tokens + response.usage.output_tokens),
+                    prompt_tokens: Some(prompt_tokens),
+                    completion_tokens: Some(completion_tokens),
+                    total_tokens: Some(prompt_tokens + completion_tokens),
                     reasoning_content: None,
                 })
             }
@@ -346,70 +407,24 @@ impl RigClient {
 
                 let mut generation_config = serde_json::Map::new();
 
-                // Model-aware thinkingConfig:
-                // - gemini-2.5-* ONLY supports thinkingBudget (max 24576)
-                // - gemini-3-* supports both, but PREFERS thinkingLevel
-                let has_budget = req.reasoning_budget.is_some();
-                let has_level = req.thinking_level.is_some();
-
-                if has_budget || has_level {
+                // Unified Thinking Config for Gemini 2.x and 3.x matching completion()
+                if let Some(budget) = req.reasoning_budget {
                     let mut thinking_config = serde_json::Map::new();
                     thinking_config.insert("includeThoughts".to_string(), serde_json::json!(true));
 
-                    let is_gemini_3 = req.model_name.starts_with("gemini-3");
-                    let is_gemini_25 = req.model_name.starts_with("gemini-2.5");
+                    // Always set budget to satisfy rig-core. Map -1 (dynamic) to a default if needed.
+                    let effective_budget = if budget == -1 { 32768 } else { budget };
+                    thinking_config.insert(
+                        "thinkingBudget".to_string(),
+                        serde_json::json!(effective_budget),
+                    );
 
-                    if is_gemini_3 {
-                        // Gemini 3: Use thinkingLevel (preferred)
-                        if let Some(level) = &req.thinking_level {
-                            if level != "dynamic" && level != "none" && !level.is_empty() {
-                                thinking_config.insert(
-                                    "thinkingLevel".to_string(),
-                                    serde_json::json!(level.to_uppercase()),
-                                );
-                            } else {
-                                thinking_config.insert(
-                                    "thinkingLevel".to_string(),
-                                    serde_json::json!("MEDIUM"),
-                                );
-                            }
-                        } else {
+                    // Add thinkingLevel if present (Gemini 3)
+                    if let Some(level) = &req.thinking_level {
+                        if level != "dynamic" && !level.is_empty() {
                             thinking_config
-                                .insert("thinkingLevel".to_string(), serde_json::json!("MEDIUM"));
+                                .insert("thinkingLevel".to_string(), serde_json::json!(level));
                         }
-                        // CRITICAL: Even though Gemini 3 uses level, Rig's internal streaming logic
-                        // for capturing reasoning often checks for a non-zero budget.
-                        thinking_config
-                            .insert("thinkingBudget".to_string(), serde_json::json!(16384));
-                    } else if is_gemini_25 {
-                        // Gemini 2.5: Only supports thinkingBudget (max 24576)
-                        let budget = if let Some(level) = &req.thinking_level {
-                            match level.to_lowercase().as_str() {
-                                "low" => 8192,
-                                "medium" => 16384,
-                                "high" => 24576,
-                                _ => req.reasoning_budget.unwrap_or(16384).min(24576),
-                            }
-                        } else {
-                            req.reasoning_budget.unwrap_or(16384).min(24576)
-                        };
-                        let effective_budget = if budget <= 0 {
-                            16384
-                        } else {
-                            budget.min(24576)
-                        };
-                        thinking_config.insert(
-                            "thinkingBudget".to_string(),
-                            serde_json::json!(effective_budget),
-                        );
-                    } else {
-                        // Unknown model: default to thinkingBudget
-                        let budget = req.reasoning_budget.unwrap_or(16384);
-                        let effective_budget = if budget <= 0 { 16384 } else { budget };
-                        thinking_config.insert(
-                            "thinkingBudget".to_string(),
-                            serde_json::json!(effective_budget),
-                        );
                     }
 
                     tracing::info!("RigClient: thinkingConfig = {:?}", thinking_config);
@@ -452,29 +467,54 @@ impl RigClient {
                     tool_choice: None,
                 };
 
-                let stream = model.stream(completion_req).await?;
+                let stream = match model.stream(completion_req).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = "gemini",
+                            error = %e,
+                            "LLM stream initiation failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 let output_stream = async_stream::try_stream! {
                     use futures::StreamExt;
                     use rig::completion::GetTokenUsage;
+                    use std::time::Instant;
                     let inner_stream = stream;
                     futures::pin_mut!(inner_stream);
+
+                    let start_time = Instant::now();
+                    let mut first_token_received = false;
 
                     while let Some(result) = inner_stream.next().await {
                         match result {
                             Ok(content) => {
                                 match content {
                                     rig::streaming::StreamedAssistantContent::Text(t) => {
+                                        if !first_token_received {
+                                            first_token_received = true;
+                                            let ttft = start_time.elapsed().as_millis() as u64;
+                                            tracing::info!(
+                                                event_type = "llm_ttft",
+                                                provider = "gemini",
+                                                duration_ms = ttft,
+                                                "First token received"
+                                            );
+                                        }
                                         tracing::info!("RigClient: Received Text chunk (len: {})", t.text.len());
                                         yield RigStreamEvent::Content(t.text);
                                     }
                                     rig::streaming::StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
-                                        tracing::info!("RigClient: Received ReasoningDelta (len: {})", reasoning.len());
+                                        tracing::info!(len = reasoning.len(), "RigClient: Received ReasoningDelta");
                                         yield RigStreamEvent::Reasoning(reasoning);
                                     }
                                     rig::streaming::StreamedAssistantContent::Reasoning(r) => {
                                         let reasoning_text = r.reasoning.join("");
-                                        tracing::info!("RigClient: Received Reasoning (len: {})", reasoning_text.len());
+                                        tracing::info!(len = reasoning_text.len(), "RigClient: Received full Reasoning chunk");
                                         yield RigStreamEvent::Reasoning(reasoning_text);
                                     }
                                     rig::streaming::StreamedAssistantContent::ToolCall { tool_call, .. } => {
@@ -544,15 +584,45 @@ impl RigClient {
                 }
                 messages.push(("user".to_string(), req.prompt));
 
-                let stream = service.stream_chat(messages).await?;
+                let stream = match service.stream_chat(messages).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let prov = req.provider.as_str();
+                        tracing::error!(
+                            event_type = "llm_generation_failure",
+                            provider = %prov,
+                            error = %e,
+                            "LLM stream initiation failed"
+                        );
+                        return Err(e.into());
+                    }
+                };
 
                 let output_stream = async_stream::try_stream! {
                     use futures::StreamExt;
+                    use std::time::Instant;
                     let inner_stream = stream;
                     futures::pin_mut!(inner_stream);
+
+                    let start_time = Instant::now();
+                    let mut first_token_received = false;
+                    let prov = req.provider.as_str();
+
                     while let Some(result) = inner_stream.next().await {
                         match result {
-                            Ok(content) => yield RigStreamEvent::Content(content),
+                            Ok(content) => {
+                                if !first_token_received {
+                                    first_token_received = true;
+                                    let ttft = start_time.elapsed().as_millis() as u64;
+                                    tracing::info!(
+                                        event_type = "llm_ttft",
+                                        provider = prov,
+                                        duration_ms = ttft,
+                                        "First token received"
+                                    );
+                                }
+                                yield RigStreamEvent::Content(content);
+                            }
                             Err(e) => Err(anyhow::anyhow!("Stream error: {}", e))?,
                         }
                     }

@@ -130,15 +130,15 @@ DNS configuration is automated if you're using Route 53 for `sanguinehost.com`:
 
 3. **Deploy Frontend**:
    ```bash
-   cd frontend
-   pnpm build
-   pnpm vercel deploy --prebuilt --prod
+   ./scripts/deploy-frontend.sh
    ```
 
-   **Important**: After deploying to Vercel, you'll need to:
-   - Note the new Vercel domain (e.g., `frontend-abc123-projects.vercel.app`)
-   - Update the backend CORS configuration in `backend/src/main.rs` to include the new domain
-   - Redeploy the backend: `./scripts/deploy-backend.sh backend`
+   This script will:
+   - Build the Docker image for the frontend
+   - Push to ECR
+   - Update the ECS service
+
+   **Important**: The frontend is deployed to ECS alongside the backend, using the same domain and load balancer.
 
 ## 📋 Post-Deployment Checklist
 

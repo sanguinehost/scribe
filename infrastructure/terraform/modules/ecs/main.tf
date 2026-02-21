@@ -39,6 +39,14 @@ resource "aws_ecr_repository" "qdrant_repo" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+locals {
+  account_id = data.aws_caller_identity.current.account_id
+  region     = data.aws_region.current.name
+}
+
 # ECS Cluster
 resource "aws_ecs_cluster" "scribe_cluster" {
   name = "${var.environment}-scribe-cluster"
@@ -180,6 +188,28 @@ resource "aws_iam_role_policy" "ecs_secrets_policy" {
   })
 }
 
+# SES SendEmail permissions for backend task
+resource "aws_iam_role_policy" "ecs_task_ses_policy" {
+  name = "${var.environment}-scribe-ecs-task-ses-policy"
+  role = aws_iam_role.ecs_task_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail",
+          "ses:SendRawEmail"
+        ]
+        Resource = [
+          "arn:aws:ses:${local.region}:${local.account_id}:identity/sanguinehost.com"
+        ]
+      }
+    ]
+  })
+}
+
 # IAM Role for ECS Tasks (runtime permissions)
 resource "aws_iam_role" "ecs_task_role" {
   name = "${var.environment}-scribe-ecs-task-role"
@@ -239,7 +269,7 @@ resource "aws_ecs_task_definition" "backend_task" {
         }
       }
 
-      environment = [
+      environment = concat([
         {
           name  = "ENVIRONMENT"
           value = var.environment
@@ -264,9 +294,11 @@ resource "aws_ecs_task_definition" "backend_task" {
           name  = "COOKIE_DOMAIN"
           value = ".${var.domain_name}"
         }
-      ]
+      ], var.backend_env_vars)
 
       secrets = var.backend_secrets
+
+      dockerLabels = var.docker_labels
 
       essential = true
     }
@@ -303,6 +335,10 @@ resource "aws_ecs_task_definition" "qdrant_task" {
       portMappings = [
         {
           containerPort = 6333
+          protocol      = "tcp"
+        },
+        {
+          containerPort = 6334
           protocol      = "tcp"
         }
       ]
@@ -341,6 +377,7 @@ resource "aws_ecs_service" "backend_service" {
   task_definition = aws_ecs_task_definition.backend_task.arn
   desired_count   = var.backend_desired_count
   launch_type     = "FARGATE"
+  enable_execute_command = var.enable_execute_command
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -348,13 +385,16 @@ resource "aws_ecs_service" "backend_service" {
     assign_public_ip = false
   }
 
-  load_balancer {
-    target_group_arn = var.backend_target_group_arn
-    container_name   = "backend"
-    container_port   = 8080
+  dynamic "load_balancer" {
+    for_each = var.backend_target_group_arn != null ? [1] : []
+    content {
+      target_group_arn = var.backend_target_group_arn
+      container_name   = "backend"
+      container_port   = 8080
+    }
   }
 
-  depends_on = [var.alb_listener_arn]
+  # depends_on = [var.alb_listener_arn] # Removed as it's optional and handled by implicit dependencies
 
   tags = {
     Name        = "${var.environment}-scribe-backend-service"
@@ -370,6 +410,7 @@ resource "aws_ecs_service" "qdrant_service" {
   task_definition = aws_ecs_task_definition.qdrant_task.arn
   desired_count   = var.qdrant_desired_count
   launch_type     = "FARGATE"
+  enable_execute_command = var.enable_execute_command
 
   network_configuration {
     subnets          = var.private_subnet_ids
@@ -442,6 +483,102 @@ resource "aws_service_discovery_service" "qdrant" {
 
   tags = {
     Name        = "${var.environment}-scribe-qdrant-discovery"
+    Environment = var.environment
+    Project     = "scribe"
+  }
+}
+
+# ECR Repository for frontend
+resource "aws_ecr_repository" "frontend_repo" {
+  name                 = "${var.environment}-scribe-frontend"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Name        = "${var.environment}-scribe-frontend-repo"
+    Environment = var.environment
+    Project     = "scribe"
+  }
+}
+
+# CloudWatch Log Group for frontend
+resource "aws_cloudwatch_log_group" "frontend_logs" {
+  name              = "/ecs/${var.environment}-scribe-frontend"
+  retention_in_days = var.log_retention_days
+
+  tags = {
+    Name        = "${var.environment}-scribe-frontend-logs"
+    Environment = var.environment
+    Project     = "scribe"
+  }
+}
+
+# Frontend ECS Task Definition
+resource "aws_ecs_task_definition" "frontend_task" {
+  family                   = "${var.environment}-scribe-frontend"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.frontend_cpu
+  memory                   = var.frontend_memory
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
+  task_role_arn           = aws_iam_role.ecs_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name  = "frontend"
+      image = "${aws_ecr_repository.frontend_repo.repository_url}:latest"
+
+      portMappings = [
+        {
+          containerPort = 3000
+          protocol      = "tcp"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.frontend_logs.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+
+      environment = var.frontend_env_vars
+      dockerLabels = var.frontend_docker_labels
+      essential = true
+    }
+  ])
+
+  tags = {
+    Name        = "${var.environment}-scribe-frontend-task"
+    Environment = var.environment
+    Project     = "scribe"
+  }
+}
+
+# Frontend ECS Service
+resource "aws_ecs_service" "frontend_service" {
+  name            = "${var.environment}-scribe-frontend"
+  cluster         = aws_ecs_cluster.scribe_cluster.id
+  task_definition = aws_ecs_task_definition.frontend_task.arn
+  desired_count   = var.frontend_desired_count
+  launch_type     = "FARGATE"
+  enable_execute_command = var.enable_execute_command
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [var.frontend_security_group_id]
+    assign_public_ip = false
+  }
+
+
+  tags = {
+    Name        = "${var.environment}-scribe-frontend-service"
     Environment = var.environment
     Project     = "scribe"
   }
@@ -542,6 +679,7 @@ resource "null_resource" "ecs_cleanup" {
 
   depends_on = [
     aws_ecs_service.backend_service,
-    aws_ecs_service.qdrant_service
+    aws_ecs_service.qdrant_service,
+    aws_ecs_service.frontend_service
   ]
 }

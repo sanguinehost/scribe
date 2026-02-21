@@ -1,8 +1,11 @@
 // StreamingService.ts - Decoupled Svelte 5 Streaming Client with Robust Error Handling
 import { source } from 'sveltekit-sse';
 import { env } from '$env/dynamic/public';
+import { isDesktopMode } from '$lib/utils/features';
+import { desktopStreamingService } from './DesktopStreamingService.svelte';
 import { isInDesktopMode, desktopAuth } from '$lib/api/desktop-auth';
 import { logger } from '$lib/utils/logger';
+import { apiClient } from '$lib/api';
 import type {
 	ScribeChatMessage as _ScribeChatMessage,
 	ScribeChatSession as _ScribeChatSession
@@ -43,8 +46,9 @@ export interface StreamingMessage {
 	variants?: import('$lib/types').MessageVariantResponse[] | null; // Array of variants for this message
 	contentVersion?: number; // Reactivity signal - increments when content changes during streaming (required for Svelte 5 fine-grained tracking)
 	game_state?: Record<string, unknown> | null; // Game state associated with this message
-	reasoningContent?: string; // Content of the reasoning/thinking block
+	reasoningContent?: string | null; // Content of the reasoning/thinking block
 	isThinking?: boolean; // Whether the model is currently thinking
+	is_thinking?: boolean; // Alias for consistency with ScribeChatMessage
 }
 
 // Connection states following the architectural design
@@ -73,16 +77,39 @@ const DEFAULT_CONFIG: StreamingConfig = {
 	enableBackoff: true
 };
 
+// Comprehensive interface for all streaming service implementations (Web/Desktop)
+export interface IStreamingService {
+	readonly messages: StreamingMessage[];
+	readonly connectionStatus: ConnectionStatus;
+	readonly currentError: StreamingError | null;
+	readonly isTyping: boolean;
+	readonly latestGameState: Record<string, unknown> | null;
+	readonly currentStatus: string | null;
+	getState(): {
+		messages: StreamingMessage[];
+		connectionStatus: ConnectionStatus;
+		currentStatus: string | null;
+		currentError: StreamingError | null;
+		isTyping: boolean;
+	};
+	connect(params: Record<string, unknown>): Promise<void>;
+	disconnect(): void;
+	clearMessages(): void;
+	interrupt(): void;
+	setMessages(messages: StreamingMessage[]): void;
+}
+
 /**
  * StreamingService - A robust, decoupled streaming service using Svelte 5 runes
  */
-class StreamingService {
+class StreamingService implements IStreamingService {
 	// Reactive state variables using $state rune
 	public messages = $state<StreamingMessage[]>([]);
 	public connectionStatus = $state<ConnectionStatus>('idle');
 	public currentError = $state<StreamingError | null>(null);
 	public isTyping = $state(false);
 	public latestGameState = $state<Record<string, unknown> | null>(null);
+	public currentStatus = $state<string | null>(null);
 
 	// Private state for connection management
 	private activeConnection: ReturnType<typeof source> | null = null;
@@ -125,6 +152,9 @@ class StreamingService {
 		closeTimeoutId: null as ReturnType<typeof setTimeout> | null,
 		shouldClose: false
 	};
+
+	// SSE event counter for diagnostics
+	private sseEventCounter = 0;
 
 	// Page visibility tracking for recovery checks only
 	private isTabVisible = true;
@@ -241,7 +271,10 @@ class StreamingService {
 		// Update message progressively so TypewriterMessage can see content
 		const message = this.messages.find((msg) => msg.id === messageId);
 		if (message) {
+			// When main content starts arriving, we are definitely no longer in the "thinking/reasoning" phase
+			// Setting this to false triggers the UI transition from "Thinking..." to "Thought Process"
 			message.isThinking = false;
+			message.is_thinking = false;
 		}
 
 		this.updateMessageContentProgressive(messageId);
@@ -291,9 +324,10 @@ class StreamingService {
 		if (message) {
 			message.content = buffer.content;
 			message.displayedContent = buffer.content;
-			message.isAnimating = false;
+			// Keep isAnimating TRUE while streaming continues, even during progressive updates
+			// It should only be set to false in updateMessageContent (complete) or handleConnectionClose
 			message.isRegenerating = false;
-			message.shouldAnimate = false; // Stream is complete, no need to animate
+			message.shouldAnimate = true; // Still streaming
 			message.prompt_tokens = buffer.prompt_tokens;
 			message.completion_tokens = buffer.completion_tokens;
 			message.model_name = buffer.model_name;
@@ -314,7 +348,15 @@ class StreamingService {
 		if (message) {
 			message.content = buffer.content;
 			message.displayedContent = buffer.content; // Update displayed content for UI
-			message.isAnimating = false; // TypewriterMessage handles animation
+			message.isAnimating = true; // Ensure this stays true throughout progressive updates
+			message.shouldAnimate = true; // Ensure this stays true throughout progressive updates
+
+			// Drop regeneration flag as soon as first character of text arrives
+			// This allows TypewriterMessage to transition from loading -> content
+			if (buffer.content.length > 0) {
+				message.isRegenerating = false;
+				message.isThinking = false; // Usually text implies thinking is done or in parallel
+			}
 		}
 	}
 
@@ -424,13 +466,18 @@ class StreamingService {
 			messages: this.messages,
 			connectionStatus: this.connectionStatus,
 			currentError: this.currentError,
-			isTyping: this.isTyping
+			isTyping: this.isTyping,
+			currentStatus: this.currentStatus
 		};
 	}
 
 	/**
 	 * Connect and start streaming with sophisticated error handling
 	 */
+	public setMessages(messages: StreamingMessage[]): void {
+		this.messages = messages;
+	}
+
 	public async connect(params: {
 		chatId: string;
 		userMessage: string;
@@ -458,6 +505,7 @@ class StreamingService {
 		this.cleanupConnection();
 		this.retryCount = 0;
 		this.connectionStatus = 'connecting';
+		this.currentStatus = null;
 		this.currentError = null;
 
 		// Reset connection close state for new connection
@@ -525,17 +573,16 @@ class StreamingService {
 				...existingMessage, // Spread all existing properties
 				content: '', // Clear content - will be filled when buffering completes
 				displayedContent: '', // Clear displayed content - will animate from empty
-				isAnimating: false, // Keep false - animation starts later
+				isAnimating: true, // Mark as animating immediately
 				isRegenerating: true, // Flag to show loading indicator during regeneration
+				shouldAnimate: true, // EXPLICITLY set to true for regeneration/variants
 				error: undefined, // Clear any existing error
 				contentVersion: 0, // Initialize for Svelte 5 reactivity
-				retryable: false // Clear retry state
+				retryable: false, // Clear retry state
+				reasoningContent: undefined, // Clear stale reasoning
+				isThinking: true // Usually starts with thinking
 				// variant_count and current_variant_index preserved from spread
 			};
-			// Force Svelte reactivity by reassigning the array
-			this.messages = [...this.messages];
-
-			// Use the new message reference
 			assistantMessage = this.messages[existingMessageIndex];
 
 			assistantMessageId = assistantMessage.id;
@@ -656,6 +703,8 @@ class StreamingService {
 			thinking_level: params.thinking_level // Pass centralized thinking level
 		};
 
+		console.log('🌐 [WebSSE] Starting connection', { url: apiUrl, chatId: params.chatId });
+		this.sseEventCounter = 0;
 		logger.debug('streaming-service', 'Starting sveltekit-sse source', { url: apiUrl });
 
 		// Prepare headers - add JWT Bearer token for desktop mode
@@ -677,15 +726,39 @@ class StreamingService {
 				options: {
 					method: 'POST',
 					headers,
-					body: JSON.stringify(requestBody)
+					body: JSON.stringify(requestBody),
+					// @ts-expect-error - credentials is required for cross-subdomain cookies but missing in sveltekit-sse types
+					credentials: 'include'
 				},
-				close: () => {
-					logger.debug('streaming-service', 'Source closed');
+				cache: false, // Disable caching to prevent stale connection reuse
+				open: () => {
+					console.log('🌐 [WebSSE] Connection OPEN — SSE stream established');
+					logger.debug('streaming-service', 'SSE connection opened successfully');
+				},
+				close: (e) => {
+					console.log('🌐 [WebSSE] Connection CLOSED', {
+						eventsReceived: this.sseEventCounter,
+						closeState: { ...this.connectionCloseState },
+						connectionStatus: this.connectionStatus,
+						isLocal: e?.isLocal,
+						status: e?.status,
+						statusText: e?.statusText
+					});
+					logger.debug('streaming-service', 'Source closed', {
+						eventsReceived: this.sseEventCounter,
+						closeState: { ...this.connectionCloseState }
+					});
 					this.handleConnectionClose();
 				},
 				error: (e) => {
 					// If it's a connection error, we might want to retry
 					const errorObj = e instanceof Error ? e : new Error(String(e));
+					console.error('🌐 [WebSSE] Connection ERROR', {
+						error: errorObj.message,
+						eventsReceived: this.sseEventCounter,
+						closeState: { ...this.connectionCloseState },
+						errorDetails: e
+					});
 					logger.error('streaming-service', 'Source error', errorObj);
 
 					if (this.shouldRetry(errorObj)) {
@@ -759,6 +832,20 @@ class StreamingService {
 				}
 			});
 			this.activeSubscriptions.push(thinkingUnsub);
+
+			const statusUnsub = this.activeConnection.select('status').subscribe((data) => {
+				if (data) {
+					this.handleStreamMessage({ event: 'status', data }, assistantMessageId);
+				}
+			});
+			this.activeSubscriptions.push(statusUnsub);
+
+			const heartbeatUnsub = this.activeConnection.select('heartbeat').subscribe((data) => {
+				if (data) {
+					this.handleStreamMessage({ event: 'heartbeat', data }, assistantMessageId);
+				}
+			});
+			this.activeSubscriptions.push(heartbeatUnsub);
 		} catch (error) {
 			logger.error(
 				'streaming-service',
@@ -776,6 +863,12 @@ class StreamingService {
 		_event: { event: string; data: string },
 		assistantMessageId: string
 	): void {
+		this.sseEventCounter++;
+		console.log(`📨 [WebSSE] Event #${this.sseEventCounter}: ${_event.event}`, {
+			dataLength: _event.data?.length,
+			dataPreview: _event.data?.slice(0, 100)
+		});
+
 		try {
 			switch (_event.event) {
 				case 'content':
@@ -841,7 +934,22 @@ class StreamingService {
 
 					if (_event.data) {
 						const messageId = this.currentAssistantMessageId || assistantMessageId;
-						this.appendReasoningContent(messageId, _event.data);
+
+						// Try to parse as JSON first (new format)
+						try {
+							const parsed = JSON.parse(_event.data);
+							if (parsed && typeof parsed === 'object' && 'text' in parsed) {
+								this.appendReasoningContent(messageId, parsed.text);
+							} else {
+								// Fallback: treat properly parsed JSON that doesn't have 'text' as raw data if needed,
+								// but mostly we expect {text: ...}
+								// If it's a string, just use it
+								this.appendReasoningContent(messageId, _event.data);
+							}
+						} catch (_e) {
+							// Fallback: treat as raw text (old format)
+							this.appendReasoningContent(messageId, _event.data);
+						}
 					}
 					break;
 
@@ -851,6 +959,11 @@ class StreamingService {
 
 				case 'done':
 					if (_event.data === '[DONE]') {
+						console.log('✅ [WebSSE] DONE received', {
+							totalEvents: this.sseEventCounter,
+							closeState: { ...this.connectionCloseState }
+						});
+
 						// NEW ARCHITECTURE: Mark buffer as complete and start animation when ready
 						const messageId = this.currentAssistantMessageId || assistantMessageId;
 						const messageBuffer = this.messageBuffers.get(messageId);
@@ -892,8 +1005,8 @@ class StreamingService {
 						try {
 							const gameState = JSON.parse(_event.data);
 							this.handleGameStateUpdateEvent(gameState);
-						} catch (e) {
-							logger.error('streaming-service', 'Failed to parse game state', e as Error);
+						} catch (_e) {
+							logger.error('streaming-service', 'Failed to parse game state', _e as Error);
 						}
 					}
 					break;
@@ -901,6 +1014,12 @@ class StreamingService {
 				case 'message_saved':
 					try {
 						const savedData = JSON.parse(_event.data);
+						const backendId = savedData.message_id || savedData.id;
+						console.log('💾 [WebSSE] MESSAGE_SAVED received', {
+							backendId,
+							model: savedData.model_name,
+							variantCount: savedData.variant_count
+						});
 						logger.debug('streaming-service', 'Message saved event received', savedData);
 
 						const messageId = this.currentAssistantMessageId || assistantMessageId;
@@ -908,7 +1027,7 @@ class StreamingService {
 
 						if (message) {
 							// Update with backend ID and final metadata
-							message.backend_id = savedData.message_id || savedData.id;
+							message.backend_id = backendId;
 							message.model_name = savedData.model_name;
 							message.created_at = savedData.created_at;
 							message.variant_count = savedData.variant_count;
@@ -918,21 +1037,42 @@ class StreamingService {
 							// Update buffer with metadata
 							const buffer = this.messageBuffers.get(messageId);
 							if (buffer) {
-								buffer.backend_id = savedData.message_id || savedData.id;
+								buffer.backend_id = backendId;
 								buffer.model_name = savedData.model_name;
+								buffer.isComplete = true;
 							}
 						}
 
 						this.connectionCloseState.messageSavedReceived = true;
+
+						// CRITICAL: Fetch the full, authoritative message from the backend DB
+						// This ensures that even if the stream skipped chunks or was incomplete,
+						// the user sees the perfect final result stored in the database.
+						// Pattern ported from DesktopStreamingService.
+						if (backendId) {
+							this.fetchFullMessage(backendId, messageId);
+						}
+
+						// Trigger automatic message refresh after stream completes
+						// This bridges gap between streaming and persisted views
+						setTimeout(() => {
+							logger.debug('streaming-service', 'Dispatching chat:refresh-messages event');
+							window.dispatchEvent(new CustomEvent('chat:refresh-messages'));
+						}, 1000);
+
 						this.tryCloseConnection();
-					} catch (e) {
-						logger.error('streaming-service', 'Failed to parse message_saved event', e as Error);
+					} catch (_e) {
+						logger.error('streaming-service', 'Failed to parse message_saved event', _e as Error);
 					}
 					break;
 
 				case 'token_usage':
 					try {
 						const usageData = JSON.parse(_event.data);
+						console.log('📊 [WebSSE] TOKEN_USAGE received', {
+							promptTokens: usageData.prompt_tokens,
+							completionTokens: usageData.completion_tokens
+						});
 						logger.debug('streaming-service', 'Token usage event received', usageData);
 
 						const messageId = this.currentAssistantMessageId || assistantMessageId;
@@ -952,9 +1092,19 @@ class StreamingService {
 
 						this.connectionCloseState.tokenUsageReceived = true;
 						this.tryCloseConnection();
-					} catch (e) {
-						logger.error('streaming-service', 'Failed to parse token_usage event', e as Error);
+					} catch (_e) {
+						logger.error('streaming-service', 'Failed to parse token_usage event', _e as Error);
 					}
+					break;
+
+				case 'status':
+					logger.debug('streaming-service', 'Status event received', { status: _event.data });
+					this.currentStatus = _event.data;
+					break;
+
+				case 'heartbeat':
+					logger.debug('streaming-service', 'Heartbeat event received');
+					// Heartbeat keeps the connection alive, no specific action needed other than logging
 					break;
 			}
 		} catch (error) {
@@ -1025,6 +1175,12 @@ class StreamingService {
 	 * Handle connection closure
 	 */
 	private handleConnectionClose(): void {
+		console.log('🔒 [WebSSE] handleConnectionClose called', {
+			previousStatus: this.connectionStatus,
+			eventsReceived: this.sseEventCounter,
+			closeState: { ...this.connectionCloseState }
+		});
+
 		// Only update status if not already in error state
 		if (this.connectionStatus !== 'error') {
 			this.connectionStatus = 'closed';
@@ -1034,6 +1190,53 @@ class StreamingService {
 		this.activeSubscriptions.forEach((unsub) => unsub());
 		this.activeSubscriptions = [];
 		this.activeConnection = null;
+	}
+
+	/**
+	 * Fetch the full message from backend and update local state.
+	 * Ported from DesktopStreamingService - ensures the user sees the
+	 * perfect final result even if stream chunks were lost.
+	 */
+	private async fetchFullMessage(backendId: string, localId: string): Promise<void> {
+		console.log('🔄 [WebSSE] Fetching full message from backend', { backendId, localId });
+
+		try {
+			const result = await apiClient.getMessageById(backendId);
+
+			if (result.isOk()) {
+				const fullMessage = result.value;
+				console.log('🔄 [WebSSE] Full message fetched successfully', {
+					id: fullMessage.id,
+					contentLength: fullMessage.content?.length,
+					hasReasoningContent: !!fullMessage.reasoning_content
+				});
+
+				// Update the message with the authoritative content
+				this.messages = this.messages.map((msg) => {
+					if (msg.id === localId || msg.backend_id === backendId) {
+						return {
+							...msg,
+							content: fullMessage.content || msg.content,
+							displayedContent: fullMessage.content || msg.displayedContent,
+							contentVersion: (msg.contentVersion || 0) + 1,
+							status: 'completed',
+							reasoningContent: fullMessage.reasoning_content || msg.reasoningContent,
+							isThinking: false,
+							backend_id: fullMessage.id,
+							variant_count: fullMessage.variant_count || msg.variant_count,
+							current_variant_index: fullMessage.current_variant_index ?? msg.current_variant_index
+						};
+					}
+					return msg;
+				});
+			} else {
+				console.warn('🔄 [WebSSE] Failed to fetch full message', result.error);
+				logger.error('streaming-service', 'Failed to fetch full message', result.error);
+			}
+		} catch (error) {
+			console.warn('🔄 [WebSSE] Exception fetching full message', error);
+			logger.error('streaming-service', 'Exception fetching full message', error as Error);
+		}
 	}
 
 	/**
@@ -1101,6 +1304,7 @@ class StreamingService {
 		logger.debug('streaming-service', 'Disconnecting...');
 		this.cleanupConnection();
 		this.connectionStatus = 'closed';
+		this.currentStatus = null;
 	}
 
 	/**
@@ -1117,3 +1321,8 @@ class StreamingService {
 
 // Export singleton instance
 export const streamingService = new StreamingService();
+
+// Export active streaming service based on environment
+export const activeStreamingService: IStreamingService = isDesktopMode()
+	? (desktopStreamingService as unknown as IStreamingService)
+	: (streamingService as unknown as IStreamingService);

@@ -1,3 +1,4 @@
+#![allow(clippy::diverging_sub_expression)]
 #![allow(clippy::items_after_statements)]
 use crate::{
     auth::session_dek::SessionDek, // Import SessionDek

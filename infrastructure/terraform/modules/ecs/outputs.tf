@@ -49,3 +49,18 @@ output "backend_log_group_name" {
   description = "Name of the backend CloudWatch log group"
   value       = aws_cloudwatch_log_group.backend_logs.name
 }
+
+output "frontend_ecr_repository_url" {
+  description = "URL of the frontend ECR repository"
+  value       = aws_ecr_repository.frontend_repo.repository_url
+}
+
+output "frontend_service_name" {
+  description = "Name of the frontend ECS service"
+  value       = aws_ecs_service.frontend_service.name
+}
+
+output "frontend_log_group_name" {
+  description = "Name of the frontend CloudWatch log group"
+  value       = aws_cloudwatch_log_group.frontend_logs.name
+}

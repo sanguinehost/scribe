@@ -1,0 +1,24 @@
+{
+    "name": "auth_polling",
+    "description": "Detects abnormal polling frequency for /auth/me",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total, user_id FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND path = '/api/auth/me' AND user_id IS NOT NULL AND user_id != '' GROUP BY user_id HAVING count(*) > 100"
+    },
+    "row_template": "- User {user_id}: {total} polling requests",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 60,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}

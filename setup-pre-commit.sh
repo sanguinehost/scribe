@@ -109,6 +109,61 @@ pre-commit install
 print_status "Installing commit message validation hook..."
 pre-commit install --hook-type commit-msg
 
+# Append Scribe auto-formatter wrapper to the pre-commit hook
+print_status "Configuring auto-formatter bypass in pre-commit hook..."
+HOOK_FILE=".git/hooks/pre-commit"
+if [ -f "$HOOK_FILE" ]; then
+    AUTO_FORMAT_BLOCK='
+# --- SCRIBE AUTO-FORMATTER WRAPPER ---
+# Check for modified files to format (NUL-delimited for safe filename handling)
+STAGED_RS_FILES=$(git diff --cached --name-only -z | tr "\0" "\n" | grep "^backend/.*\.rs$" || true)
+STAGED_JS_FILES=$(git diff --cached --name-only -z | tr "\0" "\n" | grep -E "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" || true)
+
+if [ -n "$STAGED_RS_FILES" ] || [ -n "$STAGED_JS_FILES" ]; then
+    # Protect unstaged changes to ensure staging isolation
+    HAS_UNSTAGED=$(git diff --name-only | grep -E "^(backend|frontend)/" || true)
+    STASH_REF=""
+
+    if [ -n "$HAS_UNSTAGED" ]; then
+        echo "📦 Protecting unstaged changes..."
+        STASH_BEFORE=$(git stash list | wc -l)
+        git stash push --keep-index --message "scribe-format-stash" > /dev/null
+        STASH_AFTER=$(git stash list | wc -l)
+        if [ "$STASH_AFTER" -gt "$STASH_BEFORE" ]; then
+            STASH_REF="stash@{0}"
+        fi
+    fi
+
+    if [ -n "$STAGED_RS_FILES" ]; then
+        echo "🦀 Auto-formatting backend Rust code..."
+        cargo fmt -p scribe-backend
+        git diff --cached --name-only -z | grep -z "^backend/.*\.rs$" | xargs -0 git add --
+    fi
+
+    if [ -n "$STAGED_JS_FILES" ]; then
+        echo "⚡ Auto-formatting frontend code..."
+        (cd frontend && pnpm format > /dev/null 2>&1)
+        git diff --cached --name-only -z | grep -zE "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" | xargs -0 git add --
+    fi
+
+    if [ -n "$STASH_REF" ]; then
+        echo "🔓 Restoring unstaged changes..."
+        git stash pop "$STASH_REF" > /dev/null
+    fi
+fi
+# --- END SCRIBE AUTO-FORMATTER WRAPPER ---
+'
+    if ! grep -q "SCRIBE AUTO-FORMATTER WRAPPER" "$HOOK_FILE"; then
+        awk -v block="$AUTO_FORMAT_BLOCK" "NR==1{print; print block; next} 1" "$HOOK_FILE" > "$HOOK_FILE.tmp"
+        mv "$HOOK_FILE.tmp" "$HOOK_FILE"
+        chmod +x "$HOOK_FILE"
+        print_success "Auto-formatter wrapper installed successfully"
+    else
+        print_status "Auto-formatter wrapper already installed"
+    fi
+fi
+
+
 # Verify Rust tools are available
 print_status "Verifying Rust tools (cargo, rustfmt, clippy)..."
 

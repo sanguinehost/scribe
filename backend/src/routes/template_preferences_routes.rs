@@ -1,3 +1,4 @@
+#![allow(clippy::diverging_sub_expression)]
 use crate::privacy::logging::loggable_user_id;
 use axum::{
     extract::{Query, State},

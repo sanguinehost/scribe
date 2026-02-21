@@ -4,7 +4,7 @@
 use crate::{auth::token_auth::UnifiedAuth, errors::AppError, state::AppState};
 use axum::{
     extract::{Request, State},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     middleware::Next,
     response::Response,
 };
@@ -163,7 +163,7 @@ pub async fn llm_security_middleware(
     _headers: HeaderMap,
     mut request: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
+) -> Result<Response, AppError> {
     let start_time = Instant::now();
 
     // Extract user from session (supports both JWT and cookie auth)
@@ -180,7 +180,9 @@ pub async fn llm_security_middleware(
                     ip,
                 );
             }
-            return Err(StatusCode::UNAUTHORIZED);
+            return Err(AppError::Unauthorized(
+                "Authentication required".to_string(),
+            ));
         }
     };
 
@@ -224,7 +226,7 @@ pub async fn llm_security_middleware(
                 }
             }
 
-            return Err(StatusCode::TOO_MANY_REQUESTS);
+            return Err(AppError::RateLimited(None));
         }
     }
 

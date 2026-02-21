@@ -156,6 +156,26 @@ export async function performLogout(
 				.catch((error) => {
 					logger.warn('auth', 'Server-side session invalidation failed', { error });
 				});
+
+			// 3. BACKEND: Explicitly call backend logout to clear DEK from cache and invalidate session
+			// Use the apiClient which handles both cookie and token logout
+			_apiClient
+				.logout()
+				.then((result) => {
+					if (result.isOk()) {
+						logger.info('auth', 'Backend logout successful');
+					} else {
+						logger.warn('auth', 'Backend logout failed', { error: result.error });
+					}
+				})
+				.catch((error) => {
+					logger.error('auth', 'Unexpected error during backend logout', { error });
+				});
+
+			// 4. DESKTOP: Clear tokens from secure storage if in desktop mode
+			_apiClient.clearDesktopTokens().catch((error) => {
+				logger.warn('auth', 'Failed to clear desktop tokens', { error });
+			});
 		}
 
 		// Clear debounce timeouts

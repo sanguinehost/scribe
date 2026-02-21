@@ -5,6 +5,7 @@ pub mod examples;
 pub mod ip_anonymization;
 pub mod logging;
 pub mod middleware;
+pub mod otlp;
 
 /// Configuration for privacy settings
 #[derive(Debug, Clone)]

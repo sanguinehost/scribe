@@ -2,6 +2,7 @@
 // Middleware modules
 
 pub mod auth_middleware;
+pub mod capture_user;
 pub mod llm_security;
 pub mod plan_enforcement;
 pub mod rate_limit;
@@ -24,3 +25,4 @@ pub use plan_enforcement::{
 };
 
 pub use auth_middleware::unified_login_required;
+pub use capture_user::{capture_user_id_middleware, PrivacySafeUserId};

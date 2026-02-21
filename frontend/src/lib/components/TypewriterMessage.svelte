@@ -1,8 +1,9 @@
 <script lang="ts">
-	import type { StreamingMessage } from '$lib/services/StreamingService.svelte';
+	import { activeStreamingService as streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
 	import { Markdown } from '$lib/components/markdown';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { untrack } from 'svelte';
+	import { fade } from 'svelte/transition';
 
 	// Props
 	let {
@@ -30,6 +31,7 @@
 	let animationFrameId = $state<number | null>(null);
 	let startTime = $state<number | null>(null);
 	let startCharIndex = $state(0); // Track where animation started from
+	let animationInitialized = $state(false); // Gate to prevent flicker before first frame
 
 	// Track the last content we've processed
 	let lastProcessedContent = $state('');
@@ -49,10 +51,12 @@
 	let hasTextContent = $derived((message?.content || '').replace(/\s/g, '').length > 0);
 	let hasReasoningContent = $derived((message?.reasoningContent || '').length > 0 || message?.isThinking === true);
 	let shouldShowLoading = $derived(
-		(!hasTextContent && !hasReasoningContent) || message?.isRegenerating === true
+		(!hasTextContent && !hasReasoningContent) ||
+		(hasTextContent && message?.shouldAnimate !== false && !animationInitialized) ||
+		(message?.isRegenerating === true && !hasTextContent && !hasReasoningContent)
 	);
 
-	// Timeout for stuck loading states (30 seconds - needs to account for slow model cold starts)
+	// Timeout for stuck loading states (60 seconds - needs to account for slow model cold starts + RAG processing)
 	let isStuckLoading = $state(false);
 
 	$effect(() => {
@@ -61,10 +65,10 @@
 			isStuckLoading = false;
 			return;
 		}
-		// Start timeout when loading begins - 30s to handle slow initial connections
+		// Start timeout when loading begins - 60s to handle slow initial connections and RAG processing
 		const timer = setTimeout(() => {
 			isStuckLoading = true;
-		}, 30000);
+		}, 60000);
 		return () => clearTimeout(timer);
 	});
 
@@ -112,6 +116,10 @@
 				startCharIndex = displayedContent.length;
 				startTime = performance.now();
 				isAnimating = true;
+				// If we have content and were waiting for initialization, mark it now
+				if (fullContent.length > 0) {
+					animationInitialized = true;
+				}
 			}
 
 			lastProcessedContent = fullContent;
@@ -147,6 +155,7 @@
 			startCharIndex = 0;
 			startTime = performance.now();
 			isAnimating = true;
+			// Note: animationInitialized is set inside the first animation frame
 			lastProcessedContent = fullContent;
 
 			function animateFresh(currentTime: number) {
@@ -166,6 +175,9 @@
 
 				// Update displayed content
 				displayedContent = fullContent.slice(0, targetCharIndex + 1);
+				if (!animationInitialized) {
+					animationInitialized = true;
+				}
 
 				// Continue animation
 				animationFrameId = requestAnimationFrame(animateFresh);
@@ -235,19 +247,31 @@
 	>
 		<!-- Show loading spinner when no content or regenerating -->
 		{#if shouldShowLoading}
-			<div class="flex items-center gap-2 py-2 text-muted-foreground">
+			<div
+				class="flex items-center gap-2 py-2 text-muted-foreground"
+				out:fade={{ duration: 250 }}
+			>
 				{#if isStuckLoading}
 					<span class="text-sm text-red-500">Failed to load response. Try refreshing.</span>
 				{:else}
 					<div class="loading-spinner"></div>
-					<span class="text-sm">Thinking...</span>
+					{#key streamingService.currentStatus}
+						<span
+							class="text-sm"
+							in:fade={{ duration: 400 }}
+						>
+							{streamingService.currentStatus || 'Thinking...'}
+						</span>
+					{/key}
 				{/if}
 			</div>
 		{:else}
-			<Markdown md={displayedContent} />
-			{#if shouldShowTypewriter}
-				<span class="typing-indicator"></span>
-			{/if}
+			<div in:fade={{ duration: 400 }}>
+				<Markdown md={displayedContent} />
+				{#if shouldShowTypewriter}
+					<span class="typing-indicator"></span>
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>

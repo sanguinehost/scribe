@@ -1,0 +1,24 @@
+{
+    "name": "frontend_client_error",
+    "description": "Alerts on repeated frontend JS or UI crashes",
+    "stream_type": "logs",
+    "stream_name": "default",
+    "enabled": true,
+    "query_condition": {
+        "type": "sql",
+        "sql": "SELECT count(*) as total, frontend_component, frontend_route, min(client_user_id) as affected_user FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type = 'frontend_client_error' AND severity IN ('error', 'fatal') GROUP BY frontend_component, frontend_route HAVING count(*) > 3"
+    },
+    "row_template": "- {frontend_component} at {frontend_route}: {total} crashes (Sample User: {affected_user})",
+    "trigger_condition": {
+        "period": 5,
+        "operator": ">",
+        "threshold": 0,
+        "frequency": 1,
+        "frequency_type": "minutes",
+        "silence": 15,
+        "timezone": "UTC"
+    },
+    "destinations": [
+        "discord_dest"
+    ]
+}

@@ -37,6 +37,7 @@ pub mod email_verification;
 pub mod game_state;
 pub mod lorebook_dtos;
 pub mod lorebooks;
+pub mod narrative_task;
 #[cfg(feature = "payment")]
 pub mod payment;
 #[cfg(feature = "postgres-backend")]
@@ -73,6 +74,7 @@ pub use documents::*;
 pub use email_verification::*;
 pub use lorebook_dtos::*;
 pub use lorebooks::*;
+pub use narrative_task::*;
 #[cfg(feature = "payment")]
 pub use payment::*;
 pub use template_preferences::*;

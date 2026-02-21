@@ -174,6 +174,13 @@ impl DynamicRagSelector {
     }
 
     /// Select RAG content within the available token budget, prioritized by relevance and type
+    #[tracing::instrument(skip(self, candidates), fields(
+        num_candidates = candidates.len(),
+        available_budget = budget_override.unwrap_or_else(|| self.budget_planner.total_rag_budget()),
+        target_model = %self.budget_planner.target_model,
+        used_tokens = tracing::field::Empty,
+        selected_count = tracing::field::Empty
+    ))]
     pub async fn select_rag_content(
         &self,
         candidates: Vec<RetrievedChunk>,
@@ -269,17 +276,27 @@ impl DynamicRagSelector {
             }
         }
 
+        let budget_utilization = (used_tokens as f32 / available_budget as f32) * 100.0;
+
         info!(
             selected_count = selected_chunks.len(),
             total_candidates,
             used_tokens,
             available_budget,
-            budget_utilization = format!(
-                "{:.1}%",
-                (used_tokens as f32 / available_budget as f32) * 100.0
-            ),
+            budget_utilization = format!("{:.1}%", budget_utilization),
             "Dynamic RAG selection completed"
         );
+
+        // Record metrics as tracing events
+        tracing::Span::current().record("used_tokens", used_tokens);
+        tracing::Span::current().record("selected_count", selected_chunks.len());
+
+        if selected_chunks.len() < total_candidates {
+            warn!(
+                discarded = total_candidates - selected_chunks.len(),
+                "Some RAG candidates were discarded due to budget limits"
+            );
+        }
 
         Ok(selected_chunks)
     }

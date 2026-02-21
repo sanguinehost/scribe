@@ -39,7 +39,7 @@ use crate::{
 #[cfg(feature = "payment")]
 use crate::services::encryption_service::EncryptionService;
 #[cfg(feature = "payment")]
-use crate::services::payment::{SoftLimitService, SubscriptionService};
+use crate::services::payment::SubscriptionService;
 
 // Type aliases for complex types
 /*
@@ -1393,22 +1393,69 @@ pub async fn get_session_data_for_generation(
     debug!(target: "test_debug", %session_id, %available_rag_tokens, "RAG token budget check. available_rag_tokens > 0: {}", available_rag_tokens > 0);
 
     if available_rag_tokens > 0 {
-        // Extract max_game_time_day from game_state for RAG filtering
-        let max_game_time_day: Option<i64> = game_state_from_session.as_ref().and_then(|gs| {
-            // gs is DbJson, which derefs to Json<Value> (or is a wrapper)
-            // Access the inner Value via .0
-            let value = &gs.0;
-            value
-                .get("game_time")
-                .and_then(|gt| gt.get("day"))
-                .and_then(|d| d.as_i64())
-        });
-        debug!(%session_id, ?max_game_time_day, "Determined max_game_time_day for RAG filtering.");
+        // Check dynamic Qdrant health flag before trying to load embeddings
+        let is_qdrant_healthy = state
+            .qdrant_healthy
+            .load(std::sync::atomic::Ordering::Relaxed);
 
-        // Retrieve Lorebook Chunks
-        if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
-            if !lorebook_ids.is_empty() {
-                info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
+        let qdrant_rag_selection = if !is_qdrant_healthy {
+            tracing::warn!(
+                event_type = "graceful_degradation_active",
+                session_id = ?session_id,
+                "Qdrant is marked as unhealthy by background job. Bypassing RAG context assembly to prevent upstream generation failure."
+            );
+            None
+        } else {
+            // Extract max_game_time_day from game_state for RAG filtering
+            let max_game_time_day: Option<i64> = game_state_from_session.as_ref().and_then(|gs| {
+                // gs is DbJson, which derefs to Json<Value> (or is a wrapper)
+                // Access the inner Value via .0
+                let value = &gs.0;
+                value
+                    .get("game_time")
+                    .and_then(|gt| gt.get("day"))
+                    .and_then(|d| d.as_i64())
+            });
+            debug!(%session_id, ?max_game_time_day, "Determined max_game_time_day for RAG filtering.");
+
+            // Retrieve Lorebook Chunks
+            if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
+                if !lorebook_ids.is_empty() {
+                    info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
+                    let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                        use secrecy::ExposeSecret;
+                        let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                        crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+                    });
+                    match state
+                        .embedding_pipeline_service
+                        .retrieve_relevant_chunks(
+                            state.clone(),
+                            user_id,
+                            None, // Not searching chat history here
+                            Some(lorebook_ids.clone()),
+                            None,            // Not searching chronicles here (done separately)
+                            &rag_query_text, // query_text (enriched)
+                            lorebook_search_limit,
+                            max_game_time_day, // Filter by game time
+                            session_dek_temp.as_ref(),
+                        )
+                        .await
+                    {
+                        Ok(lore_chunks) => {
+                            info!(%session_id, num_lore_chunks = lore_chunks.len(), "Retrieved lorebook chunks.");
+                            combined_rag_candidates.extend(lore_chunks);
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Failed to retrieve lorebook chunks for RAG. Proceeding without them.");
+                        }
+                    }
+                }
+            }
+
+            // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
+            if let Some(chronicle_id) = player_chronicle_id_from_session {
+                info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
                 let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
                     use secrecy::ExposeSecret;
                     let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
@@ -1419,107 +1466,73 @@ pub async fn get_session_data_for_generation(
                     .retrieve_relevant_chunks(
                         state.clone(),
                         user_id,
-                        None, // Not searching chat history here
-                        Some(lorebook_ids.clone()),
-                        None,            // Not searching chronicles here (done separately)
-                        &rag_query_text, // query_text (enriched)
-                        lorebook_search_limit,
-                        max_game_time_day, // Filter by game time
-                        session_dek_temp.as_ref(),
+                        None,               // Not searching chat history here
+                        None,               // Not searching lorebooks here
+                        Some(chronicle_id), // Search this chronicle
+                        &rag_query_text,
+                        chronicles_search_limit,
+                        max_game_time_day,         // Filter by game time
+                        session_dek_temp.as_ref(), // DEK for decryption
                     )
                     .await
                 {
-                    Ok(lore_chunks) => {
-                        info!(%session_id, num_lore_chunks = lore_chunks.len(), "Retrieved lorebook chunks.");
-                        combined_rag_candidates.extend(lore_chunks);
+                    Ok(chronicle_chunks) => {
+                        info!(%session_id, %chronicle_id, num_chronicle_chunks = chronicle_chunks.len(), "Retrieved semantically relevant chronicle events for RAG.");
+                        combined_rag_candidates.extend(chronicle_chunks);
                     }
                     Err(e) => {
-                        warn!(%session_id, error = %e, "Failed to retrieve lorebook chunks for RAG. Proceeding without them.");
+                        warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG using semantic search. Proceeding without them.");
                     }
                 }
+            } else {
+                debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
             }
-        }
 
-        // Retrieve Chronicle Events (if chronicle is linked to this session) using semantic search
-        if let Some(chronicle_id) = player_chronicle_id_from_session {
-            info!(%session_id, %chronicle_id, "Retrieving chronicle events for RAG using semantic search.");
-            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
-                use secrecy::ExposeSecret;
-                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
-                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
-            });
-            match state
-                .embedding_pipeline_service
-                .retrieve_relevant_chunks(
-                    state.clone(),
-                    user_id,
-                    None,               // Not searching chat history here
-                    None,               // Not searching lorebooks here
-                    Some(chronicle_id), // Search this chronicle
-                    &rag_query_text,
-                    chronicles_search_limit,
-                    max_game_time_day,         // Filter by game time
-                    session_dek_temp.as_ref(), // DEK for decryption
-                )
-                .await
+            // Retrieve Older Chat History Chunks
+            // NOTE: We now allow this even if frontend_history is provided, to support the <older_chat_history> RAG section.
+            // If frontend_history is used, there is a risk of duplication if the frontend sends messages that are also in the database,
+            // but we prioritize providing the RAG context as requested.
             {
-                Ok(chronicle_chunks) => {
-                    info!(%session_id, %chronicle_id, num_chronicle_chunks = chronicle_chunks.len(), "Retrieved semantically relevant chronicle events for RAG.");
-                    combined_rag_candidates.extend(chronicle_chunks);
-                }
-                Err(e) => {
-                    warn!(%session_id, %chronicle_id, error = %e, "Failed to retrieve chronicle events for RAG using semantic search. Proceeding without them.");
-                }
-            }
-        } else {
-            debug!(%session_id, "No chronicle linked to this session, skipping chronicle event retrieval.");
-        }
+                info!(%session_id, "Retrieving older chat history chunks for RAG.");
+                let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
+                    use secrecy::ExposeSecret;
+                    let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
+                    crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
+                });
+                match state
+                    .embedding_pipeline_service
+                    .retrieve_relevant_chunks(
+                        state.clone(),
+                        user_id,
+                        Some(session_id), // Searching chat history for the current session
+                        None,             // Not searching lorebooks here
+                        None,             // Not searching chronicles here (done separately above)
+                        &rag_query_text,  // query_text (enriched)
+                        older_chat_search_limit,
+                        max_game_time_day,         // Filter by game time
+                        session_dek_temp.as_ref(), // DEK for decryption
+                    )
+                    .await
+                {
+                    Ok(mut older_chat_chunks) => {
+                        info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
+                        let recent_message_ids: std::collections::HashSet<crate::db::DbId> =
+                            managed_recent_history.iter().map(|msg| msg.id).collect();
+                        debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
 
-        // Retrieve Older Chat History Chunks
-        // NOTE: We now allow this even if frontend_history is provided, to support the <older_chat_history> RAG section.
-        // If frontend_history is used, there is a risk of duplication if the frontend sends messages that are also in the database,
-        // but we prioritize providing the RAG context as requested.
-        {
-            info!(%session_id, "Retrieving older chat history chunks for RAG.");
-            let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
-                use secrecy::ExposeSecret;
-                let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
-                crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
-            });
-            match state
-                .embedding_pipeline_service
-                .retrieve_relevant_chunks(
-                    state.clone(),
-                    user_id,
-                    Some(session_id), // Searching chat history for the current session
-                    None,             // Not searching lorebooks here
-                    None,             // Not searching chronicles here (done separately above)
-                    &rag_query_text,  // query_text (enriched)
-                    older_chat_search_limit,
-                    max_game_time_day,         // Filter by game time
-                    session_dek_temp.as_ref(), // DEK for decryption
-                )
-                .await
-            {
-                Ok(mut older_chat_chunks) => {
-                    info!(%session_id, num_older_chat_chunks_raw = older_chat_chunks.len(), "Retrieved older chat history chunks (raw).");
-                    let recent_message_ids: std::collections::HashSet<crate::db::DbId> =
-                        managed_recent_history.iter().map(|msg| msg.id).collect();
-                    debug!(target: "rag_debug", %session_id, num_recent_ids = recent_message_ids.len(), ?recent_message_ids, "Recent message IDs for RAG filtering determined.");
-
-                    debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
-                    for (i, chunk) in older_chat_chunks.iter().enumerate() {
-                        if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
-                            &chunk.metadata
-                        {
-                            debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_len = chunk.text.len(), "  Raw older chat RAG chunk");
-                        } else {
-                            debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_len = chunk.text.len(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                        debug!(target: "rag_debug", %session_id, num_raw_older_chunks = older_chat_chunks.len(), "Raw older chat RAG chunks before filtering:");
+                        for (i, chunk) in older_chat_chunks.iter().enumerate() {
+                            if let crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) =
+                                &chunk.metadata
+                            {
+                                debug!(target: "rag_debug", %session_id, chunk_idx = i, message_id = %chat_meta.message_id, score = chunk.score, text_len = chunk.text.len(), "  Raw older chat RAG chunk");
+                            } else {
+                                debug!(target: "rag_debug", %session_id, chunk_idx = i, score = chunk.score, text_len = chunk.text.len(), metadata_type = ?chunk.metadata, "  Raw older RAG chunk (non-chat metadata)");
+                            }
                         }
-                    }
 
-                    let initial_older_chunk_count = older_chat_chunks.len();
-                    older_chat_chunks.retain(|chunk| {
+                        let initial_older_chunk_count = older_chat_chunks.len();
+                        older_chat_chunks.retain(|chunk| {
                     match &chunk.metadata {
                         crate::services::embeddings::RetrievedMetadata::Chat(chat_meta) => {
                             let is_recent = recent_message_ids.contains(&chat_meta.message_id);
@@ -1542,155 +1555,167 @@ pub async fn get_session_data_for_generation(
                         }
                     }
                 });
-                    debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
-                    info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
-                    combined_rag_candidates.extend(older_chat_chunks);
-                }
-                Err(e) => {
-                    warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
-                }
-            }
-        }
-
-        // Unified RAG Context Selection with Dynamic Budget Management
-        debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before dynamic selection.");
-
-        if combined_rag_candidates.is_empty() {
-            debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
-        } else {
-            info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting independent RAG selection with flexible budgets.");
-
-            // Create pricing-aware context budget planner for the current model
-            let budget_planner = ContextBudgetPlanner::new_for_model(
-                &session_model_name_db,
-                Some(context_total_token_limit),
-            );
-
-            // Separate candidates by source type
-            let mut lorebook_candidates = Vec::new();
-            let mut chronicle_candidates = Vec::new();
-            let mut older_chat_candidates = Vec::new();
-
-            for candidate in combined_rag_candidates {
-                match &candidate.metadata {
-                    RetrievedMetadata::Lorebook(_) => lorebook_candidates.push(candidate),
-                    RetrievedMetadata::Chronicle(_) => chronicle_candidates.push(candidate),
-                    RetrievedMetadata::Chat(_) => older_chat_candidates.push(candidate),
+                        debug!(target: "rag_debug", %session_id, %initial_older_chunk_count, final_older_chunk_count = older_chat_chunks.len(), "Older chat RAG chunks filtering complete.");
+                        info!(%session_id, num_older_chat_chunks_filtered = older_chat_chunks.len(), "Filtered older chat history chunks."); // Existing log, good for summary
+                        combined_rag_candidates.extend(older_chat_chunks);
+                    }
+                    Err(e) => {
+                        warn!(%session_id, error = %e, "Failed to retrieve older chat history chunks for RAG. Proceeding without them.");
+                    }
                 }
             }
 
-            // Create dynamic RAG selector
-            let rag_selector =
-                DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+            // Unified RAG Context Selection with Dynamic Budget Management
+            debug!(target: "test_debug", %session_id, num_combined_candidates = combined_rag_candidates.len(), "Combined RAG candidates before dynamic selection.");
 
-            let query_time = Some(chrono::Utc::now().into());
+            if combined_rag_candidates.is_empty() {
+                debug!(target: "test_debug", %session_id, "No combined RAG candidates to process.");
+                Some(Vec::new())
+            } else {
+                info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting independent RAG selection with flexible budgets.");
 
-            // Waterfall Budgeting Strategy:
-            // Instead of strict pre-allocation, we use a "waterfall" approach.
-            // We define caps for specific types (Lorebooks, Chronicles) to prevent them from dominating,
-            // but if they use less than their cap, the remaining budget flows down to the next category.
-            // The final category (Older Chat) gets whatever is left.
+                // Create pricing-aware context budget planner for the current model
+                let budget_planner = ContextBudgetPlanner::new_for_model(
+                    &session_model_name_db,
+                    Some(context_total_token_limit),
+                );
 
-            let mut remaining_budget = available_rag_tokens;
-            let mut selected_items = Vec::new();
+                // Separate candidates by source type
+                let mut lorebook_candidates = Vec::new();
+                let mut chronicle_candidates = Vec::new();
+                let mut older_chat_candidates = Vec::new();
 
-            // 1. Lorebooks (Cap at 40% of TOTAL available, but take from remaining)
-            let lorebook_cap = (available_rag_tokens as f32 * 0.4) as usize;
-            let lorebook_limit = remaining_budget.min(lorebook_cap);
+                for candidate in combined_rag_candidates {
+                    match &candidate.metadata {
+                        RetrievedMetadata::Lorebook(_) => lorebook_candidates.push(candidate),
+                        RetrievedMetadata::Chronicle(_) => chronicle_candidates.push(candidate),
+                        RetrievedMetadata::Chat(_) => older_chat_candidates.push(candidate),
+                    }
+                }
 
-            if !lorebook_candidates.is_empty() {
-                match rag_selector
-                    .select_rag_content(lorebook_candidates, query_time, Some(lorebook_limit))
-                    .await
-                {
-                    Ok(items) => {
-                        // Calculate actual tokens used to update remaining budget
-                        let mut tokens_used = 0;
-                        for item in &items {
-                            if let Ok(estimate) = state
-                                .token_counter
-                                .count_tokens(
-                                    &item.text,
-                                    CountingMode::LocalOnly,
-                                    Some(&session_model_name_db),
-                                )
-                                .await
-                            {
-                                tokens_used += estimate.total;
+                // Create dynamic RAG selector
+                let rag_selector =
+                    DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+
+                let query_time = Some(chrono::Utc::now().into());
+
+                // Waterfall Budgeting Strategy:
+                // Instead of strict pre-allocation, we use a "waterfall" approach.
+                // We define caps for specific types (Lorebooks, Chronicles) to prevent them from dominating,
+                // but if they use less than their cap, the remaining budget flows down to the next category.
+                // The final category (Older Chat) gets whatever is left.
+
+                let mut remaining_budget = available_rag_tokens;
+                let mut selected_items = Vec::new();
+
+                // 1. Lorebooks (Cap at 40% of TOTAL available, but take from remaining)
+                let lorebook_cap = (available_rag_tokens as f32 * 0.4) as usize;
+                let lorebook_limit = remaining_budget.min(lorebook_cap);
+
+                if !lorebook_candidates.is_empty() {
+                    match rag_selector
+                        .select_rag_content(lorebook_candidates, query_time, Some(lorebook_limit))
+                        .await
+                    {
+                        Ok(items) => {
+                            // Calculate actual tokens used to update remaining budget
+                            let mut tokens_used = 0;
+                            for item in &items {
+                                if let Ok(estimate) = state
+                                    .token_counter
+                                    .count_tokens(
+                                        &item.text,
+                                        CountingMode::LocalOnly,
+                                        Some(&session_model_name_db),
+                                    )
+                                    .await
+                                {
+                                    tokens_used += estimate.total;
+                                }
                             }
+                            remaining_budget = remaining_budget.saturating_sub(tokens_used);
+                            selected_items.extend(items);
+                            debug!(
+                                %session_id,
+                                tokens_used,
+                                remaining_budget,
+                                "Lorebook selection complete (Waterfall Step 1)"
+                            );
                         }
-                        remaining_budget = remaining_budget.saturating_sub(tokens_used);
-                        selected_items.extend(items);
-                        debug!(
-                            %session_id,
-                            tokens_used,
-                            remaining_budget,
-                            "Lorebook selection complete (Waterfall Step 1)"
-                        );
+                        Err(e) => warn!(%session_id, error = %e, "Lorebook RAG selection failed."),
                     }
-                    Err(e) => warn!(%session_id, error = %e, "Lorebook RAG selection failed."),
                 }
-            }
 
-            // 2. Chronicles (Cap at 40% of TOTAL available, but take from remaining)
-            let chronicle_cap = (available_rag_tokens as f32 * 0.4) as usize;
-            let chronicle_limit = remaining_budget.min(chronicle_cap);
+                // 2. Chronicles (Cap at 40% of TOTAL available, but take from remaining)
+                let chronicle_cap = (available_rag_tokens as f32 * 0.4) as usize;
+                let chronicle_limit = remaining_budget.min(chronicle_cap);
 
-            if !chronicle_candidates.is_empty() {
-                match rag_selector
-                    .select_rag_content(chronicle_candidates, query_time, Some(chronicle_limit))
-                    .await
-                {
-                    Ok(items) => {
-                        let mut tokens_used = 0;
-                        for item in &items {
-                            if let Ok(estimate) = state
-                                .token_counter
-                                .count_tokens(
-                                    &item.text,
-                                    CountingMode::LocalOnly,
-                                    Some(&session_model_name_db),
-                                )
-                                .await
-                            {
-                                tokens_used += estimate.total;
+                if !chronicle_candidates.is_empty() {
+                    match rag_selector
+                        .select_rag_content(chronicle_candidates, query_time, Some(chronicle_limit))
+                        .await
+                    {
+                        Ok(items) => {
+                            let mut tokens_used = 0;
+                            for item in &items {
+                                if let Ok(estimate) = state
+                                    .token_counter
+                                    .count_tokens(
+                                        &item.text,
+                                        CountingMode::LocalOnly,
+                                        Some(&session_model_name_db),
+                                    )
+                                    .await
+                                {
+                                    tokens_used += estimate.total;
+                                }
                             }
+                            remaining_budget = remaining_budget.saturating_sub(tokens_used);
+                            selected_items.extend(items);
+                            debug!(
+                                %session_id,
+                                tokens_used,
+                                remaining_budget,
+                                "Chronicle selection complete (Waterfall Step 2)"
+                            );
                         }
-                        remaining_budget = remaining_budget.saturating_sub(tokens_used);
-                        selected_items.extend(items);
-                        debug!(
-                            %session_id,
-                            tokens_used,
-                            remaining_budget,
-                            "Chronicle selection complete (Waterfall Step 2)"
-                        );
+                        Err(e) => warn!(%session_id, error = %e, "Chronicle RAG selection failed."),
                     }
-                    Err(e) => warn!(%session_id, error = %e, "Chronicle RAG selection failed."),
                 }
-            }
 
-            // 3. Older Chat History (Take ALL remaining budget)
-            // This ensures we fill the context window if other categories were sparse
-            let older_chat_limit = remaining_budget;
+                // 3. Older Chat History (Take ALL remaining budget)
+                // This ensures we fill the context window if other categories were sparse
+                let older_chat_limit = remaining_budget;
 
-            if !older_chat_candidates.is_empty() {
-                match rag_selector
-                    .select_rag_content(older_chat_candidates, query_time, Some(older_chat_limit))
-                    .await
-                {
-                    Ok(items) => {
-                        selected_items.extend(items);
-                        debug!(
-                            %session_id,
-                            limit = older_chat_limit,
-                            "Older chat selection complete (Waterfall Step 3)"
-                        );
+                if !older_chat_candidates.is_empty() {
+                    match rag_selector
+                        .select_rag_content(
+                            older_chat_candidates,
+                            query_time,
+                            Some(older_chat_limit),
+                        )
+                        .await
+                    {
+                        Ok(items) => {
+                            selected_items.extend(items);
+                            debug!(
+                                %session_id,
+                                limit = older_chat_limit,
+                                "Older chat selection complete (Waterfall Step 3)"
+                            );
+                        }
+                        Err(e) => {
+                            warn!(%session_id, error = %e, "Older chat RAG selection failed.")
+                        }
                     }
-                    Err(e) => warn!(%session_id, error = %e, "Older chat RAG selection failed."),
                 }
-            }
 
-            rag_context_items = selected_items;
+                Some(selected_items)
+            }
+        }; // End of Qdrant unhealthy bypass block
+
+        if let Some(items) = qdrant_rag_selection {
+            rag_context_items = items;
         }
     } else {
         debug!(target: "test_debug", %session_id, %available_rag_tokens, "Skipping RAG context assembly as available_rag_tokens is not > 0.");
@@ -2069,6 +2094,7 @@ pub struct StreamAiParams {
     pub game_master_mode_enabled: bool,      // Whether Game Master mode is enabled for this session
     pub initial_game_state: Option<serde_json::Value>,
     pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning
+    pub pre_processing_analysis_id: Option<crate::db::DbId>,
 }
 
 /// Creates a standard prefill for all requests to establish roleplay context
@@ -2343,6 +2369,7 @@ pub async fn stream_ai_response_and_save_message_with_retry(
             game_master_mode_enabled: params.game_master_mode_enabled,
             initial_game_state: params.initial_game_state.clone(),
             parent_message_id: params.parent_message_id,
+            pre_processing_analysis_id: params.pre_processing_analysis_id,
         };
 
         info!(session_id = %params.session_id, retry_count, "Attempting AI generation (attempt {} of {})", retry_count + 1, MAX_RETRIES + 1);
@@ -2415,6 +2442,7 @@ pub async fn stream_ai_response_and_save_message(
         game_master_mode_enabled,
         initial_game_state,
         parent_message_id,
+        pre_processing_analysis_id: _,
     } = params;
 
     // Prune future messages if this is a rewind operation (parent_message_id provided)
@@ -2508,7 +2536,22 @@ pub async fn stream_ai_response_and_save_message(
         }
     }
 
+    // Default to medium if not specified but needed
+    if effective_request_thinking && final_reasoning_budget.is_none() {
+        tracing::info!(
+            %session_id,
+            "No reasoning budget provided but thinking requested - defaulting to 16384 (Medium)"
+        );
+        final_reasoning_budget = Some(16384);
+    }
+
     if effective_request_thinking {
+        tracing::info!(
+            %session_id,
+            %model_name,
+            budget = ?final_reasoning_budget,
+            "Enabling Gemini thinking/reasoning mode"
+        );
         rig_req.reasoning_budget = final_reasoning_budget;
         rig_req.capture_reasoning_content = true;
     }
@@ -2550,610 +2593,229 @@ pub async fn stream_ai_response_and_save_message(
     let sse_stream = async_stream::stream! {
         let mut accumulated_content = String::new();
         let mut accumulated_reasoning = String::new();
-        let mut stream_error_occurred = false;
         let mut chunk_index: u32 = 0;
 
-        // Create a channel to receive token usage data from the spawned task
-        let (token_sender, mut token_receiver) = tokio::sync::mpsc::unbounded_channel::<ScribeSseEvent>();
+        // Create a channel for detached generation events
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Result<ScribeSseEvent, AppError>>();
 
-        // Pin the stream from the Rig client
-        futures::pin_mut!(rig_stream);
-        trace!("Entering SSE async_stream! processing loop in chat_service (Rig)");
+        // Spawn detached generation task
+        let state_for_task = stream_state.clone();
+        let session_id_for_task = stream_session_id;
+        let user_id_for_task = stream_user_id;
+        let user_dek_for_task = user_dek.clone();
+        let service_model_name_for_task = service_model_name.clone();
+        let variant_of_for_task = variant_of;
+        let charge_credits_for_task = charge_credits;
+        let game_master_mode_enabled_for_task = game_master_mode_enabled;
+        let initial_game_state_for_task = initial_game_state.clone();
+        let game_time_to_save_for_task = game_time_to_save.clone();
+        let player_chronicle_id_for_task = player_chronicle_id;
+        let raw_prompt_debug_for_task = raw_prompt_debug.clone();
 
-        while let Some(event_result) = rig_stream.next().await {
-            trace!("Received event from rig_stream in chat_service: {:?}", event_result);
-            match event_result {
-                Ok(crate::llm::RigStreamEvent::Content(chunk_content)) => {
-                    if chunk_content.is_empty() {
-                        trace!("Skipping empty content chunk from Rig in chat_service");
-                    } else {
-                        // Create structured chunk with integrity checking
-                        let checksum = crc32fast::hash(chunk_content.as_bytes());
-                        let structured_chunk = super::types::StreamedChunk {
-                            index: chunk_index,
-                            content: chunk_content.clone(),
-                            checksum,
-                        };
+        tokio::spawn(async move {
+            futures::pin_mut!(rig_stream);
+            let mut stream_error_occurred = false;
 
-                        // Serialize to JSON for transmission
-                        match serde_json::to_string(&structured_chunk) {
-                            Ok(json_payload) => {
-                                info!(
-                                    chunk_index = chunk_index,
-                                    content_len = chunk_content.len(),
-                                    checksum = checksum,
-                                    "🔥 BACKEND (Rig): Yielding chunk {} (length: {} chars)",
-                                    chunk_index,
-                                    chunk_content.len()
-                                );
-
-                                accumulated_content.push_str(&chunk_content);
-                                yield Ok(ScribeSseEvent::Content(json_payload));
-                                chunk_index += 1;
-                            }
-                            Err(e) => {
-                                error!(error = ?e, "Failed to serialize structured chunk (Rig)");
-                                accumulated_content.push_str(&chunk_content);
-                                yield Ok(ScribeSseEvent::Content(chunk_content));
-                            }
-                        }
-                    }
-                }
-                Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
-                    if !reasoning.is_empty() {
-                        tracing::debug!("Yielding Thinking block (len: {})", reasoning.len());
-                        accumulated_reasoning.push_str(&reasoning);
-                        yield Ok(ScribeSseEvent::Thinking(reasoning));
-                    }
-                }
-                Ok(crate::llm::RigStreamEvent::ToolCall { id, name, .. }) => {
-                    debug!(tool_call_id = %id, tool_fn_name = %name, "Received ToolCall from Rig stream in chat_service");
-                    let thinking_message = format!("Attempting to use tool: {} with ID: {}", name, id);
-                    yield Ok(ScribeSseEvent::Thinking(thinking_message));
-                }
-                Ok(crate::llm::RigStreamEvent::TokenUsage { input_tokens, output_tokens }) => {
-                    debug!(input_tokens, output_tokens, "Received TokenUsage from Rig stream");
-                    token_sender.send(ScribeSseEvent::TokenUsage {
-                        prompt_tokens: input_tokens as i32,
-                        completion_tokens: output_tokens as i32,
-                        model_name: service_model_name.clone(),
-                    }).ok();
-                }
-                Err(e) => {
-                    error!(error = ?e, "Error during Rig AI stream processing in chat_service (inside loop)");
-                    stream_error_occurred = true;
-
-                    let partial_content_clone = accumulated_content.clone();
-                    let error_session_id_clone = stream_session_id;
-                    let error_user_id_clone = stream_user_id;
-                    let user_dek_arc_clone_partial = user_dek.clone(); // Clone Option<Arc<SecretBox>>
-                    let state_for_partial_save = stream_state.clone();
-                    let service_model_name_clone_partial = service_model_name.clone(); // Clone model name for this task
-                    let charge_credits_clone_partial = charge_credits; // Clone charge flag for this task
-                    let game_time_clone_partial = game_time_to_save.clone(); // Clone game_time for this task
-
-                    tokio::spawn(async move {
-                        if partial_content_clone.is_empty() {
-                            trace!(session_id = %error_session_id_clone, "No partial content to save after stream error (Rig)");
-                        } else {
-                            trace!(session_id = %error_session_id_clone, "Attempting to save partial AI response after stream error (Rig)");
-                            let dek_ref_partial = Some(user_dek_arc_clone_partial.clone());
-                            debug!(session_id = %error_session_id_clone, content_len = partial_content_clone.len(), "Calling save_message for partial response (Rig)");
-                            match save_message(SaveMessageParams {
-                                state: state_for_partial_save,
-                                session_id: error_session_id_clone,
-                                user_id: error_user_id_clone,
-                                message_type_enum: MessageRole::Assistant,
-                                content: &partial_content_clone,
-                                role_str: Some("assistant".to_string()),
-                                parts: Some(serde_json::json!([{"text": partial_content_clone}])),
-                                attachments: None,
-                                user_dek_secret_box: dek_ref_partial,
-                                model_name: service_model_name_clone_partial,
-                                raw_prompt_debug: None,
-                                status: crate::models::chats::MessageStatus::Partial,
-                                error_message: Some("Rig Stream interrupted - partial content saved".to_string()),
-                                variant_of,
-                                charge_credits: charge_credits_clone_partial,
-                                credits_cost_override: None,
-                                game_time: game_time_clone_partial,
-                                reasoning_content: None, // No reasoning for partial saves yet, or could add accumulated so far?
-                           }).await {
-                                Ok((saved_message, _variant_id)) => {
-                                    debug!(session_id = %error_session_id_clone, message_id = %saved_message.id, "Successfully saved partial AI response via save_message after stream error (chat_service)");
-                                }
-                                Err(save_err) => {
-                                    error!(error = ?save_err, session_id = %error_session_id_clone, "Error saving partial AI response via save_message after stream error (chat_service)");
-                                }
-                            }
-                        }
-                    });
-
-                    let detailed_error = e.to_string();
-
-                    // Special case: If we got PropertyNotFound but have complete content, this is likely a final parsing error
-                    // that can be safely ignored. This commonly happens when Gemini sends complete responses but the final
-                    // API response structure is missing expected fields.
-                    if detailed_error.contains("PropertyNotFound(\"/content/parts\")") && !accumulated_content.is_empty() {
-                        warn!(session_id = %stream_session_id, content_length = accumulated_content.len(),
-                              "PropertyNotFound error occurred but response appears complete. This may be a final API response parsing issue - treating as successful completion.");
-                        // Reset error flag so [DONE] gets sent and message is saved as complete
-                        stream_error_occurred = false;
-                        break;
-                    }
-
-                    let client_error_message = if detailed_error.contains("LLM API error:") {
-                        detailed_error
-                    } else if detailed_error.contains("Failed to parse stream data") {
-                        // Handle Gemini JSON parsing errors more gracefully
-                        if detailed_error.contains("trailing characters") {
-                            "LLM API error: The AI service returned a malformed response (trailing characters). This is a known issue with the Gemini 3 Preview streaming format in the current adapter. Please try disabling reasoning or using a stable model.".to_string()
-                        } else if detailed_error.contains("AiError") {
-                            "LLM API error: The AI service encountered a parsing error. Please try again or consider rephrasing your message.".to_string()
-                        } else {
-                            let sanitized_error = crate::errors::sanitize_error_message(&detailed_error);
-                            format!("LLM API error: Failed to parse response from AI service - {}", sanitized_error)
-                        }
-                    } else if detailed_error.contains("safety") || detailed_error.contains("blocked") {
-                        // Handle safety filter blocks
-                        "LLM API error: Your message was blocked by safety filters. Please try rephrasing your message.".to_string()
-                    } else if detailed_error.contains("quota") || detailed_error.contains("rate limit") {
-                        // Handle rate limiting
-                        "LLM API error: Service is temporarily busy. Please wait a moment and try again.".to_string()
-                    } else if detailed_error.contains("timeout") || detailed_error.contains("deadline") {
-                        // Handle timeouts
-                        "LLM API error: The request timed out. Please try again.".to_string()
-                    } else {
-                        let sanitized_error = crate::errors::sanitize_error_message(&detailed_error);
-                        format!("LLM API error: {sanitized_error}")
-                    };
-                    trace!(error_message = %client_error_message, "Sending SSE 'error' event from chat_service");
-                    yield Ok(ScribeSseEvent::Error(client_error_message));
-                    break; // Exit the loop on error
-                }
-            }
-        }
-
-        info!(session_id = %stream_session_id, stream_error_occurred = stream_error_occurred, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Exited SSE processing loop in chat_service");
-
-        if !stream_error_occurred && !accumulated_content.is_empty() {
-            info!(session_id = %stream_session_id, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Stream completed successfully, attempting to save full AI response");
-
-            let full_session_id_clone = stream_session_id;
-            let full_user_id_clone = stream_user_id;
-            // user_dek is already Option<Arc<SecretBox>> and moved into this outer stream scope
-            let user_dek_arc_clone_full = user_dek.clone(); // Clone Option<Arc<SecretBox>> for the spawned task
-            let state_for_full_save = stream_state.clone(); // Use the already cloned state
-            let service_model_name_clone_full = service_model_name.clone(); // Clone model name for this task
-            let token_sender_clone = token_sender.clone(); // Clone the sender for the spawned task
-            let accumulated_content_clone = accumulated_content.clone(); // Clone content for the spawned task
-            // Clone reasoning content if it exists, otherwise use empty string which will become None later
-            let accumulated_reasoning_clone = if !accumulated_reasoning.is_empty() {
-                Some(accumulated_reasoning.clone())
-            } else {
-                None
-            };
-            let player_chronicle_id_clone = player_chronicle_id; // Move chronicle ID into the spawned task
-            let charge_credits_clone_full = charge_credits; // Clone charge flag for this task
-            let game_master_mode_enabled_clone = game_master_mode_enabled; // Copy flag for spawned task
-            let initial_game_state_clone = initial_game_state.clone(); // Clone for spawned task
-            let game_time_clone_full = game_time_to_save.clone(); // Clone game_time for this task
-
-            tokio::spawn(async move {
-                info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Entering tokio::spawn block for message save and narrative processing");
-
-                let dek_ref_full = user_dek_arc_clone_full.clone();
-                info!(session_id = %full_session_id_clone, dek_available = true, "NARRATIVE_DEBUG: About to save message");
-                debug!(session_id = %full_session_id_clone, content_len = accumulated_content_clone.len(), "Calling save_message for full response");
-
-                match save_message(SaveMessageParams {
-                    state: state_for_full_save.clone(),
-                    session_id: full_session_id_clone,
-                    user_id: full_user_id_clone,
-                    message_type_enum: MessageRole::Assistant,
-                    content: &accumulated_content_clone,
-                    role_str: Some("assistant".to_string()),
-                    parts: Some(serde_json::json!([{"text": accumulated_content_clone}])),
-                    attachments: None,
-                    user_dek_secret_box: Some(dek_ref_full.clone()),
-                    model_name: service_model_name_clone_full.clone(),
-                    raw_prompt_debug: Some(&raw_prompt_debug),
-                    status: crate::models::chats::MessageStatus::Completed,
-                    reasoning_content: accumulated_reasoning_clone.as_deref(),
-                    error_message: None,
-                    variant_of,
-                    charge_credits: charge_credits_clone_full, // Use charge flag from params
-                    credits_cost_override: None, // Let save_message calculate from tokens
-                    game_time: game_time_clone_full,
-                }).await {
-                    Ok((saved_message, variant_id)) => {
-                        info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "NARRATIVE_DEBUG: Successfully saved full AI response via save_message (chat_service)");
-
-                        // Track daily message usage with SoftLimitService
-                        #[cfg(feature = "payment")]
-                        {
-                            let soft_limit_service = SoftLimitService::new(state_for_full_save.config.clone());
-                            let user_id_for_tracking = full_user_id_clone;
-                            let model_for_tracking = service_model_name_clone_full.clone();
-                            let tokens_for_tracking = saved_message.completion_tokens.map(|t| t.0).unwrap_or(0);
-
-                            // Track usage with unified database helper
-                            let tracking_result = crate::db::with_conn(&state_for_full_save.pool, move |c| {
-                                soft_limit_service.record_usage(
-                                    c,
-                                    user_id_for_tracking,
-                                    &model_for_tracking,
-                                    tokens_for_tracking,
-                                )
-                            }).await;
-
-                            match tracking_result {
-                                Ok(daily_usage) => {
-                                    debug!(
-                                        session_id = %full_session_id_clone,
-                                        message_count = daily_usage.message_count,
-                                        "Successfully updated daily message count"
-                                    );
-                                }
-                                Err(e) => {
-                                    warn!(
-                                        session_id = %full_session_id_clone,
-                                        error = ?e,
-                                        "Failed to update daily message count, but continuing"
-                                    );
-                                }
-                            }
-                        }
-
-                        // Send message ID first (for raw prompt modal)
-                        info!(session_id = %full_session_id_clone, message_id = %saved_message.id, "Sending message ID through channel");
-                        let _ = token_sender_clone.send(ScribeSseEvent::MessageSaved {
-                            message_id: saved_message.id.to_string(),
-                            model_name: saved_message.model_name.clone(),
-                            created_at: saved_message.created_at.to_string(),
-                            variant_count: saved_message.variant_count,
-                            current_variant_index: saved_message.current_variant_index,
-                        });
-
-                        // Send token usage data through the channel
-                        if let (Some(prompt_tokens), Some(completion_tokens)) = (saved_message.prompt_tokens, saved_message.completion_tokens) {
-                            info!(
-                                session_id = %full_session_id_clone,
-                                prompt_tokens = prompt_tokens.0,
-                                completion_tokens = completion_tokens.0,
-                                model_name = %service_model_name_clone_full,
-                                "About to send tokenUsage SSE event with values: prompt={}, completion={}, model={}",
-                                prompt_tokens,
-                                completion_tokens,
-                                service_model_name_clone_full
-                            );
-                            let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
-                                prompt_tokens: prompt_tokens.0 as i32,
-                                completion_tokens: completion_tokens.0 as i32,
-                                model_name: service_model_name_clone_full.clone(),
-                            });
-                            info!(session_id = %full_session_id_clone, "TokenUsage SSE event sent successfully");
-                        } else {
-                            warn!(
-                                session_id = %full_session_id_clone,
-                                "Token data not available in saved message - prompt_tokens: {:?}, completion_tokens: {:?}, sending zeros",
-                                saved_message.prompt_tokens,
-                                saved_message.completion_tokens
-                            );
-                            // Still send the event with zeros to avoid timeout waiting for the event
-                            let _ = token_sender_clone.send(ScribeSseEvent::TokenUsage {
-                                prompt_tokens: 0,
-                                completion_tokens: 0,
-                                model_name: service_model_name_clone_full.clone(),
-                            });
-                        }
-
-                        // --- Narrative Intelligence Processing (After Message Save) ---
-                        // Process narrative intelligence now that the assistant message has been saved
-                        info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to check DEK availability for narrative processing");
-
-                        // Always have DEK available for narrative processing
-                        info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: DEK available, starting narrative intelligence processing");
-
-                        // Convert user_dek_secret_box to SessionDek for narrative processing
-                        let secret_bytes = dek_ref_full.expose_secret().clone();
-                        let session_dek_for_narrative = crate::auth::session_dek::SessionDek(secrecy::SecretBox::new(Box::new(secret_bytes)));
-
-                            // Retrieve the latest messages from the database for narrative analysis
-                            // This ensures we're analyzing the complete conversation including the just-saved assistant response
-                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Processing narrative intelligence context after message save");
-
-                            // Get recent messages from the database for narrative analysis
-                            let recent_messages = match crate::services::chat::message_handling::get_messages_for_session(
-                                &state_for_full_save.pool,
-                                full_user_id_clone,
-                                full_session_id_clone,
-                            ).await {
-                                Ok(messages) => {
-                                    info!(session_id = %full_session_id_clone, message_count = messages.len(), "NARRATIVE_DEBUG: Retrieved messages for narrative analysis");
-                                    messages
-                                }
-                                Err(e) => {
-                                    error!(session_id = %full_session_id_clone, error = %e, "NARRATIVE_DEBUG: Failed to retrieve messages for narrative analysis, using empty context");
-                                    Vec::new()
-                                }
+            while let Some(event_result) = rig_stream.next().await {
+                match event_result {
+                    Ok(crate::llm::RigStreamEvent::Content(chunk_content)) => {
+                        if !chunk_content.is_empty() {
+                            let checksum = crc32fast::hash(chunk_content.as_bytes());
+                            let structured_chunk = super::types::StreamedChunk {
+                                index: chunk_index,
+                                content: chunk_content.clone(),
+                                checksum,
                             };
 
-                            // For now, use empty RAG context - this could be enhanced later to include relevant lorebook entries
-                            let empty_rag_context: Vec<crate::services::embeddings::RetrievedChunk> = Vec::new();
-
-                            info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: About to call narrative_intelligence_service.process_conversation_context. user_id: {}", full_user_id_clone);
-
-                            match state_for_full_save.narrative_intelligence_service.as_ref().unwrap().process_conversation_context(
-                                full_user_id_clone,
-                                full_session_id_clone,
-                                player_chronicle_id_clone,
-                                variant_id,
-                                &recent_messages,
-                                &empty_rag_context,
-                                &session_dek_for_narrative,
-                            ).await {
-                                Ok(narrative_result) => {
-                                    info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Narrative intelligence processing returned successfully");
-                                    if narrative_result.is_significant {
-                                        info!(
-                                            session_id = %full_session_id_clone,
-                                            confidence = narrative_result.confidence,
-                                            events_created = narrative_result.events_created,
-                                            entries_created = narrative_result.entries_created,
-                                            processing_time_ms = narrative_result.processing_time_ms,
-                                            "NARRATIVE_DEBUG: Narrative intelligence processing completed successfully after message save"
-                                        );
-                                    } else {
-                                        info!(session_id = %full_session_id_clone, confidence = narrative_result.confidence, "NARRATIVE_DEBUG: Conversation not deemed significant for narrative processing");
-                                    }
+                            match serde_json::to_string(&structured_chunk) {
+                                Ok(json_payload) => {
+                                    accumulated_content.push_str(&chunk_content);
+                                    let _ = tx.send(Ok(ScribeSseEvent::Content(json_payload)));
+                                    chunk_index += 1;
                                 }
                                 Err(e) => {
-                                    error!(session_id = %full_session_id_clone, error = %e, "NARRATIVE_DEBUG: Failed to process narrative intelligence context after message save");
+                                    error!(error = ?e, "Failed to serialize structured chunk");
+                                    accumulated_content.push_str(&chunk_content);
+                                    let _ = tx.send(Ok(ScribeSseEvent::Content(chunk_content)));
                                 }
                             }
-
-                        info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Completed narrative processing attempt");
-
-                        info!(session_id = %full_session_id_clone, enabled = game_master_mode_enabled_clone, "GAME_MASTER_DEBUG: Checking Game Master mode flag");
-
-                        // --- Game Master Mode Processing (Fire-and-Forget) ---
-                        // Spawn a separate task so game state LLM call doesn't block the stream from closing.
-                        // The game state will still be persisted to DB; frontend can fetch on next load.
-                        if game_master_mode_enabled_clone {
-                            info!(session_id = %full_session_id_clone, "GAME_MASTER_DEBUG: Game Master mode enabled, spawning fire-and-forget state update task");
-
-                            // Clone everything needed for the async task
-                            let gm_session_id = full_session_id_clone;
-                            let gm_user_id = full_user_id_clone;
-                            let gm_state = state_for_full_save.clone();
-                            let gm_accumulated_content = accumulated_content_clone.clone();
-                            let gm_token_sender = token_sender_clone.clone();
-                            let gm_saved_message_id = saved_message.id;
-                            let gm_initial_game_state = initial_game_state_clone.clone();
-
-                            tokio::spawn(async move {
-                                // We need recent messages for proper context (like rpg-companion's updateDepth: 4)
-                                const UPDATE_DEPTH: usize = 4;
-
-                                let recent_messages_gm = match crate::services::chat::message_handling::get_messages_for_session(
-                                    &gm_state.pool,
-                                    gm_user_id,
-                                    gm_session_id,
-                                ).await {
-                                    Ok(messages) => messages,
-                                    Err(e) => {
-                                        error!(session_id = %gm_session_id, error = %e, "GAME_MASTER_DEBUG: Failed to retrieve messages for GM processing");
-                                        return;
-                                    }
-                                };
-
-                                // Build conversation summary from last UPDATE_DEPTH messages
-                                let conversation_summary = {
-                                    let recent_messages: Vec<&crate::models::chats::ChatMessage> = recent_messages_gm.iter().rev().take(UPDATE_DEPTH).collect();
-                                    let mut summary_parts = Vec::new();
-
-                                    // Iterate in chronological order (reverse again)
-                                    for msg in recent_messages.into_iter().rev() {
-                                        let role = match msg.message_type {
-                                            crate::models::chats::MessageRole::User => "User",
-                                            crate::models::chats::MessageRole::Assistant => "Assistant",
-                                            crate::models::chats::MessageRole::System => "System",
-                                        };
-                                        let content = String::from_utf8_lossy(&msg.content);
-                                        summary_parts.push(format!("{}: {}", role, content));
-                                    }
-
-                                    summary_parts.join("\n\n")
-                                };
-
-                                // Get last user message for reconciliation detector
-                                let last_user_message = recent_messages_gm.iter()
-                                    .rev()
-                                    .find(|m| m.message_type == crate::models::chats::MessageRole::User)
-                                    .map(|m| String::from_utf8_lossy(&m.content).to_string())
-                                    .unwrap_or_default();
-
-                                // The assistant message is the one we just saved
-                                let last_assistant_message = gm_accumulated_content;
-
-                                // Fetch persona and character names from the session
-                                let (persona_name, character_name) = {
-                                    use crate::schema::chat_sessions::dsl as sessions_dsl;
-                                    use crate::schema::user_personas::dsl as personas_dsl;
-                                    use crate::schema::characters::dsl as chars_dsl;
-                                    use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl};
-
-                                    // Get session info with persona_id and character_id
-                                    let session_info = crate::db::with_conn(&gm_state.pool, move |conn| {
-                                        sessions_dsl::chat_sessions
-                                            .filter(sessions_dsl::id.eq(gm_session_id))
-                                            .select((
-                                                sessions_dsl::active_custom_persona_id,
-                                                sessions_dsl::character_id,
-                                            ))
-                                            .first::<(Option<crate::db::DbId>, Option<crate::db::DbId>)>(conn)
-                                            .optional()
-                                            .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
-                                    }).await;
-
-                                    let (persona_id, char_id) = match session_info {
-                                        Ok(Some(info)) => info,
-                                        _ => (None, None),
-                                    };
-
-                                    // Fetch persona name if ID exists
-                                    let p_name = if let Some(pid) = persona_id {
-                                        crate::db::with_conn(&gm_state.pool, move |conn| {
-                                            personas_dsl::user_personas
-                                                .filter(personas_dsl::id.eq(pid))
-                                                .select(personas_dsl::name)
-                                                .first::<String>(conn)
-                                                .optional()
-                                                .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
-                                        }).await.ok().flatten()
-                                    } else {
-                                        None
-                                    };
-
-                                    // Fetch character name if ID exists
-                                    let c_name = if let Some(cid) = char_id {
-                                        crate::db::with_conn(&gm_state.pool, move |conn| {
-                                            chars_dsl::characters
-                                                .filter(chars_dsl::id.eq(cid))
-                                                .select(chars_dsl::name)
-                                                .first::<String>(conn)
-                                                .optional()
-                                                .map_err(|e| crate::errors::AppError::DatabaseQueryError(e.to_string()))
-                                        }).await.ok().flatten()
-                                    } else {
-                                        None
-                                    };
-
-                                    info!(
-                                        session_id = %gm_session_id,
-                                        persona_name = ?p_name,
-                                        character_name = ?c_name,
-                                        "GAME_MASTER_DEBUG: Fetched persona and character names for state manager"
-                                    );
-
-                                    (p_name, c_name)
-                                };
-
-                                match gm_state.narrative_intelligence_service.as_ref().unwrap().process_game_state(
-                                    full_user_id_clone,
-                                    &session_dek_for_narrative,
-                                    gm_session_id,
-                                    &last_user_message,
-                                    &last_assistant_message,
-                                    &conversation_summary,
-                                    Some(gm_saved_message_id),
-                                    persona_name.as_deref(),
-                                    character_name.as_deref(),
-                                    gm_initial_game_state,
-                                ).await {
-                                    Ok(Some(result)) => {
-                                        info!(
-                                            session_id = %gm_session_id,
-                                            changes = result.applied_changes.len(),
-                                            "GAME_MASTER_DEBUG: Game state updated successfully (fire-and-forget)"
-                                        );
-                                        // Try to send the updated game state via SSE (may fail if stream already closed)
-                                        let _ = gm_token_sender.send(ScribeSseEvent::GameState(serde_json::to_value(&result.final_state).unwrap_or_default()));
-                                        info!(session_id = %gm_session_id, "GAME_MASTER_DEBUG: Sent GameState SSE event (fire-and-forget)");
-                                    }
-                                    Ok(None) => {
-                                        info!(session_id = %gm_session_id, "GAME_MASTER_DEBUG: No game state changes needed");
-                                    }
-                                    Err(e) => {
-                                        error!(session_id = %gm_session_id, error = %e, "GAME_MASTER_DEBUG: Failed to process game state update");
-                                    }
-                                }
-                            });
                         }
                     }
+                    Ok(crate::llm::RigStreamEvent::Reasoning(reasoning)) => {
+                        if !reasoning.is_empty() {
+                            tracing::info!(len = reasoning.len(), "Generation: Emitting Thinking event");
+                            accumulated_reasoning.push_str(&reasoning);
+                            let _ = tx.send(Ok(ScribeSseEvent::Thinking(reasoning)));
+                        }
+                    }
+                    Ok(crate::llm::RigStreamEvent::ToolCall { id, name, .. }) => {
+                        let thinking_message = format!("Attempting to use tool: {} with ID: {}", name, id);
+                        let _ = tx.send(Ok(ScribeSseEvent::Thinking(thinking_message)));
+                    }
+                    Ok(crate::llm::RigStreamEvent::TokenUsage { input_tokens, output_tokens }) => {
+                        let _ = tx.send(Ok(ScribeSseEvent::TokenUsage {
+                            prompt_tokens: input_tokens as i32,
+                            completion_tokens: output_tokens as i32,
+                            model_name: service_model_name_for_task.clone(),
+                        }));
+                    }
                     Err(e) => {
-                        error!(error = ?e, session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Error saving full AI response via save_message (chat_service)");
-                    }
-                }
+                        error!(error = ?e, "Error during Rig AI stream processing");
+                        stream_error_occurred = true;
+                        let detailed_error = e.to_string();
 
-                info!(session_id = %full_session_id_clone, "NARRATIVE_DEBUG: Exiting tokio::spawn block");
-            });
-        } else if stream_error_occurred {
-            warn!(session_id = %stream_session_id, "NARRATIVE_DEBUG: [DONE] not sent due to stream_error_occurred=true in chat_service");
-        } else if accumulated_content.is_empty() && !stream_error_occurred {
-            // If the stream ended successfully but produced no content,
-            // let the chat route handle this by sending [DONE_EMPTY]
-            // Do not send an error event here as this is a successful completion
-            warn!(session_id = %stream_session_id, "NARRATIVE_DEBUG: AI stream finished successfully but produced no content - letting chat route handle [DONE_EMPTY]");
-        } else {
-            warn!(session_id = %stream_session_id, stream_error_occurred = stream_error_occurred, accumulated_content_len = accumulated_content.len(), "NARRATIVE_DEBUG: Unexpected condition - neither success nor error case matched");
-        }
+                        // Special case: ignore PropertyNotFound if we have content
+                        if detailed_error.contains("PropertyNotFound(\"/content/parts\")") && !accumulated_content.is_empty() {
+                            stream_error_occurred = false;
+                            break;
+                        }
 
-        // Wait for token usage data from the spawned task and yield it with timeout
-        // CRITICAL DEBUG: Log the condition values to understand why events might be skipped
-        info!(
-            session_id = %stream_session_id,
-            stream_error_occurred = stream_error_occurred,
-            accumulated_content_empty = accumulated_content.is_empty(),
-            accumulated_content_len = accumulated_content.len(),
-            "Checking conditions before waiting for token data"
-        );
+                        let client_error_message = format!("LLM API error: {}", crate::errors::sanitize_error_message(&detailed_error));
+                        let _ = tx.send(Ok(ScribeSseEvent::Error(client_error_message.clone())));
 
-        if !stream_error_occurred && !accumulated_content.is_empty() {
-            info!(session_id = %stream_session_id, "Waiting for events from spawned task");
-
-            // Drop the original sender so the channel closes when the spawned task finishes
-            drop(token_sender);
-
-            // Loop to receive all events from the spawned task (MessageSaved, TokenUsage, GameState, etc.)
-            loop {
-                match tokio::time::timeout(std::time::Duration::from_secs(30), token_receiver.recv()).await {
-                    Ok(Some(event)) => {
-                        info!(session_id = %stream_session_id, event_type = ?event, "Received event from spawned task, yielding to stream");
-                        yield Ok(event);
-                    }
-                    Ok(None) => {
-                        info!(session_id = %stream_session_id, "Channel closed, all events received");
-                        break;
-                    }
-                    Err(_) => {
-                        // Timeout waiting for metadata events. Content was already delivered successfully,
-                        // so don't report this as an error to the client. TokenUsage/GameState are optional.
-                        warn!(session_id = %stream_session_id, "Timeout waiting for metadata events (content was delivered successfully)");
+                        // Save partial response
+                        if !accumulated_content.is_empty() {
+                            let _ = save_message(SaveMessageParams {
+                                state: state_for_task.clone(),
+                                session_id: session_id_for_task,
+                                user_id: user_id_for_task,
+                                message_type_enum: MessageRole::Assistant,
+                                content: &accumulated_content,
+                                role_str: Some("assistant".to_string()),
+                                parts: Some(serde_json::json!([{"text": accumulated_content}])),
+                                attachments: None,
+                                user_dek_secret_box: Some(user_dek_for_task.clone()),
+                                model_name: service_model_name_for_task.clone(),
+                                raw_prompt_debug: None,
+                                status: crate::models::chats::MessageStatus::Partial,
+                                error_message: Some(format!("Stream error: {client_error_message}")),
+                                variant_of: variant_of_for_task,
+                                charge_credits: charge_credits_for_task,
+                                credits_cost_override: None,
+                                game_time: game_time_to_save_for_task.clone(),
+                                reasoning_content: if !accumulated_reasoning.is_empty() { Some(&accumulated_reasoning) } else { None },
+                            }).await;
+                        }
                         break;
                     }
                 }
             }
+
+            // Save final response if no stream error (or handled Gemini error)
+            if !stream_error_occurred && !accumulated_content.is_empty() {
+                        match save_message(SaveMessageParams {
+                            state: state_for_task.clone(),
+                            session_id: session_id_for_task,
+                            user_id: user_id_for_task,
+                            message_type_enum: MessageRole::Assistant,
+                            content: &accumulated_content,
+                            role_str: Some("assistant".to_string()),
+                            parts: Some(serde_json::json!([{"text": accumulated_content}])),
+                            attachments: None,
+                            user_dek_secret_box: Some(user_dek_for_task.clone()),
+                            model_name: service_model_name_for_task.clone(),
+                            raw_prompt_debug: Some(&raw_prompt_debug_for_task),
+                            status: crate::models::chats::MessageStatus::Completed,
+                            reasoning_content: if !accumulated_reasoning.is_empty() { Some(&accumulated_reasoning) } else { None },
+                            error_message: None,
+                            variant_of: variant_of_for_task,
+                            charge_credits: charge_credits_for_task,
+                            credits_cost_override: None,
+                            game_time: game_time_to_save_for_task.clone(),
+                        }).await {
+                            Ok((saved_message, variant_id)) => {
+                                info!(message_id = %saved_message.id, "Successfully saved full AI response");
+                                let _ = tx.send(Ok(ScribeSseEvent::MessageSaved {
+                                    message_id: saved_message.id.to_string(),
+                                    model_name: saved_message.model_name.clone(),
+                                    created_at: saved_message.created_at.to_string(),
+                                    variant_count: saved_message.variant_count as i32,
+                                    current_variant_index: (saved_message.variant_count - 1) as i32,
+                                    game_time: saved_message.game_time.clone().map(|j| j.0),
+                                }));
+
+                                // Yield DONE signal
+                                let _ = tx.send(Ok(ScribeSseEvent::Done));
+
+                                // Payment tracking
+                                #[cfg(feature = "payment")]
+                                {
+                                    let soft_limit_service = crate::services::payment::SoftLimitService::new(state_for_task.config.clone());
+                                    let tokens = saved_message.completion_tokens.map(|t| t.0).unwrap_or(0);
+                                    let _ = crate::db::with_conn(&state_for_task.pool, move |c| {
+                                        soft_limit_service.record_usage(c, user_id_for_task, &service_model_name_for_task, tokens)
+                                    }).await;
+                                }
+
+                                // Narrative intelligence & GM mode
+                                if let Some(user_dek) = &user_dek_for_task.clone().into() {
+                                    let secret_bytes: &Vec<u8> = user_dek.expose_secret();
+                            let session_dek = crate::auth::session_dek::SessionDek(secrecy::SecretBox::new(Box::new(secret_bytes.to_vec())));
+
+                            // 1. Narrative Intelligence
+                            if let Some(ni_service) = &state_for_task.narrative_intelligence_service {
+                                // Fetch recent messages
+                                let recent_messages = crate::services::chat::message_handling::get_messages_for_session(
+                                    &state_for_task.pool,
+                                    user_id_for_task,
+                                    session_id_for_task,
+                                ).await.unwrap_or_default();
+
+                                let _ = ni_service.process_conversation_context(
+                                    user_id_for_task,
+                                    session_id_for_task,
+                                    player_chronicle_id_for_task,
+                                    variant_id,
+                                    &recent_messages,
+                                    &vec![], // Empty RAG context for now
+                                    &session_dek,
+                                ).await;
+                            }
+
+                            // 2. GM Mode
+                            if game_master_mode_enabled_for_task {
+                                let state_copy = state_for_task.clone();
+                                let content_copy = accumulated_content.clone();
+                                let initial_state_copy = initial_game_state_for_task.clone();
+                                let tx_copy = tx.clone();
+
+                                tokio::spawn(async move {
+                                    // Fetch context for GM
+                                    let _recent_messages_gm = crate::services::chat::message_handling::get_messages_for_session(
+                                        &state_copy.pool,
+                                        user_id_for_task,
+                                        session_id_for_task,
+                                    ).await.unwrap_or_default();
+
+                                    // Very simplified GM logic for now - in reality this calls LLM
+                                    if let Some(ni_service) = &state_copy.narrative_intelligence_service {
+                                        if let Ok(Some(result)) = ni_service.process_game_state(
+                                            user_id_for_task,
+                                            &session_dek,
+                                            session_id_for_task,
+                                            "...", // last user message placeholder
+                                            &content_copy,
+                                            "...", // summary placeholder
+                                            Some(saved_message.id),
+                                            None, None,
+                                            initial_state_copy,
+                                        ).await {
+                                            let _ = tx_copy.send(Ok(ScribeSseEvent::GameState(serde_json::to_value(&result.final_state).unwrap_or_default())));
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => error!(error = ?e, "Error saving full AI response"),
+                }
+            }
+        });
+
+        // Yield events from the channel
+        while let Some(event) = rx.recv().await {
+            yield event;
         }
-
-        // Add a significant delay to ensure all content chunks are flushed through the SSE pipeline
-        // This is critical to prevent the stream from ending before chunks reach the frontend
-        // Only do this for successful streams (not when an error occurred)
-        if !accumulated_content.is_empty() && !stream_error_occurred {
-            info!(
-                total_chunks = chunk_index,
-                total_content_len = accumulated_content.len(),
-                content_suffix = &accumulated_content.chars().rev().take(100).collect::<String>().chars().rev().collect::<String>(),
-                "🔥 BACKEND: Stream complete. Total chunks: {}, Final content ends with: '{}'",
-                chunk_index,
-                &accumulated_content.chars().rev().take(50).collect::<String>().chars().rev().collect::<String>()
-            );
-
-            // More aggressive delay to ensure pipeline flush
-            // This gives time for all chunks to traverse the entire SSE pipeline
-            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-            // Send a final "flush" event to ensure the pipeline is clear
-            // Only send this if the stream completed successfully (no error occurred)
-            yield Ok(ScribeSseEvent::Content(serde_json::to_string(&super::types::StreamedChunk {
-                index: chunk_index,
-                content: String::new(), // Empty content as a flush marker
-                checksum: 0,
-            }).unwrap_or_default()));
-        }
-
-        trace!("Finished SSE async_stream! block in chat_service");
     };
 
     Ok(Box::pin(sse_stream))
