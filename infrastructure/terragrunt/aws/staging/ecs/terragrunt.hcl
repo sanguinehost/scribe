@@ -17,8 +17,9 @@ dependency "networking" {
   mock_outputs = {
     vpc_id             = "vpc-12345"
     private_subnet_ids = ["subnet-12345", "subnet-67890"]
-    backend_security_group_id = "sg-backend"
-    qdrant_security_group_id  = "sg-qdrant"
+    backend_security_group_id  = "sg-backend"
+    frontend_security_group_id = "sg-frontend"
+    qdrant_security_group_id   = "sg-qdrant"
   }
 }
 
@@ -35,6 +36,7 @@ dependency "secrets" {
 
   mock_outputs = {
     backend_secrets_list = []
+    app_secrets_arn      = "arn:aws:secretsmanager:ap-southeast-4:123456789012:secret:mock-secret"
   }
 }
 

@@ -111,7 +111,10 @@ export class ChatController {
 	);
 
 	get isLoading() {
-		return this.isAnimatingOrLoading;
+		return (
+			this.isAnimatingOrLoading ||
+			this.activeStreamingService.messages.some((msg) => msg.isAnimating === true)
+		);
 	}
 
 	getDisplayMessages() {

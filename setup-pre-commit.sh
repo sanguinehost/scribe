@@ -121,12 +121,17 @@ STAGED_JS_FILES=$(git diff --cached --name-only -z | tr "\0" "\n" | grep -E "^fr
 
 if [ -n "$STAGED_RS_FILES" ] || [ -n "$STAGED_JS_FILES" ]; then
     # Protect unstaged changes to ensure staging isolation
-    # Only stash if there are actually unstaged changes
     HAS_UNSTAGED=$(git diff --name-only | grep -E "^(backend|frontend)/" || true)
+    STASH_REF=""
 
     if [ -n "$HAS_UNSTAGED" ]; then
         echo "📦 Protecting unstaged changes..."
+        STASH_BEFORE=$(git stash list | wc -l)
         git stash push --keep-index --message "scribe-format-stash" > /dev/null
+        STASH_AFTER=$(git stash list | wc -l)
+        if [ "$STASH_AFTER" -gt "$STASH_BEFORE" ]; then
+            STASH_REF="stash@{0}"
+        fi
     fi
 
     if [ -n "$STAGED_RS_FILES" ]; then
@@ -141,9 +146,9 @@ if [ -n "$STAGED_RS_FILES" ] || [ -n "$STAGED_JS_FILES" ]; then
         git diff --cached --name-only -z | grep -zE "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" | xargs -0 git add --
     fi
 
-    if [ -n "$HAS_UNSTAGED" ] && git stash list | grep -q "scribe-format-stash"; then
+    if [ -n "$STASH_REF" ]; then
         echo "🔓 Restoring unstaged changes..."
-        git stash pop > /dev/null
+        git stash pop "$STASH_REF" > /dev/null
     fi
 fi
 # --- END SCRIBE AUTO-FORMATTER WRAPPER ---

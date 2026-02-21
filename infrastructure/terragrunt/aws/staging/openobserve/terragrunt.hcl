@@ -15,8 +15,9 @@ dependency "networking" {
   config_path = "../networking"
 
   mock_outputs = {
-    vpc_id             = "vpc-12345"
-    private_subnet_ids = ["subnet-12345", "subnet-67890"]
+    vpc_id                    = "vpc-12345"
+    private_subnet_ids        = ["subnet-12345", "subnet-67890"]
+    backend_security_group_id = "sg-backend"
   }
 }
 
