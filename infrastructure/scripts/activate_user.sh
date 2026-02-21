@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 REGION="ap-southeast-4"
-ACCOUNT_ID="058264339990"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 SECRET_ID="arn:aws:secretsmanager:$REGION:$ACCOUNT_ID:secret:staging/scribe/database-tXXaO7"
 ROUTER_TAG="staging-scribe-tailscale-router"
 DB_HOST="staging-scribe-postgres.c9oy0o248kqw.$REGION.rds.amazonaws.com"
