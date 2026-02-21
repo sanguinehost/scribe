@@ -91,5 +91,8 @@ resource "aws_secretsmanager_secret_version" "app_secrets" {
     paddle_credits_1500_price_id = var.paddle_credits_1500_price_id
     paddle_credits_3500_price_id = var.paddle_credits_3500_price_id
     paddle_credits_8000_price_id = var.paddle_credits_8000_price_id
+    # OpenObserve credentials
+    openobserve_admin_password     = var.openobserve_admin_password
+    openobserve_auth_token         = var.openobserve_auth_token
   } : {}))
 }

@@ -53,7 +53,12 @@ inputs = {
   frontend_security_group_id = dependency.networking.outputs.frontend_security_group_id
 
   database_url              = dependency.rds.outputs.database_url
-  backend_secrets           = dependency.secrets.outputs.backend_secrets_list # Note: secrets module needs to output this
+  backend_secrets           = concat(dependency.secrets.outputs.backend_secrets_list, [
+    {
+      name      = "OTEL_EXPORTER_OTLP_HEADERS"
+      valueFrom = "${dependency.secrets.outputs.app_secrets_arn}:openobserve_auth_token::"
+    }
+  ])
 
   # Domain configuration
   domain_name               = "staging.scribe.sanguinehost.com"
@@ -105,10 +110,6 @@ inputs = {
       value = "http://openobserve.staging.local:4317"
     },
 
-    {
-      name  = "OTEL_EXPORTER_OTLP_HEADERS"
-      value = "authorization=Basic YWRtaW5Ac2FuZ3VpbmVob3N0LmNvbTpjaGFuZ2UtbWUtaW4tcHJvZHVjdGlvbi1vci11c2Utc2VjcmV0cw==,organization=default"
-    },
     {
       name  = "OTEL_SERVICE_NAME"
       value = "scribe_backend"

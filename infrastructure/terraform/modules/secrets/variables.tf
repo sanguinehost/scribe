@@ -215,3 +215,17 @@ variable "paddle_credits_8000_price_id" {
   sensitive   = true
   default     = ""
 }
+# OpenObserve credentials
+variable "openobserve_admin_password" {
+  description = "Initial admin password for OpenObserve"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "openobserve_auth_token" {
+  description = "Base64 encoded Basic Auth token for OpenObserve OTLP ingestion"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

@@ -37,6 +37,16 @@ dependency "traefik" {
   }
 }
 
+dependency "secrets" {
+  config_path = "../secrets"
+
+  mock_outputs = {
+    app_secrets_map = {
+      openobserve_admin_password = "mock-secret" # gitleaks:allow
+    }
+  }
+}
+
 inputs = {
   environment                    = local.env_vars.locals.environment
   aws_region                     = local.env_vars.locals.aws_region
@@ -50,7 +60,7 @@ inputs = {
   backend_security_group_id      = dependency.networking.outputs.backend_security_group_id
 
   openobserve_admin_email        = "admin@sanguinehost.com"
-  openobserve_admin_password     = "change-me-in-production-or-use-secrets" # TODO: Fix this for prod
+  openobserve_admin_password     = dependency.secrets.outputs.app_secrets_map["openobserve_admin_password"] # gitleaks:allow
   domain_name                    = "staging.sanguinehost.com"
 
   # Traefik labels are now primarily defined in the module for security defaults
