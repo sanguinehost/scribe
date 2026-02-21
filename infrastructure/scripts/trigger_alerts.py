@@ -154,6 +154,39 @@ def trigger_ttft(count=6):
             print(f"Request {i+1} failed: {e}")
         time.sleep(0.1)
 
+def trigger_llm_failure(count=6):
+    LLM_FAIL_URL = f"{BASE_URL}/health/llm_failure"
+    print(f"Triggering {count} LLM generation failures at {LLM_FAIL_URL}...")
+    for i in range(count):
+        try:
+            resp = requests.get(LLM_FAIL_URL, timeout=10)
+            print(f"Request {i+1}: Status {resp.status_code}")
+        except Exception as e:
+            print(f"Request {i+1} failed: {e}")
+        time.sleep(0.1)
+
+def trigger_db_failure(count=12):
+    DB_FAIL_URL = f"{BASE_URL}/health/db_error"
+    print(f"Triggering {count} database error mocks at {DB_FAIL_URL}...")
+    for i in range(count):
+        try:
+            resp = requests.get(DB_FAIL_URL, timeout=10)
+            print(f"Request {i+1}: Status {resp.status_code}")
+        except Exception as e:
+            print(f"Request {i+1} failed: {e}")
+        time.sleep(0.1)
+
+def trigger_payment_failure(count=5):
+    PAYMENT_FAIL_URL = f"{BASE_URL}/health/payment_fail"
+    print(f"Triggering {count} payment failure mocks at {PAYMENT_FAIL_URL}...")
+    for i in range(count):
+        try:
+            resp = requests.get(PAYMENT_FAIL_URL, timeout=10)
+            print(f"Request {i+1}: Status {resp.status_code}")
+        except Exception as e:
+            print(f"Request {i+1} failed: {e}")
+        time.sleep(0.1)
+
 def trigger_frontend_errors(count=5, spoof_ip=False):
     TELEMETRY_URL = f"{BASE_URL}/telemetry"
     print(f"Triggering {count} frontend client errors at {TELEMETRY_URL}...")
@@ -213,6 +246,7 @@ if __name__ == "__main__":
     parser.add_argument('--anomaly', action='store_true', help='Trigger credit anomaly')
     parser.add_argument('--webhook', action='store_true', help='Trigger webhook security')
     parser.add_argument('--ttft', action='store_true', help='Trigger LLM high TTFT mock')
+    parser.add_argument('--llm', action='store_true', help='Trigger LLM generation failure mock')
     parser.add_argument('--frontend', action='store_true', help='Trigger frontend client errors')
     parser.add_argument('--debug', action='store_true', help='Run diagnostic ping tests')
 
@@ -229,7 +263,8 @@ if __name__ == "__main__":
     if args.all or args.auth:
         trigger_auth_failures(spoof_ip=args.spoof_ip)
     if args.all or args.polling:
-        trigger_auth_polling(authenticated=args.authenticated, spoof_ip=args.spoof_ip)
+        authenticated = True if args.all else args.authenticated
+        trigger_auth_polling(authenticated=authenticated, spoof_ip=args.spoof_ip)
     if args.all or args.latency:
         trigger_high_latency()
     if args.all or args.anomaly:
@@ -240,6 +275,11 @@ if __name__ == "__main__":
         trigger_webhook_failures()
     if args.all or args.ttft:
         trigger_ttft()
+    if args.all or args.llm:
+        trigger_llm_failure()
+    if args.all:
+        trigger_db_failure()
+        trigger_payment_failure()
     if args.all or args.frontend:
         trigger_frontend_errors(spoof_ip=args.spoof_ip)
 
