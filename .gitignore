@@ -80,3 +80,4 @@ terraform.tfstate
 
 # Test database files (in-memory SQLite URIs that get materialized)
 backend/:memory:*
+infrastructure/terragrunt/backend.tf

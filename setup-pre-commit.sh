@@ -116,17 +116,19 @@ if [ -f "$HOOK_FILE" ]; then
     AUTO_FORMAT_BLOCK='
 # --- SCRIBE AUTO-FORMATTER WRAPPER ---
 # Format modified backend Rust files
-if git diff --cached --name-only | grep -q "^backend/.*\.rs$"; then
+STAGED_RS_FILES=$(git diff --cached --name-only | grep "^backend/.*\.rs$" || true)
+if [ -n "$STAGED_RS_FILES" ]; then
     echo "🦀 Auto-formatting backend Rust code..."
     cargo fmt -p scribe-backend
-    git add $(git diff --cached --name-only)
+    echo "$STAGED_RS_FILES" | xargs git add
 fi
 
 # Format modified frontend files
-if git diff --cached --name-only | grep -E -q "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$"; then
+STAGED_JS_FILES=$(git diff --cached --name-only | grep -E "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" || true)
+if [ -n "$STAGED_JS_FILES" ]; then
     echo "⚡ Auto-formatting frontend code..."
     (cd frontend && pnpm format > /dev/null 2>&1)
-    git add $(git diff --cached --name-only)
+    echo "$STAGED_JS_FILES" | xargs git add
 fi
 # --- END SCRIBE AUTO-FORMATTER WRAPPER ---
 '
