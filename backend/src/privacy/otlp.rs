@@ -30,9 +30,11 @@ impl<E> PrivacyMaskExporter<E> {
     }
 
     /// Redacts PII from a batch of spans.
+    /// Note: Currently only redacts span attributes. Events are exported as-is
+    /// due to SpanEvents immutability in OTel SDK 0.31.
     fn redact_batch(&self, mut batch: Vec<SpanData>) -> Vec<SpanData> {
         for span in batch.iter_mut() {
-            // Attributes
+            // Redact span attributes
             for kv in span.attributes.iter_mut() {
                 if let opentelemetry::Value::String(ref s) = kv.value {
                     let redacted = self.redact_value(s.as_str());
@@ -42,7 +44,8 @@ impl<E> PrivacyMaskExporter<E> {
                 }
             }
 
-            // Events - SpanEvents in 0.31 is not directly mutable.
+            // FIXME: Redact event attributes once OTel SDK allows mutation or
+            // easier reconstruction of SpanEvents.
         }
         batch
     }

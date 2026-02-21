@@ -102,19 +102,22 @@ pub fn init_subscriber() {
                         .with_span_list(false)
                         .with_writer(file_writer),
                 )
-                .init();
+                .try_init()
+                .ok();
         }
         LogFormat::Pretty => {
             registry
                 .with(fmt::layer().pretty().with_writer(std::io::stdout))
                 .with(fmt::layer().pretty().with_writer(file_writer))
-                .init();
+                .try_init()
+                .ok();
         }
         LogFormat::Compact => {
             registry
                 .with(fmt::layer().compact().with_writer(std::io::stdout))
                 .with(fmt::layer().compact().with_writer(file_writer))
-                .init();
+                .try_init()
+                .ok();
         }
     }
 
