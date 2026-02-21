@@ -28,7 +28,7 @@ inputs = {
   vpc_cidr           = dependency.networking.outputs.vpc_cidr_block
 
   # Get auth key from environment for security
-  tailscale_auth_key = get_env("TAILSCALE_AUTH_KEY", "dummy")
+  tailscale_auth_key = get_env("TAILSCALE_AUTH_KEY")
 
   instance_type      = "t3.nano"
   key_name           = "scribe-staging-link" # Reusing existing key pair if available

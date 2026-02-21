@@ -55,7 +55,7 @@ inputs = {
     "api.staging.scribe.sanguinehost.com",
     "obs.staging.sanguinehost.com"
   ]
-  route53_zone_id     = "Z03636022UE1D6BKIDHCP" # Corrected zone ID
+  route53_zone_id     = dependency.networking.outputs.route53_zone_id
 
   # Capacity
   desired_count       = 1
