@@ -115,9 +115,9 @@ HOOK_FILE=".git/hooks/pre-commit"
 if [ -f "$HOOK_FILE" ]; then
     AUTO_FORMAT_BLOCK='
 # --- SCRIBE AUTO-FORMATTER WRAPPER ---
-# Check for modified files to format
-STAGED_RS_FILES=$(git diff --cached --name-only | grep "^backend/.*\.rs$" || true)
-STAGED_JS_FILES=$(git diff --cached --name-only | grep -E "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" || true)
+# Check for modified files to format (NUL-delimited for safe filename handling)
+STAGED_RS_FILES=$(git diff --cached --name-only -z | tr "\0" "\n" | grep "^backend/.*\.rs$" || true)
+STAGED_JS_FILES=$(git diff --cached --name-only -z | tr "\0" "\n" | grep -E "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" || true)
 
 if [ -n "$STAGED_RS_FILES" ] || [ -n "$STAGED_JS_FILES" ]; then
     # Protect unstaged changes to ensure staging isolation
@@ -132,13 +132,13 @@ if [ -n "$STAGED_RS_FILES" ] || [ -n "$STAGED_JS_FILES" ]; then
     if [ -n "$STAGED_RS_FILES" ]; then
         echo "🦀 Auto-formatting backend Rust code..."
         cargo fmt -p scribe-backend
-        echo "$STAGED_RS_FILES" | xargs git add
+        git diff --cached --name-only -z | grep -z "^backend/.*\.rs$" | xargs -0 git add --
     fi
 
     if [ -n "$STAGED_JS_FILES" ]; then
         echo "⚡ Auto-formatting frontend code..."
         (cd frontend && pnpm format > /dev/null 2>&1)
-        echo "$STAGED_JS_FILES" | xargs git add
+        git diff --cached --name-only -z | grep -zE "^frontend/.*\.(js|ts|tsx|svelte|json|css|md)$" | xargs -0 git add --
     fi
 
     if [ -n "$HAS_UNSTAGED" ] && git stash list | grep -q "scribe-format-stash"; then
