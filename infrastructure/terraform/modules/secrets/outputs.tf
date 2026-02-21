@@ -8,10 +8,14 @@ output "app_secrets_arn" {
   value       = aws_secretsmanager_secret.app_secrets.arn
 }
 
+output "app_secret_arn" {
+  description = "Alias for app_secrets_arn (deprecated)"
+  value       = aws_secretsmanager_secret.app_secrets.arn
+}
+
 # Construct list of secrets for ECS container definition
-output "backend_secrets_list" {
-  description = "List of secrets for ECS container definition"
-  value = [
+locals {
+  base_secrets = [
     {
       name      = "DATABASE_URL"
       valueFrom = "${aws_secretsmanager_secret.database_credentials.arn}:url::"
@@ -48,7 +52,9 @@ output "backend_secrets_list" {
       name      = "TLS_KEY_PEM"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:tls_key_pem::"
     }
-  ], var.enable_payments ? [
+  ]
+
+  payment_secrets = [
     {
       name      = "PAYMENT_PADDLE_API_KEY"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_api_key::"
@@ -69,5 +75,10 @@ output "backend_secrets_list" {
       name      = "PAYMENT_PADDLE_BASIC_YEARLY_PRICE_ID"
       valueFrom = "${aws_secretsmanager_secret.app_secrets.arn}:paddle_basic_yearly_price_id::"
     }
-  ] : [])
+  ]
+}
+
+output "backend_secrets_list" {
+  description = "List of secrets for ECS container definition"
+  value       = concat(local.base_secrets, var.enable_payments ? local.payment_secrets : [])
 }
