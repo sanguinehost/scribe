@@ -33,6 +33,22 @@ pub enum PaddleEventType {
     CustomerUpdated,
 }
 
+impl std::fmt::Display for PaddleEventType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::SubscriptionCreated => "subscription.created",
+            Self::SubscriptionUpdated => "subscription.updated",
+            Self::SubscriptionCancelled => "subscription.cancelled",
+            Self::TransactionCompleted => "transaction.completed",
+            Self::TransactionFailed => "transaction.failed",
+            Self::TransactionCanceled => "transaction.canceled",
+            Self::CustomerCreated => "customer.created",
+            Self::CustomerUpdated => "customer.updated",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 impl<'de> Deserialize<'de> for PaddleEventType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
