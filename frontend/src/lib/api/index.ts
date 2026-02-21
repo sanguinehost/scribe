@@ -139,6 +139,11 @@ import { browser as _browser } from '$app/environment'; // To check if in browse
 import { env } from '$env/dynamic/public';
 import { logger } from '$lib/utils/logger';
 
+// Custom request options to track internal state
+interface ScribeRequestInit extends RequestInit {
+	_dekRetryCount?: number;
+}
+
 // Actual API client
 class ApiClient {
 	private baseUrl: string;
@@ -451,6 +456,18 @@ class ApiClient {
 							logger.debug('api-client', 'Re-auth already in progress, waiting for completion');
 						}
 
+						// Increment retry counter stored in options for tracking across recursive calls
+						const scribeOptions = options as ScribeRequestInit;
+						const retryCount = scribeOptions._dekRetryCount || 0;
+						const MAX_RETRIES = 3;
+
+						if (retryCount >= MAX_RETRIES) {
+							logger.error('api-client', 'Max re-authentication retries exceeded', { endpoint });
+							return err(
+								new ApiResponseError(401, 'Re-authentication failed after multiple attempts')
+							);
+						}
+
 						// Wait for re-authentication to complete
 						await new Promise<void>((resolve) => {
 							const checkReAuth = () => {
@@ -465,9 +482,19 @@ class ApiClient {
 							checkReAuth();
 						});
 
-						// Re-authentication complete, retry the original request
-						logger.info('api-client', `Retrying request after re-auth: ${endpoint}`);
-						return this.fetch<T>(endpoint, options, fetchFn);
+						// Re-authentication complete, retry the original request with incremented counter
+						logger.info(
+							'api-client',
+							`Retrying request after re-auth: ${endpoint} (attempt ${retryCount + 1})`
+						);
+						return this.fetch<T>(
+							endpoint,
+							{
+								...scribeOptions,
+								_dekRetryCount: retryCount + 1
+							} as ScribeRequestInit,
+							fetchFn
+						);
 					} else {
 						// Check if we're in desktop mode with JWT authentication
 						if (isDesktopMode() && this.desktopAuthService) {

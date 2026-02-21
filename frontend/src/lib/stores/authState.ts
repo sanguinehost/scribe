@@ -45,11 +45,12 @@ class AuthStateManager {
 			this.state.isReAuthInProgress = true;
 
 			// Dispatch event to trigger modal display
-			// The layout component listens for this and shows the ReAuthModal
-			console.log('[authState] Dispatching auth:dek-missing event');
-			window.dispatchEvent(
-				new CustomEvent('auth:dek-missing', { detail: { reason: 'dek_missing' } })
-			);
+			if (typeof window !== 'undefined') {
+				console.log('[authState] Dispatching auth:dek-missing event');
+				window.dispatchEvent(
+					new CustomEvent('auth:dek-missing', { detail: { reason: 'dek_missing' } })
+				);
+			}
 
 			// Wait for re-authentication to complete
 			// The ReAuthModal will dispatch auth:reauth-complete event
@@ -86,14 +87,19 @@ class AuthStateManager {
 				}
 			};
 
-			window.addEventListener('auth:reauth-complete', handler);
+			if (typeof window !== 'undefined') {
+				window.addEventListener('auth:reauth-complete', handler);
 
-			// Timeout after 30 seconds to prevent hanging
-			setTimeout(() => {
-				window.removeEventListener('auth:reauth-complete', handler);
-				console.warn('[authState] Re-authentication timeout');
+				// Timeout after 30 seconds to prevent hanging
+				setTimeout(() => {
+					window.removeEventListener('auth:reauth-complete', handler);
+					console.warn('[authState] Re-authentication timeout');
+					resolve();
+				}, 30000);
+			} else {
+				// Server-side: resolve immediately as re-auth can't happen
 				resolve();
-			}, 30000);
+			}
 		});
 	}
 
