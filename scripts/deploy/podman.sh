@@ -67,6 +67,7 @@ run_app() {
     log_info "Application services should be configured to connect to infra on 'scribe_network'."
     log_info "Running backend..."
     podman run -d --name scribe_backend_local \
+        --replace \
         --network scribe_network \
         -p 8080:8080 \
         -e DATABASE_URL="postgres://devuser:devpassword@scribe_postgres:5432/sanguine_scribe_dev" \
@@ -74,6 +75,7 @@ run_app() {
 
     log_info "Running frontend..."
     podman run -d --name scribe_frontend_local \
+        --replace \
         --network scribe_network \
         -p 3000:3000 \
         -e PUBLIC_API_URL="http://localhost:8080" \

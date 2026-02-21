@@ -22,10 +22,6 @@ WORKDIR /app
 
 # Copy workspace manifests
 COPY Cargo.toml Cargo.lock ./
-# Append h2 patch if not already present (preserves real workspace config)
-RUN if ! grep -q '\[patch.crates-io\]' Cargo.toml; then \
-    printf '\n[patch.crates-io]\nh2 = { git = "https://github.com/hyperium/h2", rev = "6b27688442aed1200f436190bc54fad805f0b770" }\n' >> Cargo.toml; \
-    fi
 COPY backend/Cargo.toml ./backend/
 COPY cli/Cargo.toml ./cli/
 
