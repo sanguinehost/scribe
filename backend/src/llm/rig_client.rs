@@ -116,14 +116,14 @@ impl RigClient {
 
                 let model = client.completion_model(model_name);
 
-                // Construct the prompt message
-                let prompt_msg = rig::message::Message::User {
-                    content: OneOrMany::one(rig::message::UserContent::text(req.prompt)),
-                };
-
-                // Combine history and prompt
+                // Combine history and optional prompt
                 let mut full_history = req.history;
-                full_history.push(prompt_msg);
+                if !req.prompt.is_empty() {
+                    let prompt_msg = rig::message::Message::User {
+                        content: OneOrMany::one(rig::message::UserContent::text(req.prompt)),
+                    };
+                    full_history.push(prompt_msg);
+                }
 
                 let chat_history = OneOrMany::many(full_history)
                     .map_err(|_| anyhow::anyhow!("History cannot be empty"))?;
@@ -258,14 +258,14 @@ impl RigClient {
                     req.model_name.clone(),
                 );
 
-                // Construct the prompt message
-                let prompt_msg = rig::message::Message::User {
-                    content: OneOrMany::one(rig::message::UserContent::text(req.prompt)),
-                };
-
-                // Combine history and prompt
+                // Combine history and optional prompt
                 let mut full_history = req.history;
-                full_history.push(prompt_msg);
+                if !req.prompt.is_empty() {
+                    let prompt_msg = rig::message::Message::User {
+                        content: OneOrMany::one(rig::message::UserContent::text(req.prompt)),
+                    };
+                    full_history.push(prompt_msg);
+                }
 
                 let chat_history = OneOrMany::many(full_history)
                     .map_err(|_| anyhow::anyhow!("History cannot be empty"))?;

@@ -980,6 +980,7 @@ class StreamingService implements IStreamingService {
 							if (message) {
 								// Ensure final content is synced
 								message.isRegenerating = false;
+								message.isAnimating = false; // Mark animation as done
 							}
 						}
 
@@ -1190,6 +1191,13 @@ class StreamingService implements IStreamingService {
 		this.activeSubscriptions.forEach((unsub) => unsub());
 		this.activeSubscriptions = [];
 		this.activeConnection = null;
+
+		// Hard cleanup: ensure any stuck animations are cleared
+		this.messages.forEach((msg) => {
+			if (msg.isAnimating) {
+				msg.isAnimating = false;
+			}
+		});
 	}
 
 	/**
@@ -1222,6 +1230,7 @@ class StreamingService implements IStreamingService {
 							status: 'completed',
 							reasoningContent: fullMessage.reasoning_content || msg.reasoningContent,
 							isThinking: false,
+							isAnimating: false, // Authoritative state
 							backend_id: fullMessage.id,
 							variant_count: fullMessage.variant_count || msg.variant_count,
 							current_variant_index: fullMessage.current_variant_index ?? msg.current_variant_index

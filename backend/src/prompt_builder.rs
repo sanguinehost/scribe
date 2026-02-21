@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use rig::message::{AssistantContent, Message as RigMessage, UserContent};
+use rig::one_or_many::OneOrMany;
 use secrecy::ExposeSecret;
 use std::fmt::Write;
 use std::sync::Arc;
@@ -1726,8 +1727,71 @@ async fn build_final_prompt_strings(
     }
 
     final_message_list.push(final_user_message);
+    let sanitized_history = ensure_message_alternation(final_message_list);
 
-    Ok((final_system_prompt, final_message_list))
+    Ok((final_system_prompt, sanitized_history))
+}
+
+/// Ensures that the message list starts with a User message and strictly alternates between User and Assistant.
+/// Consecutive messages of the same role are merged.
+pub fn ensure_message_alternation(messages: Vec<RigMessage>) -> Vec<RigMessage> {
+    if messages.is_empty() {
+        return messages;
+    }
+
+    let mut sanitized = Vec::new();
+    for msg in messages {
+        match (sanitized.last_mut(), msg) {
+            // Case 1: First message
+            (None, RigMessage::User { content }) => {
+                sanitized.push(RigMessage::User { content });
+            }
+            (None, RigMessage::Assistant { .. }) => {
+                // Gemini API usually requires the first message in the contents array to be from the 'user'.
+                // If we have a leading assistant message, we skip it to avoid a 400 Bad Request.
+                debug!("Skipping leading Assistant message to enforce User-first history for Gemini compatibility.");
+            }
+
+            // Case 2: Consecutive User messages -> Merge
+            (
+                Some(RigMessage::User {
+                    content: existing_content,
+                }),
+                RigMessage::User {
+                    content: new_content,
+                },
+            ) => {
+                let mut v: Vec<_> = existing_content.clone().into_iter().collect();
+                v.extend(new_content.into_iter());
+                *existing_content = OneOrMany::many(v).expect("should not be empty");
+            }
+
+            // Case 3: Consecutive Assistant messages -> Merge
+            (
+                Some(RigMessage::Assistant {
+                    content: existing_content,
+                    ..
+                }),
+                RigMessage::Assistant {
+                    content: new_content,
+                    ..
+                },
+            ) => {
+                let mut v: Vec<_> = existing_content.clone().into_iter().collect();
+                v.extend(new_content.into_iter());
+                *existing_content = OneOrMany::many(v).expect("should not be empty");
+            }
+
+            // Case 4: Alternating roles -> Push
+            (Some(RigMessage::User { .. }), RigMessage::Assistant { content, id }) => {
+                sanitized.push(RigMessage::Assistant { content, id });
+            }
+            (Some(RigMessage::Assistant { .. }), RigMessage::User { content }) => {
+                sanitized.push(RigMessage::User { content });
+            }
+        }
+    }
+    sanitized
 }
 
 /// Builds the final LLM prompt, managing token limits by truncating RAG context and recent history if necessary.
@@ -1819,6 +1883,114 @@ mod tests {
     use crate::DbId;
     use chrono::Utc;
     use uuid::Uuid;
+
+    mod alternation_tests {
+        use super::super::*;
+        use rig::message::{AssistantContent, Message as RigMessage, UserContent};
+        use rig::one_or_many::OneOrMany;
+
+        #[test]
+        fn test_alternation_merges_consecutive_user_messages() {
+            let messages = vec![
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("Hello")),
+                },
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("World")),
+                },
+            ];
+
+            let sanitized = ensure_message_alternation(messages);
+            assert_eq!(sanitized.len(), 1);
+            if let RigMessage::User { content } = &sanitized[0] {
+                assert_eq!(content.len(), 2);
+            } else {
+                panic!("Expected User message");
+            }
+        }
+
+        #[test]
+        fn test_alternation_merges_consecutive_assistant_messages() {
+            let messages = vec![
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("User")),
+                },
+                RigMessage::Assistant {
+                    content: OneOrMany::one(AssistantContent::text("Bot 1")),
+                    id: None,
+                },
+                RigMessage::Assistant {
+                    content: OneOrMany::one(AssistantContent::text("Bot 2")),
+                    id: None,
+                },
+            ];
+
+            let sanitized = ensure_message_alternation(messages);
+            assert_eq!(sanitized.len(), 2);
+            assert!(matches!(sanitized[0], RigMessage::User { .. }));
+            if let RigMessage::Assistant { content, .. } = &sanitized[1] {
+                assert_eq!(content.len(), 2);
+            } else {
+                panic!("Expected Assistant message");
+            }
+        }
+
+        #[test]
+        fn test_alternation_skips_leading_assistant_message() {
+            let messages = vec![
+                RigMessage::Assistant {
+                    content: OneOrMany::one(AssistantContent::text("Leading bot")),
+                    id: None,
+                },
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("User message")),
+                },
+            ];
+
+            let sanitized = ensure_message_alternation(messages);
+            assert_eq!(sanitized.len(), 1);
+            assert!(matches!(sanitized[0], RigMessage::User { .. }));
+        }
+
+        #[test]
+        fn test_alternation_complex_interleaving() {
+            let messages = vec![
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("U1")),
+                },
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("U2")),
+                },
+                RigMessage::Assistant {
+                    content: OneOrMany::one(AssistantContent::text("A1")),
+                    id: None,
+                },
+                RigMessage::Assistant {
+                    content: OneOrMany::one(AssistantContent::text("A2")),
+                    id: None,
+                },
+                RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("U3")),
+                },
+            ];
+
+            let sanitized = ensure_message_alternation(messages);
+            assert_eq!(sanitized.len(), 3);
+            assert!(matches!(sanitized[0], RigMessage::User { .. }));
+            assert!(matches!(sanitized[1], RigMessage::Assistant { .. }));
+            assert!(matches!(sanitized[2], RigMessage::User { .. }));
+
+            if let RigMessage::User { content } = &sanitized[0] {
+                assert_eq!(content.len(), 2);
+            }
+            if let RigMessage::Assistant { content, .. } = &sanitized[1] {
+                assert_eq!(content.len(), 2);
+            }
+            if let RigMessage::User { content } = &sanitized[2] {
+                assert_eq!(content.len(), 1);
+            }
+        }
+    }
 
     #[test]
     fn test_build_prompt_no_character() {

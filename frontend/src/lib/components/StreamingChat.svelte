@@ -127,7 +127,7 @@
 		try {
 			// Build history from current messages
 			const history = streamingServiceRef.messages
-				.filter((msg) => !msg.isAnimating && !msg.error)
+				.filter((msg) => (msg.content || '').trim().length > 0 && !msg.error)
 				.map((msg) => ({
 					role: msg.sender === 'assistant' ? ('assistant' as const) : ('user' as const),
 					content: msg.content
