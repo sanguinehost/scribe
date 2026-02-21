@@ -2,11 +2,18 @@
 set -e
 
 # Configuration
-REGION="ap-southeast-4"
+# Environment configuration
+REGION=${AWS_REGION:-"ap-southeast-4"}
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-SECRET_ID="arn:aws:secretsmanager:$REGION:$ACCOUNT_ID:secret:staging/scribe/database-tXXaO7"
+
+# Resource identifiers (adjust if necessary)
+SECRET_SUFFIX=${SECRET_SUFFIX:-"database-tXXaO7"}
+SECRET_ID="arn:aws:secretsmanager:$REGION:$ACCOUNT_ID:secret:staging/scribe/$SECRET_SUFFIX"
 ROUTER_TAG="staging-scribe-tailscale-router"
-DB_HOST="staging-scribe-postgres.c9oy0o248kqw.$REGION.rds.amazonaws.com"
+
+# RDS Configuration
+RDS_IDENTIFIER=${RDS_IDENTIFIER:-"staging-scribe-postgres.c9oy0o248kqw"}
+DB_HOST="$RDS_IDENTIFIER.$REGION.rds.amazonaws.com"
 DB_PORT="5432"
 LOCAL_PORT="54320"
 DB_NAME="scribe"
