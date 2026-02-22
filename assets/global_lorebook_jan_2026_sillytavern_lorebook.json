@@ -1,0 +1,763 @@
+{
+  "name": "The Awakened Lorebook",
+  "description": "Lorebook for The Awakened",
+  "entries": [
+    {
+      "title": "",
+      "keywords": [
+        "Chile Constitution",
+        "Chile Politics",
+        "Lithium Chile",
+        "Renewable Energy Chile"
+      ],
+      "content": "Chile has a new moderate constitution. The country leads Latin America's renewable energy transition (74% clean electricity, primarily solar). Lithium production has significantly increased."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Korean Peninsula",
+        "Lee Jae-myung",
+        "Presidential Election South Korea",
+        "South Korea Politics 2026",
+        "Yoon Suk Yeol"
+      ],
+      "content": "South Korea experienced major political upheaval with President Yoon Suk Yeol's arrest (Jan 2025). Opposition candidate Lee Jae-myung won the subsequent presidential election (June 2025). North Korea continues weapons development, testing advanced hypersonic missiles in early 2025 and accelerating weapons development into 2026."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Asia Geopolitics",
+        "Automation Japan",
+        "Japan Demographics",
+        "Japan Economy",
+        "Japanese Military"
+      ],
+      "content": "Japan confronts its demographic crisis with increasing automation in public services and elder care. In response to regional threats, the country has expanded its military capabilities, modifying constitutional limits on defense spending. Relations with South Korea have reportedly improved."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Keir Starmer",
+        "Labour Party",
+        "Northern Ireland",
+        "Scottish Independence",
+        "UK Economy",
+        "UK Politics"
+      ],
+      "content": "The UK, under Prime Minister Keir Starmer's Labour government (reported), inherited a struggling economy and public services crisis. Following the Supreme Court ruling that Holyrood cannot legislate an independence referendum, the Scottish National Party (SNP) is treating the upcoming May 2026 Scottish Parliament election as a 'de facto referendum' on independence. Northern Ireland's gradual economic integration with the Republic of Ireland continues despite some unionist protests."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Displacement Crisis",
+        "Military Junta Myanmar",
+        "Myanmar Civil War",
+        "Scorched Earth Tactics"
+      ],
+      "content": "Five years post-coup, the Myanmar military junta is steadily losing ground to resistance forces. In a desperate war of attrition, the junta has escalated scorched-earth tactics, relying heavily on razing villages and mass forced displacement to retain control over shrinking territories."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Canada G7",
+        "Economic Stability",
+        "G7 Summit 2026",
+        "Global Peace",
+        "India-Canada Relations",
+        "International Cooperation"
+      ],
+      "content": "The 51st G7 Summit in June 2025 focused on peace, security, economy, digital transition. India is not expected to attend due to strained relations with Canada."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Hindu Nationalism",
+        "India Climate Change",
+        "India Technology",
+        "Indian Economy 2026",
+        "Make in India",
+        "Narendra Modi"
+      ],
+      "content": "India, under PM Modi's third term, remains a fast-growing major economy (GDP 6.1% reported). 'Make in India' and infrastructure development continue. Hindu nationalist policies have intensified (e.g., site reclamations, educational curricula changes, citizenship verification). India is the 3rd largest startup ecosystem. Severe climate impacts include catastrophic 2024 monsoon flooding in eastern regions and drought in western states, with water security a critical issue (e.g., Bangalore). Wealth inequality is stark (richest 1% own 40.5% of wealth). The Reserve Bank of India is anticipated to continue rate cuts."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Amazon Deforestation",
+        "Bolsonarismo",
+        "Brazil BRICS",
+        "COP30 Host",
+        "Global South",
+        "Lula da Silva"
+      ],
+      "content": "Under President Lula, Brazil held the BRICS Chairship in 2025 and is finalizing preparations to host COP30. Amazon deforestation rates decreased but remain high. Political polarization continues, with a strong 'bolsonarista' opposition."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Africa Zero-Tariff",
+        "Belt and Road Evolution",
+        "China Economy 2026",
+        "De-dollarization",
+        "Financial Insurrection"
+      ],
+      "content": "China's economic strategy has aggressively pivoted to capitalizing on Western instability. The Belt and Road Initiative (BRI) hit $128 billion in 2025 contracts, shifting from highways to cementing renewable energy and battery supply chains. China established zero-tariff treatment for 53 African countries, solidifying its hold on resource-rich nations like the DRC and Nigeria. To insulate against sanctions, China is leading a 'financial insurrection' by aggressively buying gold, selling US treasuries, and reinforcing the Yuan as a hardened alternative reserve currency."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Cartel Violence",
+        "Claudia Sheinbaum",
+        "Mexican Economy 2026",
+        "Mexico Security",
+        "Migration",
+        "Trade Impact"
+      ],
+      "content": "Under President Claudia Sheinbaum (reported), Mexico's economy is projected to slow in 2026, partly due to US trade policies (including the baseline US tariffs of 25%, with threatened increases to 30% postponed by a 90-day extension negotiated in late July 2025) and reduced foreign investment. The new administration confronts unprecedented drug cartel violence, with states like Sinaloa, Michoacán, and Tamaulipas reportedly largely outside federal control. The country also faces humanitarian challenges from migrant caravans arriving from Central and South America."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Artemis Accords",
+        "Electric Vehicles Norway",
+        "Norway Climate Policy",
+        "Norway Space Policy"
+      ],
+      "content": "Norway became the 55th signatory to the Artemis Accords in May 2025 and banned new petrol/diesel car sales at the end of 2025."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Cultural Shifts",
+        "Global Aging",
+        "Life Expectancy",
+        "Religion Demographics",
+        "Social Movements",
+        "Societal Trends 2026",
+        "World Population Trends 2026"
+      ],
+      "content": "Global population growth slowed to ~0.8% in 2026; median age 30.9. Christianity (31%), Islam (25%), Unaffiliated (16%) are largest religious groups. Religious nationalism influential. Societal trends: 'Age of Accelerated Reckoning,' demand for discernment, connection, regeneration, and intentional living. Digital entertainment evolving (immersive, AI co-creation). Social media fragmenting. Gender fluidity and neurodiversity gain recognition."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "ASEAN",
+        "Global South",
+        "Indonesia BRICS",
+        "Indonesian Economy",
+        "Nusantara"
+      ],
+      "content": "Indonesia formally became a full member of the BRICS bloc on January 6, 2025. The country is accelerating construction of its new capital, Nusantara, as Jakarta faces environmental pressures like sinking."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Allied Real Estate Doctrine",
+        "Greenland Annexation",
+        "NATO Friction",
+        "US Foreign Policy",
+        "US-Canada Relations"
+      ],
+      "content": "US foreign policy has shifted toward treating international diplomacy as hostile real estate acquisition. In January 2026, the US triggered a crisis by threatening a 25% tariff on the EU and musing about military force to annex Greenland to secure Arctic sovereignty and critical minerals. This forced Danish Intelligence to classify the US as a potential security threat, fracturing NATO cohesion. Similarly, Trump casually mused about annexing Canada—weaponizing uncertainty ahead of the CUSMA trade pact review. This 'Allied Real Estate Doctrine' forces traditional middle-power allies into defensive postures against their primary security guarantor."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Air Power Democratization",
+        "Asymmetric Warfare",
+        "Drone Warfare",
+        "Global Conflict Trends"
+      ],
+      "content": "A critical underlying trend across all modern conflicts is the intense democratization of air power through commercial and military drones. Drone attacks in global conflict settings increased by an unprecedented 4,000% between 2020 and early 2026, fundamentally altering asymmetric warfare and nullifying traditional defensive perimeters."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Chad Security",
+        "N'Djamena Attack",
+        "Political Violence Africa"
+      ],
+      "content": "An attack on the presidential palace in N'Djamena, Chad, on January 8, 2025, resulted in 20 deaths."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "African Geopolitics",
+        "DRC Conflict",
+        "M23",
+        "Rare Earth Mining",
+        "Resource Wars"
+      ],
+      "content": "Largely ignored in Western discourse, the conflict in the eastern Democratic Republic of Congo (DRC) is fundamentally a massive resource war powering the global tech and renewable sectors. Rwandan-backed M23 armed groups have rapidly expanded control over rare earth and gold mining sites. Rwandan President Paul Kagame has effectively enacted a de facto annexation of the North and South Kivu provinces through these rebel proxies."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Democracy Trends",
+        "Geopolitics 2026",
+        "Global Governance",
+        "Information Warfare",
+        "Multipolarity",
+        "Political Polarization"
+      ],
+      "content": "International order transitions to multipolarity. Democracy faces pressure (Freedom House: 57 countries declined, 23 advanced in 2025). Political polarization intensifies (US political violence +34% vs 2024). Populist movements influential. Global governance institutions (UNSC, WTO) face deadlocks; multilateralism fragments. BRICS expansion (Saudi Arabia, Iran, UAE, Egypt, Ethiopia Jan 2025) offers alternative forum. Information warfare (AI, deepfakes) intensifies; public trust in information low (31% confidence)."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Famine Risk Gaza",
+        "Gaza Blockade",
+        "Israel-Gaza War 2026",
+        "Middle East Conflict",
+        "Palestinian Crisis",
+        "UN Ceasefire Efforts",
+        "West Bank Annexation"
+      ],
+      "content": "A US-brokered Gaza ceasefire was achieved in October 2025, following over 72,000 reported Palestinian casualties since October 2023. Despite the ceasefire, severe famine and humanitarian crises persist, heavily exacerbated by Israel banning international UNRWA staff since January 2025. In early 2026, the Israeli security cabinet and Knesset passed measures to legally facilitate the annexation of the West Bank. This includes expanding settlement infrastructure and transferring control of historical sites to the state, defying both US public opposition and international pressure."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Bitcoin Reserve",
+        "Budget Cuts",
+        "Donald Trump",
+        "Trump Accounts",
+        "US Economy",
+        "US Politics 2026",
+        "US Trade Tariffs"
+      ],
+      "content": "Donald Trump began his second term in Jan 2025. After the Supreme Court struck down his initial global tariff regime, Trump signed a new executive order in February 2026 reinstating 10% global tariffs under a different trade deficit law. Domestically, his administration implemented 'Trump Accounts' in January 2026, opening investment accounts for young Americans to create a 'shareholder society'. Other key policies include aggressive federal agency restructuring (Schedule F), significant budget cuts, and establishing a Strategic Bitcoin Reserve. Economic growth has slowed amid persistent inflation and restrictive Federal Reserve policy. Congress remains deeply divided, leading to a heavy reliance on executive actions."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "BRICS",
+        "International Sanctions",
+        "Russia Geopolitics",
+        "Russian Economy",
+        "Ukraine War",
+        "Vladimir Putin"
+      ],
+      "content": "Under President Putin (with persistent health rumors reported), Russian forces made slow territorial advances in Ukraine through 2025 and early 2026. The Russian economy adapted to sanctions (GDP 1.4% in 2025) via import substitution and reorienting energy exports to Asia (China reportedly buys 67% of Russian gas). Defense spending is around 7.5% of GDP. Russia's role in BRICS is strengthened by the bloc's expansion, though it's seen as an increasingly junior partner to China. Opposition is neutralized (e.g., Navalny's organization designated extremist)."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "AI Coworkers",
+        "AI Models 2026",
+        "Agentic AI",
+        "Deepseek",
+        "GPT-5.3",
+        "Gemini 3.1 Pro",
+        "Tech Deflation"
+      ],
+      "content": "The AI paradigm has fundamentally shifted from basic chatbots to autonomous agent swarms. In early 2026, models like Gemini 3.1 Pro and GPT-5.3-Codex-Spark are heavily deployed via enterprise platforms (e.g., OpenAI 'Frontier') to manage AI agents like human employees capable of onboarding and executing multi-step parallel tasks across tech stacks. Meanwhile, China's launch of DeepSeek-V3 in late December 2024 and the disruptive DeepSeek-R1 reasoning model in January 2025 shocked the sector, proving competitive capability while drastically undercutting US tech pricing and driving global tech deflation."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Jihadist Groups Africa",
+        "Military Coups",
+        "Nigeria Security",
+        "Sahel Conflict",
+        "Wagner Group",
+        "West Africa Security"
+      ],
+      "content": "Conflicts in the Sahel (Burkina Faso, Mali, Niger) intensified and expanded into coastal West African states, with groups like JNIM and IS Sahel active. The Sahel has the world's highest concentration of military governments, which have pivoted towards Russian cooperation (Wagner Group present). Nigeria faces separatist and jihadist activity."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Iran Nuclear Program",
+        "Iran Politics 2026",
+        "Iranian Protests",
+        "Israel-Iran War",
+        "Middle East Power Balance"
+      ],
+      "content": "Iran's geopolitical posture was profoundly shaken by a brief 12-day direct war with Israel in June 2025. This conflict established a highly volatile deterrence posture heading into 2026. Iran continues its nuclear program advancement while domestic unrest persists over economic conditions."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Nicolás Maduro",
+        "US Intervention Venezuela",
+        "Venezuela Economy",
+        "Venezuela Politics"
+      ],
+      "content": "A massive deviation from early projections was the direct US intervention in Venezuela, which culminated in the capture of President Nicolás Maduro by US forces in January 2026. This aggressive assertion of regional influence has fundamentally altered Latin American geopolitical dynamics and significantly impacted the Venezuelan political landscape and economy."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Perovskite-Silicon Solar",
+        "Quantum Computing",
+        "Sodium-Ion Batteries",
+        "Structural Battery Composites",
+        "Suzetrigine",
+        "Tech Breakthroughs 2026"
+      ],
+      "content": "Beyond LLMs, critical technological and medical adoptions in early 2026 are reshaping baseline infrastructure. In February 2026, researchers achieved Real-Time Quantum Stabilization, tracking qubit fluctuations 100x faster and accelerating timelines toward Cryptographically Relevant Quantum Computers (CRQC). In energy, Tandem Perovskite-Silicon Solar Cells hit 34% efficiency, while Structural Battery Composites allow vehicle chassis to act as batteries. Sodium-Ion batteries heavily scaled for grid storage, decoupling energy security from lithium monopolies. In biotech, the widespread rollout of Suzetrigine (marketed as Journavx post its January 30, 2025 FDA approval) has marked the first major non-opioid pain management breakthrough in over 20 years, bypassing addiction mechanics entirely."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "DSA/DMA",
+        "EU Climate Policy",
+        "EU Economy",
+        "EU Politics",
+        "European Commission",
+        "Migration EU",
+        "Poland-Hungary",
+        "Rule of Law",
+        "Strategic Autonomy"
+      ],
+      "content": "The EU faces internal divisions, notably with a Poland-Hungary alliance reportedly defying Brussels on judicial independence, media regulations, and climate/migration policies. Far-right and nationalist parties have gained ground in several member states (e.g., France, Italy, Sweden), impacting the European Parliament post-2024 elections. The EU economy shows modest improvement, with growth averaging 1.3% in early 2026 and inflation around 3.3%. Energy security has improved post-Russian gas reduction, but at higher costs. Strategic autonomy efforts continue, with average defense spending at 2.1% of GDP (Poland 3.2%). Digital sovereignty is pursued via DSA/DMA implementation. The European Green Deal proceeds, with solar/wind capacity reportedly doubling since 2021 and renewed consideration for nuclear power in some states; a Carbon Border Adjustment Mechanism is active. Migration remains divisive, with Mediterranean states implementing pushback policies."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Anthony Albanese",
+        "Australian Economy",
+        "Australian Politics 2026",
+        "Cyclone Alfred",
+        "RBA",
+        "Social Justice Australia",
+        "Sussan Ley"
+      ],
+      "content": "The Albanese Labor government was re-elected (May 2025). Sussan Ley is the new Liberal leader. The economy grows around 2%; RBA cuts rates to 3.35% by year-end. Inflation is within 2-3%. Key social issues: raising age of criminal responsibility, disability rights, housing. Australia experiences intensifying climate extremes (e.g., Cyclone Alfred devastates Queensland/NSW)."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Cost of Living Victoria",
+        "Healthcare Victoria",
+        "Jacinta Allan",
+        "Suburban Rail Loop",
+        "Victoria State Budget 2026-26",
+        "Victorian Infrastructure"
+      ],
+      "content": "Victoria's 2025-26 budget focuses on cost-of-living support, infrastructure (Suburban Rail Loop East - concerns about cost blowouts), healthcare (Virtual ED permanent, expanded), and education (free kinder). A new Emergency Services Levy starts July 2025."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "ASEAN",
+        "Climate Change Vietnam",
+        "P4G Summit",
+        "UN Human Rights Council",
+        "Vietnam Foreign Policy"
+      ],
+      "content": "Vietnam continues to leverage its active international role, building on its 2025 hosting of the ASEAN Future Forum and P4G Summit, and seeking a UN Human Rights Council seat. It faces severe agricultural disruptions from climate change."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Houthis",
+        "Red Sea Security",
+        "Yemen Conflict",
+        "Yemen Humanitarian Crisis"
+      ],
+      "content": "Yemen's conflict persists in its eleventh year, though intensity has decreased. The country is functionally divided (Houthi North, Govt South). Houthis continue disruptive Red Sea attacks. Humanitarian conditions are among the world's worst, with 21.6 million people reportedly requiring assistance."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Caribbean Guilder",
+        "Curaçao Economy",
+        "Monetary Policy Caribbean",
+        "Sint Maarten Economy"
+      ],
+      "content": "A new currency, the Caribbean guilder, was introduced on March 31, 2025, for Curaçao and Sint Maarten."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Geopolitics Pacific",
+        "Kiribati Water Crisis",
+        "Pacific Islands Climate Change",
+        "Sea Level Rise",
+        "Tuvalu Digital Nation"
+      ],
+      "content": "Pacific Island nations face existential climate threats. Tuvalu implements its digital preservation project. Kiribati's freshwater sources face saltwater intrusion. Geopolitical competition for influence (China vs West) is intense."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "LGBTQ+ Rights",
+        "Liechtenstein Social Policy",
+        "Same-Sex Marriage",
+        "Thailand Social Policy"
+      ],
+      "content": "Liechtenstein (Jan 1, 2025) and Thailand (Jan 23, 2025) legalized same-sex marriage, becoming the 39th and 40th countries respectively."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Climate Change Thailand",
+        "LGBTQ+ Rights Thailand",
+        "Same-Sex Marriage",
+        "Thailand Social Policy"
+      ],
+      "content": "Thailand legalized same-sex marriage on January 23, 2025. The nation, like others in Southeast Asia, faces severe agricultural disruptions from climate change."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "EU Relations",
+        "Karol Nawrocki",
+        "Polish Politics 2026",
+        "Presidential Election Poland",
+        "Rule of Law"
+      ],
+      "content": "Poland's presidential election in June 2025 resulted in a narrow victory for conservative candidate Karol Nawrocki. This has led to a complex dynamic with the existing Tusk government and intensified Poland's defiance of Brussels on judicial and media regulations, often in alliance with Hungary."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "AI Economic Paradox",
+        "Administrative Collapse",
+        "Gig Economy",
+        "Global Employment Trends 2026",
+        "Labor Polarization"
+      ],
+      "content": "The global labor market is defined by the 'AI Economic Paradox'. Despite near 70% corporate adoption, less than half have fully integrated AI, creating an absorption bottleneck. This hasn't caused mass unemployment but intense labor polarization: 1 in 10 vacancies in advanced economies demand new IT/AI skills, with wage growth 3x higher in AI-exposed industries. However, administrative collapse is accelerating, with clerical and data entry roles seeing rapid declines (>20% reductions). The gig economy is simultaneously expanding to absorb skilled white-collar professionals displaced by automation."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Antarctic Research",
+        "Antarctica Climate Change",
+        "Doomsday Glacier",
+        "Ice Loss",
+        "Thwaites Glacier"
+      ],
+      "content": "Antarctica sees accelerating ice loss, with Thwaites 'Doomsday Glacier' showing alarming retreat. Research presence expands, with China establishing its fifth research station in 2024."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Carceral State",
+        "ICE Deportations",
+        "Immigration Policy",
+        "Shuffle Flights",
+        "US Domestic Security"
+      ],
+      "content": "The US domestic situation is defined by the heavy militarization of immigration enforcement and the expansion of the carceral state. Between Jan 2025 and Jan 2026, ICE conducted 2,253 removal flights (a 46% increase). More insidious is the 132% surge in domestic 'shuffle flights' (over 9,000 flights), designed to disappear legally vetted individuals into an opaque network of remote private prisons before legal counsel can intervene. Operations like the 'Metro Surge' bypass state-level sanctuary laws. Immigration detention holds nearly 66,000 people daily, supported by ICE's rapidly expanding $15 billion annual budget."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Cryptocurrency",
+        "Global Economic Outlook 2026",
+        "Global Inequality",
+        "IMF Inflation Projections",
+        "OECD Forecast",
+        "Poverty",
+        "Trade Policy Uncertainty"
+      ],
+      "content": "Global economic growth is projected to slow to 2.3-2.9% in 2026 (OECD/Original Lore), with developed economies at ~1.1% and emerging markets at ~3.7%. Inflation persists (Global avg 4.5-4.6%), with US at 3.8%, EU at 3.3%. Global inequality increased (richest 1% own 46% wealth). Extreme poverty affects an estimated 689 million people (Jan 2026). Central Bank Digital Currencies (CBDCs) operate in 37 countries. Global grain reserves are at their lowest since 2008. Trade policy uncertainty is a key risk."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Coalition Government",
+        "Federal Election Germany",
+        "German Politics 2026",
+        "Olaf Scholz"
+      ],
+      "content": "Germany held a snap federal election on February 23, 2025, following a government crisis in 2024, leading to a period of political recalibration extending into 2026. Chancellor Scholz's government continues to navigate these changes. Nationalist parties have reportedly gained ground."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Arms Control",
+        "Iran Nuclear Program",
+        "New START Treaty",
+        "Nuclear Proliferation",
+        "Nuclear Weapons"
+      ],
+      "content": "US and Russia possess ~90% of global nuclear weapons; modernization continues. New START treaty extended to 2026. China's nuclear arsenal expansion accelerates (est. 1,000 warheads by 2030). North Korea's arsenal grows with advanced delivery systems (hypersonic missiles). Iran maintains technical capability for nuclear weapons within months if politically decided, though no current evidence of weaponization."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Bulgaria EU",
+        "European Integration",
+        "Romania EU",
+        "Schengen Area"
+      ],
+      "content": "Bulgaria and Romania joined the Schengen Area with land border controls lifted on January 1, 2025."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Critical Minerals Geopolitics",
+        "EV Adoption",
+        "Fossil Fuel Decline",
+        "IEA Electricity Report",
+        "Nuclear Power Resurgence",
+        "Renewable Energy 2026"
+      ],
+      "content": "Renewables to meet all net global electricity demand growth in 2026 (IEA). Solar and wind are cheapest sources in most markets; solar capacity tripled since 2020. Electric vehicle adoption reached 14% of new car sales. Fossil fuel generation flat, nuclear power projected to rise. Critical minerals (lithium, cobalt) are a new focus of geopolitical competition."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "ANC",
+        "BRICS",
+        "Global Governance",
+        "South Africa G20",
+        "South African Economy"
+      ],
+      "content": "Following its successful G20 presidency in 2025, South Africa implements reforms Domestically, a coalition government while addressing inequality and infrastructure failures. To combat persistent grid instability, solar adoption has reached critical tipping points across the nation, forming a primary energy alternative."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Biodiversity Crisis",
+        "Ecosystem Restoration",
+        "IUCN World Conservation Congress 2026",
+        "Kunming-Montreal Framework",
+        "Wildlife Conservation Finance"
+      ],
+      "content": "A massive funding gap persists for biodiversity (USD 824bn needed vs USD 143bn invested). The October 2025 IUCN World Conservation Congress in Abu Dhabi attempted to accelerate action on Kunming-Montreal Framework."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Al-Shabaab",
+        "Drought Horn of Africa",
+        "East Africa Security",
+        "Ethiopia Security",
+        "Kenya Economy",
+        "Somalia Conflict"
+      ],
+      "content": "In Somalia, Al-Shabaab militants seized new territories (e.g., Cadale). Ethiopia positioned 10,000 troops at its border after stabilizing internal conflicts. Kenya's economy struggles under Chinese debt, and drought ravages agricultural regions. The AU mission in Somalia concluded its withdrawal in December 2025."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "BRICS",
+        "BRICS Expansion Members",
+        "Brazil BRICS Chairship",
+        "Emerging Economies",
+        "Global South Cooperation",
+        "Indonesia BRICS"
+      ],
+      "content": "The BRICS group expanded (Jan 2025) to include Saudi Arabia, Egypt, Iran, Ethiopia, and UAE, alongside Indonesia's formal accession. Brazil held the 2025 Chairship, aiming to bolster the bloc's global influence."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "European Security",
+        "International Criminal Court",
+        "Russia-Ukraine Conflict",
+        "Territorial Control",
+        "US Aid Ukraine",
+        "Ukraine War 2026"
+      ],
+      "content": "The war in Ukraine has degraded into a brutal war of attrition. By early 2026, Russia controls approximately 20% (45,816 sq miles) of internationally recognized Ukrainian territory, with recent winter offensives yielding only marginal gains. While exact numbers remain obscured by information warfare, Western intelligence estimates catastrophic casualties: up to 1.2 million Russian and 600,000 Ukrainian. In occupied territories, Russia has established 'temporary accommodation centers' for forcible transfers and controversially uses gamified drone racing to train Ukrainian youth for the Russian defense industrial base."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Nicușor Dan",
+        "Presidential Election Romania",
+        "Romanian Politics 2026",
+        "Schengen Area"
+      ],
+      "content": "Romania elected independent candidate Nicușor Dan as president in May 2025. On Jan 1, 2025, Romania, along with Bulgaria, joined the Schengen Area with land border controls lifted."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Artemis Accords",
+        "Civil Space Cooperation",
+        "International Space Law",
+        "Lunar Governance",
+        "Space Exploration Governance"
+      ],
+      "content": "The Artemis Accords continued to attract signatories (Norway, 55th nation, May 2025), reinforcing norms for peaceful civil space exploration, including lunar governance."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Brain-Computer Interface (BCI)",
+        "CASGEVY Therapy",
+        "CRISPR Gene Editing",
+        "Gene Therapy Ethics",
+        "Personalized Medicine",
+        "Synthetic Biology"
+      ],
+      "content": "CRISPR gene editing saw clinical progress with CASGEVY global launch; 7 genetic conditions reportedly have approved CRISPR therapies. Personalized medicine is standard for 31% of cancer cases in developed countries. Synthetic biology applications expand. Brain-Computer Interfaces (e.g., Neuralink) have limited commercial availability for paralysis patients."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Blue Origin Orbital Reef",
+        "China Space Program 2026",
+        "India Gaganyaan Mission",
+        "NASA Artemis II",
+        "Space Resources",
+        "SpaceX Starship",
+        "Starlink"
+      ],
+      "content": "NASA's Artemis II crewed lunar flyby planned for 2026 (Gateway modules launch late 2026). China to debut reusable rockets, launched Tianwen-2 (May 2025). India's Gaganyaan-4 (first human spaceflight) planned late 2026. SpaceX Starship operational (Starlink >18,000 satellites). Blue Origin's New Glenn operational, Orbital Reef advances. Lunar regolith collection demonstrated (ispace 2024)."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Ahmed al-Sharaa",
+        "Assad Regime Overthrow",
+        "Sectarian Violence",
+        "Syria Conflict",
+        "US Syria Policy"
+      ],
+      "content": "Following the fall of the Assad regime in late 2024, Syria has navigated a dangerous power vacuum. However, the new Syrian President Ahmed al-Sharaa formally visited the White House in November 2025, which led to the lifting of US sanctions and signaled a new chapter in US-Syria relations."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "ECB Policy",
+        "Federal Reserve Policy",
+        "Global Stock Markets 2026",
+        "Gold Prices",
+        "Market Volatility",
+        "Tech Stocks",
+        "US Tariff Impact"
+      ],
+      "content": "Global stock markets show caution due to US tariff uncertainty and restrictive Federal Reserve policy, while the ECB eases. Gold prices retreated but have a positive medium-term outlook. Tech stocks, especially AI-related, have performed strongly."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "India-Pakistan Relations",
+        "Kashmir Conflict",
+        "Pakistan Politics",
+        "Pakistan Security"
+      ],
+      "content": "Pakistan grapples with political instability, rising militancy, and strained civil-military relations. A severe military confrontation with India over Kashmir occurred in early 2025, requiring US-mediated ceasefire. Furthermore, solar adoption has reached critical tipping points, serving as a primary alternative to unstable grid electricity."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Middle East Economy",
+        "Mohammed bin Salman",
+        "NEOM",
+        "Saudi Arabia",
+        "Vision 2030"
+      ],
+      "content": "Under Crown Prince Mohammed bin Salman, Saudi Arabia pursues Vision 2030 economic diversification with megaprojects like NEOM. Social reforms continue at a measured pace, but political expression remains tightly controlled. Relations with Iran have stabilized post-2023 reconciliation."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Cocaine Production",
+        "Colombia Peace Process",
+        "ELN",
+        "FARC Dissidents",
+        "Gustavo Petro"
+      ],
+      "content": "Colombia's 'Total Peace' strategy under President Petro faces adjustments as dissident FARC and ELN guerrillas control rural areas. Cocaine production reached record levels."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Canadian Politics 2026",
+        "Davos Declaration",
+        "Global Order",
+        "Mark Carney",
+        "Middle Power Bloc",
+        "Strategic Autonomy"
+      ],
+      "content": "In January 2026, Canadian PM Mark Carney delivered a watershed Davos Declaration, formally declaring the 'old global order is over' and largely an illusion maintained by hegemons. Canada is now championing a 'Middle Power Bloc', advocating a doctrine of 'strategic autonomy' to bridge the Trans-Pacific Partnership and the EU, complete with G7-anchored 'buyers clubs' for critical minerals to bypass superpower monopolies."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Australian Heatwave 2026",
+        "Biodiversity Loss Australia",
+        "Climate Change Australia",
+        "Water Scarcity Australia"
+      ],
+      "content": "Australia's climate has warmed by an average of 1.5°C since records began. In late January 2026, the continent experienced catastrophic heatwave conditions. Towns in South Australia like Ceduna shattered existing records, while Victoria recorded a new statewide maximum temperature of 48.9°C in the north-west, compounding ongoing crises in water scarcity and biodiversity loss."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Christopher Luxon",
+        "Māori Rights",
+        "NZ Climate Policy",
+        "New Zealand Politics"
+      ],
+      "content": "New Zealand under PM Christopher Luxon maintains independent foreign policy with increased defense spending. Climate adaptation measures accelerate. Indigenous Māori rights continue to expand."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Automation",
+        "Autonomous Vehicles",
+        "Drone Delivery",
+        "Humanoid Robots",
+        "Robotics 2026"
+      ],
+      "content": "Humanoid robots see limited commercial deployment (warehousing, elderly care, hospitality). Autonomous vehicles operate commercial services in 27 major cities globally, with varying regional regulations. Drone delivery services are routine in developed urban areas, accounting for ~14% of last-mile deliveries."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Darfur Famine",
+        "Drone Gold Exchange",
+        "RSF Parallel Government",
+        "Sudan Humanitarian Crisis",
+        "Sudan War"
+      ],
+      "content": "The war in Sudan has created the world's worst humanitarian crisis, with 24.6 million people facing acute hunger and 2 million at risk of famine. The Rapid Support Forces (RSF) have established a parallel government based in Darfur. The conflict is heavily fueled by external actors exchanging advanced drone technology for Sudanese gold, completely destabilizing the region to an unmonitored degree."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "1.5C Threshold",
+        "Climate Change Impacts",
+        "Extreme Weather Events",
+        "Global Warming 2026",
+        "Record Temperatures"
+      ],
+      "content": "The WMO confirmed an 11-year streak of record global warming, with 2025 ranking as one of the three warmest years on record. The physical parameters of the planet continue to degrade past established tipping points, driving severe extreme weather events, sea level rise, and widespread climate migration."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Debt Vulnerability",
+        "G20 Summit 2026",
+        "Global Governance Challenges",
+        "Multilateralism",
+        "South Africa G20"
+      ],
+      "content": "Under South Africa's G20 presidency, finance meetings in early 2025 struggled for consensus, leading into the November 2025 Leaders' Summit (Johannesburg), a first for Africa."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "Argentina Economy",
+        "Austerity Argentina",
+        "Javier Milei",
+        "Poverty Argentina",
+        "Recession Argentina"
+      ],
+      "content": "President Javier Milei's radical austerity program reduced inflation but triggered severe recession and social unrest. Poverty rates climbed to a reported 46%, and the US dollar is effectively replacing the peso."
+    },
+    {
+      "title": "",
+      "keywords": [
+        "China Quantum Network",
+        "Quantum Advantage",
+        "Quantum Computing 2026",
+        "Quantum Cryptography",
+        "Quantum Utility",
+        "Qubit Stability"
+      ],
+      "content": "Focus in quantum computing shifts to 'utility.' Leading systems operate with a reported 431 logical qubits. Practical advances in quantum cryptography demonstrated. China's national quantum network connects 23 cities. Research continues on qubit stability and scaling."
+    }
+  ]
+}
