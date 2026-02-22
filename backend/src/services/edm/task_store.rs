@@ -2,7 +2,9 @@
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
 use crate::db::{with_conn, with_conn_immediate};
 use crate::db::{DbPool, DbTimestamp};
-use crate::errors::{AppError, Result};
+#[cfg(feature = "postgres-backend")]
+use crate::errors::AppError;
+use crate::errors::Result;
 use crate::models::{NarrativeTask, NewNarrativeTask};
 use async_trait::async_trait;
 use diesel::prelude::*;

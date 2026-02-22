@@ -7,7 +7,7 @@ use async_trait::async_trait;
 // use axum_login::AuthUser;
 // use axum_login::AuthSession;
 use diesel::prelude::*;
-use diesel::result::Error as DieselError;
+
 // use secrecy::{ExposeSecret, SecretString};
 use std::fmt::{self, Debug};
 // use std::marker::PhantomData;
@@ -68,15 +68,6 @@ impl DieselSessionStore {
 
     // Helper to convert DieselError to session_store::Error
     // Note: tower-sessions expects Box<dyn std::error::Error + Send + Sync + 'static>
-    fn map_diesel_error(e: &DieselError) -> session_store::Error {
-        error!(error = ?e, "Diesel operation failed");
-        match e {
-            DieselError::NotFound => {
-                session_store::Error::Backend("Session record not found in DB".into())
-            }
-            _ => session_store::Error::Backend(e.to_string()),
-        }
-    }
 
     // Helper to convert JSON error to session_store::Error
     fn map_json_error(e: &serde_json::Error) -> session_store::Error {
@@ -105,7 +96,7 @@ impl DieselSessionStore {
                         .map(|(id, expires)| SessionMetadata { id, expires })
                         .collect::<Vec<_>>()
                 })
-                .map_err(|e| Self::map_diesel_error(&e))?;
+                .map_err(crate::errors::AppError::from)?;
             Ok(result)
         })
         .await;
@@ -143,7 +134,7 @@ impl DieselSessionStore {
                 ),
             )
             .execute(conn)
-            .map_err(|e| Self::map_diesel_error(&e))?;
+            .map_err(crate::errors::AppError::from)?;
             Ok(count)
         })
         .await;
@@ -219,7 +210,7 @@ impl SessionStore for DieselSessionStore {
                     sessions::session.eq(&record.session),
                 ))
                 .execute(conn)
-                .map_err(|e| Self::map_diesel_error(&e))?;
+                .map_err(crate::errors::AppError::from)?;
             Ok(rows_affected)
         })
         .await;
@@ -263,7 +254,7 @@ impl SessionStore for DieselSessionStore {
                 .find(&session_id_clone_for_closure) // Use the String clone here
                 .first::<SessionRecord>(conn) // Load as SessionRecord (DB representation)
                 .optional() // Handle not found gracefully within Diesel
-                .map_err(|e| Self::map_diesel_error(&e))?;
+                .map_err(crate::errors::AppError::from)?;
             Ok(result)
         })
         .await
@@ -336,7 +327,7 @@ impl SessionStore for DieselSessionStore {
         let delete_result = crate::db::with_conn(&pool, move |conn| {
             let rows_affected = diesel::delete(sessions::table.find(session_id_str)) // Use String value
                 .execute(conn)
-                .map_err(|e| Self::map_diesel_error(&e))?;
+                .map_err(crate::errors::AppError::from)?;
             Ok(rows_affected)
         })
         .await;
