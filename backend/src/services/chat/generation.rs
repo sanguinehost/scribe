@@ -2729,8 +2729,8 @@ pub async fn stream_ai_response_and_save_message(
                                     message_id: saved_message.id.to_string(),
                                     model_name: saved_message.model_name.clone(),
                                     created_at: saved_message.created_at.to_string(),
-                                    variant_count: saved_message.variant_count as i32,
-                                    current_variant_index: (saved_message.variant_count - 1) as i32,
+                                    variant_count: saved_message.variant_count,
+                                    current_variant_index: saved_message.variant_count - 1,
                                     game_time: saved_message.game_time.clone().map(|j| j.0),
                                 }));
 
@@ -2767,7 +2767,7 @@ pub async fn stream_ai_response_and_save_message(
                                     player_chronicle_id_for_task,
                                     variant_id,
                                     &recent_messages,
-                                    &vec![], // Empty RAG context for now
+                                    &[], // Empty RAG context for now
                                     &session_dek,
                                 ).await;
                             }

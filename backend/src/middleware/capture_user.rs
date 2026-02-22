@@ -25,7 +25,7 @@ pub async fn capture_user_id_middleware(
         let safe_user_id = loggable_user_id(user.id);
 
         // Record the user ID to the current tracing span for OTLP
-        Span::current().record("user_id", &safe_user_id.to_string());
+        Span::current().record("user_id", safe_user_id.to_string());
 
         safe_user_id_str = Some(safe_user_id.to_string());
     }

@@ -437,7 +437,7 @@ pub async fn credit_check_middleware(request: Request, next: Next) -> Response {
     // Check if payment feature is enabled
     #[cfg(not(feature = "payment"))]
     {
-        return next.run(request).await;
+        next.run(request).await
     }
 
     #[cfg(feature = "payment")]
