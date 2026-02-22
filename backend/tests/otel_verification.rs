@@ -29,5 +29,4 @@ async fn test_otel_redaction_flow() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // 4. Force shutdown to flush spans
-    opentelemetry::global::shutdown_tracer_provider();
 }
