@@ -21,7 +21,7 @@
 		"@eslint/compat": "^2.0.2",
 		"@eslint/js": "^9.33.0",
 		"@internationalized/date": "^3.11.0",
-		"@lucide/svelte": "^0.575.0",
+		"@lucide/svelte": "^0.576.0",
 		"@oslojs/crypto": "^1.0.1",
 		"@oslojs/encoding": "^1.1.0",
 		"@sejohnson/svelte-themes": "^0.0.6",
