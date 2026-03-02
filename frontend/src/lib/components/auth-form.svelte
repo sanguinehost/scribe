@@ -194,6 +194,20 @@
 		/>
 	</div>
 
+	{#if errorMessage}
+		<div
+			class="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+			role="alert"
+		>
+			<p class="font-semibold">{errorMessage}</p>
+			{#if errorMessage.toLowerCase().includes('pending email verification')}
+				<p class="mt-1 opacity-90">
+					Please check your inbox and spam folder for the verification link before trying to sign in.
+				</p>
+			{/if}
+		</div>
+	{/if}
+
 	{@render submitButton({ pending, success })}
 	{@render children()}
 </form>
