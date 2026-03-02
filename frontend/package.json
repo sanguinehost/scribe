@@ -51,7 +51,7 @@
 		"globals": "^17.3.0",
 		"jsdom": "^28.1.0",
 		"lodash-es": "^4.17.23",
-		"lucide-svelte": "^0.575.0",
+		"lucide-svelte": "^0.576.0",
 		"mode-watcher": "^1.1.0",
 		"ms": "^2.1.3",
 		"neverthrow": "^8.2.0",
