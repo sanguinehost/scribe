@@ -478,6 +478,7 @@ async fn generate_chat_response_sse(
                 session_id,
                 user_id: user_id_value,
                 message_type_enum: MessageRole::User,
+                pre_processing_analysis_id: None,
                 content: &current_user_content,
                 role_str: user_message_struct_to_save.role.clone(),
                 parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
@@ -1291,12 +1292,15 @@ async fn generate_chat_response_json_inner(
         // Instead, we need to find the existing user message that prompted the original response
         debug!(session_id = %session_id, variant_of = ?payload.variant_of, "Skipping user message save for variant creation - user message already exists");
 
-        // For now, we'll create a placeholder since the agent analysis expects a user message
-        // In the future, we might want to find the actual user message that prompted the variant
+        // The frontend sends the parent user message ID when creating a variant
+        let variant_parent_id = payload
+            .parent_message_id
+            .unwrap_or_else(|| crate::db::DbId::new());
+
         use crate::models::chats::MessageRole as DbMessageRole;
 
         crate::models::chats::ChatMessage::builder()
-            .id(crate::db::DbId::new_v4()) // Temporary ID
+            .id(variant_parent_id) // Use the real parent ID instead of a temporary ID
             .session_id(session_id)
             .user_id(user_id_value)
             .message_type(DbMessageRole::User)
@@ -1311,6 +1315,7 @@ async fn generate_chat_response_json_inner(
             session_id,
             user_id: user_id_value,
             message_type_enum: MessageRole::User,
+            pre_processing_analysis_id: None,
             content: &current_user_content,
             role_str: user_message_struct_to_save.role.clone(),
             parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
@@ -1387,6 +1392,8 @@ async fn generate_chat_response_json_inner(
     let should_skip_analysis = payload.analysis_mode.as_deref() == Some("skip");
     let should_refresh_analysis = payload.analysis_mode.as_deref() == Some("refresh");
 
+    info!(%session_id, "DEBUG API REQUEST: analysis_mode={:?}, payload_agent_mode={:?}", payload.analysis_mode, payload.agent_mode);
+
     let (agent_context, pre_processing_analysis_id) = if should_skip_analysis {
         info!(%session_id, "Skipping agent analysis as requested (analysis_mode=skip)");
         (None, None)
@@ -1397,15 +1404,6 @@ async fn generate_chat_response_json_inner(
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
                 #[cfg(feature = "postgres-backend")]
                 let conn = crate::db::get_conn(&state_arc.pool).await?;
                 #[cfg(feature = "sqlite-backend")]
@@ -1428,15 +1426,6 @@ async fn generate_chat_response_json_inner(
 
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
                 #[cfg(feature = "postgres-backend")]
                 let conn = crate::db::get_conn(&state_arc.pool).await?;
                 #[cfg(feature = "sqlite-backend")]
@@ -1927,18 +1916,13 @@ async fn generate_chat_response_json_inner(
                 game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                 initial_game_state,
                 parent_message_id: payload.parent_message_id,
-                pre_processing_analysis_id: None,
+                pre_processing_analysis_id,
             };
             match chat::generation::stream_ai_response_and_save_message_with_retry(stream_params)
                 .await
             {
                 Ok(service_stream) => {
                     debug!(%session_id, "Successfully obtained stream from chat_service::stream_ai_response_and_save_message");
-
-                    // Clone data needed for the stream
-                    let pre_processing_analysis_id_clone = pre_processing_analysis_id;
-                    let state_for_update = state_arc.clone();
-                    let session_id_for_update = session_id;
 
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
@@ -1974,40 +1958,6 @@ async fn generate_chat_response_json_inner(
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid);
-
-                                                // Update pre-processing analysis with assistant message ID if we have one
-                                                if let Some(analysis_id) = pre_processing_analysis_id_clone {
-                                                    debug!(session_id = %session_id_for_update, %analysis_id,
-                                                           assistant_message_id =%msg_uuid,
-                                                           "Updating pre-processing analysis with assistant message ID (streaming)");
-
-                                                    // Clone for the async task
-                                                    let state_clone = state_for_update.clone();
-                                                    let session_id_clone = session_id_for_update;
-
-                                                    // Spawn a task to update the analysis
-                                                    tokio::spawn(async move {
-                                                        let update_result = crate::db::with_conn(&state_clone.pool, move |conn| {
-                                                            AgentContextAnalysis::update_assistant_message_id(
-                                                                conn,
-                                                                analysis_id,
-                                                                msg_uuid,
-                                                            )
-                                                        })
-                                                        .await;
-
-                                                        match update_result {
-                                                            Ok(()) => {
-                                                                debug!(session_id = %session_id_clone,
-                                                                       "Successfully updated pre-processing analysis with assistant message ID");
-                                                            }
-                                                            Err(e) => {
-                                                                warn!(session_id = %session_id_clone, error = ?e,
-                                                                      "Failed to update analysis with assistant message ID");
-                                                            }
-                                                        }
-                                                    });
-                                                }
                                             }
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,
@@ -2491,6 +2441,7 @@ async fn generate_chat_response_json_inner(
                                 session_id,
                                 user_id: user_id_value,
                                 message_type_enum: MessageRole::Assistant,
+                                pre_processing_analysis_id: None,
                                 content: &response_content,
                                 role_str: Some("assistant".to_string()),
                                 parts: Some(json!([{"text": response_content.clone()}])),
@@ -4527,8 +4478,9 @@ pub async fn impersonate_handler(
             "What should the user say in response to this conversation?".to_string(),
         ),
         analysis_mode: None, // Not applicable for suggested actions
-        guidance: None,      // No guidance for impersonation
-        variant_of: None,    // Impersonation doesn't create variants
+        agent_mode: None,
+        guidance: None,   // No guidance for impersonation
+        variant_of: None, // Impersonation doesn't create variants
         parent_message_id: None,
         game_master_mode_enabled: Some(false),
         thinking_level: None,

@@ -828,12 +828,14 @@ export class ChatController {
 			return;
 		}
 
-		const historyToSend = (this.activeStreamingService.messages as StreamingMessage[])
-			.filter((m) => !(m.isAnimating ?? false))
-			.map((m) => ({
-				role: m.sender,
-				content: m.content
-			}));
+		const filteredMessages = (this.activeStreamingService.messages as StreamingMessage[]).filter(
+			(m) => !(m.isAnimating ?? false)
+		);
+
+		const historyToSend = filteredMessages.map((m) => ({
+			role: m.sender,
+			content: m.content
+		}));
 
 		console.log('DEBUG: regenerateResponse historyToSend:', JSON.stringify(historyToSend));
 		console.log('DEBUG: regenerateResponse guidance:', guidance);
@@ -843,6 +845,9 @@ export class ChatController {
 			toast.error('No user message found to regenerate response.');
 			return;
 		}
+
+		const lastUserMsgFull = [...filteredMessages].reverse().find((m) => m.sender === 'user');
+		const parentMessageId = lastUserMsgFull?.backend_id || lastUserMsgFull?.id;
 
 		try {
 			const currentModel = await this.getCurrentChatModel();
@@ -879,7 +884,8 @@ export class ChatController {
 				guidance: guidance,
 				targetMessageId: targetMessageIdForVariant,
 				variantOf: originalMessageId,
-				thinking_level: this.chat.thinking_level || undefined
+				thinking_level: this.chat.thinking_level || undefined,
+				parentMessageId
 			});
 
 			// await this.refreshChatMetadata();

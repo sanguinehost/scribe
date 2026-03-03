@@ -1,4 +1,5 @@
 // backend/tests/edm_verification.rs
+#![cfg(feature = "sqlite-backend")]
 use chrono::Utc;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;

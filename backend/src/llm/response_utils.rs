@@ -42,6 +42,27 @@ pub fn strip_markdown_fences(content: &str) -> &str {
         .trim()
 }
 
+/// Extracts the first JSON-like block from a string.
+///
+/// This is useful when an AI model includes preamble or postamble text
+/// around a JSON object. It looks for the first '{' and the last '}'.
+///
+/// # Arguments
+/// * `content` - The raw AI response content
+///
+/// # Returns
+/// Some(&str) containing the JSON block, or None if no braces found
+pub fn extract_json_block(content: &str) -> Option<&str> {
+    let first_brace = content.find('{')?;
+    let last_brace = content.rfind('}')?;
+
+    if first_brace < last_brace {
+        Some(&content[first_brace..=last_brace])
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -75,5 +96,26 @@ mod tests {
     fn test_extra_whitespace() {
         let input = "  ```json  \n  {\"name\": \"test\"}  \n  ```  ";
         assert_eq!(strip_markdown_fences(input), "{\"name\": \"test\"}");
+    }
+
+    #[test]
+    fn test_extract_json_block() {
+        let input = "Here is the JSON:\n{\"name\": \"test\"}\nEnjoy!";
+        assert_eq!(extract_json_block(input), Some("{\"name\": \"test\"}"));
+    }
+
+    #[test]
+    fn test_extract_json_block_multiline() {
+        let input = "AI: {\n  \"name\": \"test\"\n} -- end";
+        assert_eq!(
+            extract_json_block(input),
+            Some("{\n  \"name\": \"test\"\n}")
+        );
+    }
+
+    #[test]
+    fn test_extract_json_block_none() {
+        let input = "No JSON here";
+        assert_eq!(extract_json_block(input), None);
     }
 }

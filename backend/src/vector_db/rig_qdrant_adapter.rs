@@ -4,8 +4,12 @@ use crate::errors::AppError;
 use crate::llm::UnifiedEmbeddingModel;
 use ::rig_qdrant::QdrantVectorStore;
 use async_trait::async_trait;
-use qdrant_client::qdrant::QueryPoints;
+use qdrant_client::qdrant::{
+    vectors_config::Config as QdrantVectorsConfig, CreateCollection, CreateFieldIndexCollection,
+    Distance, FieldType, HnswConfigDiff, QueryPoints, VectorParams, VectorsConfig,
+};
 use rig::embeddings::EmbeddingModel;
+use tracing::{error, info, warn};
 
 use std::sync::Arc;
 
@@ -13,6 +17,9 @@ pub struct RigQdrantService {
     client: qdrant_client::Qdrant,
     model: UnifiedEmbeddingModel,
     query_params: QueryPoints,
+    embedding_dimension: u64,
+    distance_metric: Distance,
+    on_disk: Option<bool>,
 }
 
 impl RigQdrantService {
@@ -27,6 +34,7 @@ impl RigQdrantService {
 
         let client = qdrant_client::Qdrant::from_url(qdrant_url)
             .api_key(config.qdrant_api_key.clone().unwrap_or_default())
+            .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| {
                 AppError::VectorDbError(format!("Failed to build Qdrant client: {}", e))
@@ -39,10 +47,24 @@ impl RigQdrantService {
             ..Default::default()
         };
 
+        let distance_metric = match config.qdrant_distance_metric.to_lowercase().as_str() {
+            "cosine" => Distance::Cosine,
+            "euclid" => Distance::Euclid,
+            "dot" => Distance::Dot,
+            other => {
+                return Err(AppError::ConfigError(format!(
+                    "Invalid QDRANT_DISTANCE_METRIC: {other}"
+                )));
+            }
+        };
+
         Ok(Self {
             client,
             model: embedding_model,
             query_params,
+            embedding_dimension: config.embedding_dimension,
+            distance_metric,
+            on_disk: config.qdrant_on_disk,
         })
     }
 
@@ -52,6 +74,156 @@ impl RigQdrantService {
             self.model.clone(),
             self.query_params.clone(),
         ))
+    }
+
+    /// Creates a Qdrant collection if it does not already exist.
+    /// Returns `true` if the collection was newly created, `false` if it already existed.
+    #[tracing::instrument(skip(self), fields(collection_name = %collection_name))]
+    async fn create_collection_if_missing(&self, collection_name: &str) -> Result<bool, AppError> {
+        let exists = self
+            .client
+            .collection_exists(collection_name)
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %collection_name, "Failed to check if Qdrant collection exists");
+                AppError::VectorDbError(format!(
+                    "Failed to check Qdrant collection existence for '{}': {}",
+                    collection_name, e
+                ))
+            })?;
+
+        if exists {
+            info!(collection = %collection_name, "Qdrant collection already exists");
+            return Ok(false);
+        }
+
+        info!(collection = %collection_name, "Qdrant collection does not exist, creating...");
+
+        let hnsw_config = HnswConfigDiff {
+            m: Some(16),
+            payload_m: Some(16),
+            ..Default::default()
+        };
+
+        // Retry up to 3 times for transient failures
+        let mut last_err = None;
+        for attempt in 1..=3 {
+            if attempt > 1 {
+                info!(attempt, collection = %collection_name, "Retrying collection creation");
+                tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
+            }
+
+            match self
+                .client
+                .create_collection(CreateCollection {
+                    collection_name: collection_name.to_string(),
+                    vectors_config: Some(VectorsConfig {
+                        config: Some(QdrantVectorsConfig::Params(VectorParams {
+                            size: self.embedding_dimension,
+                            distance: self.distance_metric.into(),
+                            hnsw_config: Some(hnsw_config),
+                            on_disk: self.on_disk,
+                            ..Default::default()
+                        })),
+                    }),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(_) => {
+                    info!(collection = %collection_name, "Successfully created Qdrant collection");
+                    return Ok(true);
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("already exists") {
+                        warn!(collection = %collection_name, "Collection already exists (race condition), proceeding");
+                        return Ok(false);
+                    }
+                    last_err = Some(err_str);
+                }
+            }
+        }
+
+        Err(AppError::VectorDbError(format!(
+            "Failed to create Qdrant collection '{}' after 3 attempts: {}",
+            collection_name,
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        )))
+    }
+
+    /// Creates keyword and text field indexes on a collection for efficient filtering.
+    #[tracing::instrument(skip(self), fields(collection_name = %collection_name))]
+    async fn ensure_field_indexes(&self, collection_name: &str) -> Result<(), AppError> {
+        // Keyword indexes for filtering
+        for field_name in &["user_id", "lorebook_id", "session_id", "chronicle_id"] {
+            let result = self
+                .client
+                .create_field_index(CreateFieldIndexCollection {
+                    collection_name: collection_name.to_string(),
+                    wait: Some(true),
+                    field_name: (*field_name).to_string(),
+                    field_type: Some(FieldType::Keyword.into()),
+                    field_index_params: None,
+                    ordering: None,
+                })
+                .await;
+
+            match result {
+                Ok(_) => info!(field = %field_name, "Ensured keyword index"),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("already exists")
+                        || err_str.contains("exists with different parameters")
+                    {
+                        // Expected if index already exists
+                    } else {
+                        error!(error = %e, field = %field_name, "Failed to create keyword index");
+                        return Err(AppError::VectorDbError(format!(
+                            "Failed to create payload index for field '{field_name}': {e}"
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Text indexes for full-text search
+        for field_name in &[
+            "chunk_text",
+            "entry_title",
+            "keywords",
+            "event_text",
+            "text",
+        ] {
+            let result = self
+                .client
+                .create_field_index(CreateFieldIndexCollection {
+                    collection_name: collection_name.to_string(),
+                    wait: Some(true),
+                    field_name: (*field_name).to_string(),
+                    field_type: Some(FieldType::Text.into()),
+                    field_index_params: None,
+                    ordering: None,
+                })
+                .await;
+
+            match result {
+                Ok(_) => info!(field = %field_name, "Ensured text index"),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("already exists")
+                        || err_str.contains("exists with different parameters")
+                    {
+                        // Expected if index already exists
+                    } else {
+                        // Text indexes are optional for basic functionality
+                        error!(error = %e, field = %field_name, "Failed to create text index (non-fatal)");
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn add_document<T: rig::Embed + serde::Serialize + Send + Sync>(
@@ -98,10 +270,19 @@ impl RigQdrantService {
 #[async_trait]
 impl VectorServiceTrait for RigQdrantService {
     async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        let collection_name = self.query_params.collection_name.clone();
+        let created = self.create_collection_if_missing(&collection_name).await?;
+
+        // Always ensure field indexes exist on the default collection
+        // (idempotent — Qdrant ignores if they already exist)
+        if created {
+            self.ensure_field_indexes(&collection_name).await?;
+        }
         Ok(())
     }
 
-    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        self.create_collection_if_missing(collection_name).await?;
         Ok(())
     }
 
@@ -202,6 +383,17 @@ impl VectorServiceTrait for RigQdrantService {
         limit: usize,
         filter: Option<qdrant_client::qdrant::Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        self.search_values_in_collection(&self.query_params.collection_name, query, limit, filter)
+            .await
+    }
+
+    async fn search_values_in_collection(
+        &self,
+        collection_name: &str,
+        query: &str,
+        limit: usize,
+        filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
         let query_embedding = self
             .model
             .embed_texts(vec![query.to_string()])
@@ -216,7 +408,7 @@ impl VectorServiceTrait for RigQdrantService {
         let search_result = self
             .client
             .search_points(qdrant_client::qdrant::SearchPoints {
-                collection_name: self.query_params.collection_name.clone(),
+                collection_name: collection_name.to_string(),
                 vector: query_embedding
                     .vec
                     .into_iter()

@@ -2572,6 +2572,7 @@ pub struct GenerateChatRequest {
     pub model: Option<String>,
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
+    pub agent_mode: Option<String>,    // "disabled", "pre_processing", or "post_processing"
     pub guidance: Option<String>,      // Optional guidance text for regeneration steering
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning

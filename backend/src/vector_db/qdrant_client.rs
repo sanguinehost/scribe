@@ -1761,13 +1761,24 @@ impl super::VectorServiceTrait for QdrantClientService {
 
     async fn search_values(
         &self,
+        query: &str,
+        limit: usize,
+        filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        self.search_values_in_collection("default", query, limit, filter)
+            .await
+    }
+
+    async fn search_values_in_collection(
+        &self,
+        _collection_name: &str,
         _query: &str,
         _limit: usize,
         _filter: Option<qdrant_client::qdrant::Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
         // This would need embedding generation - for now return empty
         tracing::warn!(
-            "search_values called on QdrantClientService directly - use RigQdrantService instead"
+            "search_values_in_collection called on QdrantClientService directly - use RigQdrantService instead"
         );
         Ok(vec![])
     }

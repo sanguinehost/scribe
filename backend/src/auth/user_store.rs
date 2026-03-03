@@ -90,6 +90,9 @@ impl AuthnBackend for Backend {
                 match e {
                     AuthError::UserNotFound => crate::errors::AppError::UserNotFound,
                     AuthError::WrongCredentials => crate::errors::AppError::InvalidCredentials,
+                    AuthError::AccountPendingVerification => crate::errors::AppError::Forbidden(
+                        "Your account is pending email verification.".to_string(),
+                    ),
                     _ => crate::errors::AppError::DatabaseQueryError(format!(
                         "Credential verification failed: {}",
                         e
@@ -106,6 +109,11 @@ impl AuthnBackend for Backend {
                 return match e {
                     crate::errors::AppError::UserNotFound => Err(AuthError::UserNotFound),
                     crate::errors::AppError::InvalidCredentials => Err(AuthError::WrongCredentials),
+                    crate::errors::AppError::Forbidden(msg)
+                        if msg == "Your account is pending email verification." =>
+                    {
+                        Err(AuthError::AccountPendingVerification)
+                    }
                     _ => Err(AuthError::DatabaseError(e.to_string())),
                 };
             }

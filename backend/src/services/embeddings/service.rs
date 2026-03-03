@@ -436,7 +436,7 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
             .embed_content(query_text, "RETRIEVAL_QUERY", None)
             .await?;
         info!(
-            query_text,
+            query_length = query_text.len(),
             vector_len = query_embedding.len(),
             "Generated query embedding for RAG"
         );
@@ -1502,13 +1502,24 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         let search_results_raw = qdrant_service
-            .search_values(entity_name, limit as usize, Some(filter))
+            .search_values_in_collection(collection_name, entity_name, limit as usize, Some(filter))
             .await?;
 
         let mut search_results = Vec::new();
         for (score, val) in search_results_raw {
-            let meta: EntityMetadata = serde_json::from_value(val)
-                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            let meta: EntityMetadata = match serde_json::from_value(val.clone()) {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        collection = collection_name,
+                        "Failed to deserialize entity metadata from Qdrant"
+                    );
+                    return Err(AppError::SerializationError(format!(
+                        "Failed to deserialize entity metadata: {e}"
+                    )));
+                }
+            };
             search_results.push((score, meta));
         }
 
@@ -1620,13 +1631,24 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         let search_results_raw = qdrant_service
-            .search_values(query, limit as usize, Some(filter))
+            .search_values_in_collection(collection_name, query, limit as usize, Some(filter))
             .await?;
 
         let mut search_results = Vec::new();
         for (score, val) in search_results_raw {
-            let meta: OpinionMetadata = serde_json::from_value(val)
-                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            let meta: OpinionMetadata = match serde_json::from_value(val.clone()) {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        collection = collection_name,
+                        "Failed to deserialize opinion metadata from Qdrant"
+                    );
+                    return Err(AppError::SerializationError(format!(
+                        "Failed to deserialize opinion metadata: {e}"
+                    )));
+                }
+            };
             search_results.push((score, meta));
         }
 
@@ -1786,13 +1808,24 @@ impl EmbeddingPipelineServiceTrait for EmbeddingPipelineService {
         }
 
         let search_results_raw = qdrant_service
-            .search_values(query, limit as usize, Some(filter))
+            .search_values_in_collection("fact_vectors", query, limit as usize, Some(filter))
             .await?;
 
         let mut search_results = Vec::new();
         for (score, val) in search_results_raw {
-            let meta: CognitiveFactMetadata = serde_json::from_value(val)
-                .map_err(|e| AppError::SerializationError(e.to_string()))?;
+            let meta: CognitiveFactMetadata = match serde_json::from_value(val.clone()) {
+                Ok(m) => m,
+                Err(e) => {
+                    tracing::error!(
+                        error = %e,
+                        json = ?val,
+                        "Failed to deserialize cognitive fact metadata from Qdrant"
+                    );
+                    return Err(AppError::SerializationError(format!(
+                        "Failed to deserialize cognitive fact metadata: {e}"
+                    )));
+                }
+            };
             search_results.push((score, meta));
         }
 

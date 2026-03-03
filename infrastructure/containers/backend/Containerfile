@@ -42,6 +42,9 @@ COPY backend/data ./backend/data
 # Copy configuration files
 COPY backend/config ./backend/config
 
+# Patch workspace manifest to exclude desktop (not needed for cloud build)
+RUN sed -i 's/members = \[.*\]/members = ["backend", "cli"]/' Cargo.toml
+
 # Build the application with optional features
 RUN if [ -n "$FEATURES" ]; then \
     echo "Building with features: $FEATURES" && \

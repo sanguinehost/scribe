@@ -1374,6 +1374,17 @@ impl VectorServiceTrait for MockQdrantClientService {
 
     async fn search_values(
         &self,
+        query: &str,
+        limit: usize,
+        filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        self.search_values_in_collection("default", query, limit, filter)
+            .await
+    }
+
+    async fn search_values_in_collection(
+        &self,
+        _collection_name: &str,
         _query: &str,
         limit: usize,
         filter: Option<qdrant_client::qdrant::Filter>,

@@ -1048,6 +1048,86 @@ fn log_initial_token_calculation(
     );
 }
 
+/// Deduplicates RAG chat items against recent history to prevent redundant context
+fn deduplicate_older_chat_history(
+    calculation: &mut TokenCalculation,
+    current_total_tokens: &mut usize,
+) {
+    let recent_texts: Vec<String> = calculation
+        .recent_history_with_tokens
+        .iter()
+        .map(|(msg, _)| match msg {
+            RigMessage::User { content } => content
+                .iter()
+                .filter_map(|c| match c {
+                    rig::message::UserContent::Text(t) => Some(t.text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+            RigMessage::Assistant { content, .. } => content
+                .iter()
+                .filter_map(|c| match c {
+                    rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
+        })
+        .collect();
+
+    if recent_texts.is_empty() {
+        return;
+    }
+
+    let mut items_to_keep = Vec::new();
+    let mut deduplicated_count = 0;
+
+    for (item, tokens) in calculation.rag_items_with_tokens.drain(..) {
+        if let crate::services::embeddings::RetrievedMetadata::Chat(_) = &item.metadata {
+            let item_text = item.text.trim();
+
+            // Heuristic for duplication: if any recent message content is found within the RAG item
+            // or vice versa, considering common prefixes like "User: " or "Assistant: "
+            let is_duplicate = recent_texts.iter().any(|recent| {
+                let recent_trimmed = recent.trim();
+                if recent_trimmed.is_empty() {
+                    return false;
+                }
+
+                // Case 1: RAG item contains the recent message (e.g. "User: <content>" contains "<content>")
+                if item_text.contains(recent_trimmed) {
+                    return true;
+                }
+
+                // Case 2: Recent message contains the RAG item (less likely but possible with different formatting)
+                if recent_trimmed.contains(item_text) {
+                    return true;
+                }
+
+                false
+            });
+
+            if is_duplicate {
+                *current_total_tokens -= tokens;
+                deduplicated_count += 1;
+                continue;
+            }
+        }
+        items_to_keep.push((item, tokens));
+    }
+
+    if deduplicated_count > 0 {
+        debug!(
+            deduplicated_count,
+            current_total_tokens = *current_total_tokens,
+            "Removed redundant chat history from RAG context."
+        );
+    }
+
+    calculation.rag_items_with_tokens = items_to_keep;
+}
+
 /// Truncates RAG items to reduce token count
 #[cfg_attr(test, allow(dead_code))]
 pub(crate) fn truncate_rag_context(
@@ -1197,6 +1277,9 @@ pub(crate) fn apply_token_limits(
     );
 
     log_initial_token_calculation(&calculation, current_total_tokens, max_allowed_tokens);
+
+    // Step 0: Deduplicate older chat history against recent history
+    deduplicate_older_chat_history(&mut calculation, &mut current_total_tokens);
 
     // Step 1: First try truncating RAG context (less critical for conversation continuity)
     truncate_rag_context(

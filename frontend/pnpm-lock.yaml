@@ -11,7 +11,6 @@ overrides:
   js-yaml: ^4.1.1
   mdast-util-to-hast: ^13.2.1
   tar: ^7.5.7
-  undici: ^6.23.0
 
 importers:
   .:
@@ -4214,6 +4213,13 @@ packages:
       }
     engines: { node: '>=18.17' }
 
+  undici@7.22.0:
+    resolution:
+      {
+        integrity: sha512-RqslV2Us5BrllB+JeiZnK4peryVTndy9Dnqq62S3yYRRTj0tFQCwEniUy2167skdGOy3vqRzEvl1Dm4sV2ReDg==
+      }
+    engines: { node: '>=20.18.1' }
+
   unified@11.0.5:
     resolution:
       {
@@ -5952,7 +5958,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.0
-      undici: 6.23.0
+      undici: 7.22.0
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -6868,6 +6874,8 @@ snapshots:
   undici-types@7.18.2: {}
 
   undici@6.23.0: {}
+
+  undici@7.22.0: {}
 
   unified@11.0.5:
     dependencies:

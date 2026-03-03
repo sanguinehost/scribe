@@ -490,6 +490,7 @@ class StreamingService implements IStreamingService {
 		targetMessageId?: string; // If provided, update this message instead of creating new
 		variantOf?: string; // If provided, create this response as a variant of the specified message ID
 		thinking_level?: string; // Centralized thinking level
+		parentMessageId?: string; // ID of the parent user message from history
 	}): Promise<void> {
 		// Connect to streaming service
 		console.log('🌐 [WebStreamingService] Connecting to chat', params.chatId);
@@ -657,6 +658,7 @@ class StreamingService implements IStreamingService {
 			variantOf?: string;
 			isRegeneration?: boolean;
 			thinking_level?: string;
+			parentMessageId?: string;
 		},
 		assistantMessageId: string
 	): Promise<void> {
@@ -700,7 +702,8 @@ class StreamingService implements IStreamingService {
 			analysis_mode: params.analysisMode, // Pass analysis mode for regeneration
 			guidance: params.guidance, // Pass optional guidance for regeneration steering
 			variant_of: params.variantOf, // Pass variant_of for creating variants
-			thinking_level: params.thinking_level // Pass centralized thinking level
+			thinking_level: params.thinking_level, // Pass centralized thinking level
+			parent_message_id: params.parentMessageId // Pass parent message ID for associating variants
 		};
 
 		console.log('🌐 [WebSSE] Starting connection', { url: apiUrl, chatId: params.chatId });

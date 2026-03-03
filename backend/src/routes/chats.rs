@@ -1255,6 +1255,7 @@ pub async fn create_message_handler(
             session_id: chat_id,
             user_id,
             message_type_enum: message_role_enum,
+            pre_processing_analysis_id: None,
             content: &payload.content,
             role_str: Some(payload.role.clone()),
             parts: payload.parts.clone().map(|j| j.0),

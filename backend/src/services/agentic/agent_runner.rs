@@ -292,7 +292,10 @@ impl NarrativeAgentRunner {
             {
                 Ok(ctx) => ctx,
                 Err(e) => {
-                    warn!("Failed to recall cognitive context for agent runner: {}", e);
+                    warn!(
+                        "Failed to recall cognitive context for agent runner: {}",
+                        crate::errors::sanitize_error_message(&e.to_string())
+                    );
                     "No cognitive context found.".to_string()
                 }
             }
@@ -308,11 +311,15 @@ impl NarrativeAgentRunner {
         };
 
         // Get current game date for context
-        let game_date = game_state
-            .as_ref()
-            .and_then(|gs| gs.game_time.as_ref())
-            .map(|gt| gt.date.clone())
-            .unwrap_or_else(|| "Unknown Date".to_string());
+        let game_date_instruction = if let Some(game_state) = &game_state {
+            if let Some(game_time) = &game_state.game_time {
+                format!("**IMPORTANT: Use the current game date: \"{}\" if applicable, or a relative time anchored to it.**", game_time.date)
+            } else {
+                "**IMPORTANT: Infer the time. If using relative time, you MUST anchor it to a specific narrative event (e.g., 'Morning, the day after the summit', '3 hours after the storm began'). Never use unanchored times like '3 hours later'.**".to_string()
+            }
+        } else {
+            "**IMPORTANT: Infer the time. If using relative time, you MUST anchor it to a specific narrative event (e.g., 'Morning, the day after the summit', '3 hours after the storm began'). Never use unanchored times like '3 hours later'.**".to_string()
+        };
 
         // Create the prompt for cognitive extraction
         let prompt = format!(
@@ -347,8 +354,8 @@ Your task is to generate a `CognitivePayload` JSON object with the following fie
 5. `facts`: object[]. Extract 5-dimensional facts (Hindsight Memory Units). **This is the primary field for all cognitive data.**
    - `who`: The character(s) involved.
    - `what`: The specific action, event, opinion, or observation.
-   - `where`: The location.
-   - `when`: The time or narrative sequence. **IMPORTANT: Use the current game date: "{}" if applicable, or a relative time like "3 hours later".**
+   - `where`: The location. **Infer the current setting from the conversation (e.g., 'Mountain slopes', 'City streets') if not explicitly stated.**
+   - `when`: The time or narrative sequence. {}
    - `why`: The motivation, cause, or rationale.
    - `fact_type`: "World", "Experience", "Opinion", or "Observation".
    - `confidence`: 0.0-1.0.
@@ -375,7 +382,7 @@ RULES:
             previous_chronicles,
             cognitive_context,
             conversation,
-            game_date,
+            game_date_instruction,
             core_memory
         );
 

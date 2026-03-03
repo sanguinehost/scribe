@@ -831,6 +831,7 @@ async fn perform_real_client_stream_test_and_verify(
         parent_message_id: None,
         game_master_mode_enabled: None,
         thinking_level: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()

@@ -2442,7 +2442,7 @@ pub async fn stream_ai_response_and_save_message(
         game_master_mode_enabled,
         initial_game_state,
         parent_message_id,
-        pre_processing_analysis_id: _,
+        pre_processing_analysis_id,
     } = params;
 
     // Prune future messages if this is a rewind operation (parent_message_id provided)
@@ -2605,6 +2605,7 @@ pub async fn stream_ai_response_and_save_message(
         let user_dek_for_task = user_dek.clone();
         let service_model_name_for_task = service_model_name.clone();
         let variant_of_for_task = variant_of;
+        let pre_processing_analysis_id_for_task = pre_processing_analysis_id;
         let charge_credits_for_task = charge_credits;
         let game_master_mode_enabled_for_task = game_master_mode_enabled;
         let initial_game_state_for_task = initial_game_state.clone();
@@ -2690,6 +2691,7 @@ pub async fn stream_ai_response_and_save_message(
                                 status: crate::models::chats::MessageStatus::Partial,
                                 error_message: Some(format!("Stream error: {client_error_message}")),
                                 variant_of: variant_of_for_task,
+                                pre_processing_analysis_id: pre_processing_analysis_id_for_task,
                                 charge_credits: charge_credits_for_task,
                                 credits_cost_override: None,
                                 game_time: game_time_to_save_for_task.clone(),
@@ -2719,6 +2721,7 @@ pub async fn stream_ai_response_and_save_message(
                             reasoning_content: if !accumulated_reasoning.is_empty() { Some(&accumulated_reasoning) } else { None },
                             error_message: None,
                             variant_of: variant_of_for_task,
+                            pre_processing_analysis_id: pre_processing_analysis_id_for_task,
                             charge_credits: charge_credits_for_task,
                             credits_cost_override: None,
                             game_time: game_time_to_save_for_task.clone(),

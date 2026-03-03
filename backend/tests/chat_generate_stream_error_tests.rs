@@ -507,6 +507,7 @@ async fn generate_chat_response_streaming_initiation_error() {
         parent_message_id: None,
         game_master_mode_enabled: None,
         thinking_level: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
@@ -758,6 +759,7 @@ async fn generate_chat_response_streaming_error_before_content() {
         parent_message_id: None,
         game_master_mode_enabled: None,
         thinking_level: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
@@ -1041,6 +1043,7 @@ async fn generate_chat_response_streaming_llm_json_error() {
         parent_message_id: None,
         game_master_mode_enabled: None,
         thinking_level: None,
+        agent_mode: None,
     };
 
     let request = Request::builder()
