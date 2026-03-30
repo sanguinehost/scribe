@@ -216,9 +216,10 @@ class StreamingService implements IStreamingService {
 	private shouldCloseConnection(): boolean {
 		const state = this.connectionCloseState;
 
-		// We can close if we've received DONE and token_usage (message_saved is optional)
-		// OR if we've received DONE and it's been a while (fallback timeout)
-		return state.doneReceived && (state.tokenUsageReceived || state.shouldClose);
+		// We can close if we've received DONE and it's been a while (fallback timeout)
+		// We DO NOT close immediately on tokenUsage or done because the server may send game_state asynchronously.
+		// The server will drop the connection when fully finished, or the fallback timeout will catch it.
+		return state.shouldClose;
 	}
 
 	/**
@@ -992,12 +993,12 @@ class StreamingService implements IStreamingService {
 						logger.debug('streaming-service', 'DONE signal received');
 
 						// Set a fallback timeout to close connection if other events don't arrive
-						// Increased to 5 seconds to allow for database operations and latency
+						// Increased to 15 seconds to allow for narrative intelligence database ops and lengthy GameMaster JSON LLM delays
 						this.connectionCloseState.closeTimeoutId = setTimeout(() => {
 							logger.warn('streaming-service', 'Connection close timeout reached, forcing close');
 							this.connectionCloseState.shouldClose = true;
 							this.tryCloseConnection();
-						}, 5000);
+						}, 15000);
 
 						// Try to close if we have everything
 						this.tryCloseConnection();

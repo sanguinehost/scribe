@@ -546,6 +546,7 @@ async fn proxy_to_embedded_backend(
     // Create HTTP client that accepts self-signed certs for localhost only
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true) // Safe: only for localhost communication
+        .http1_only() // Enforce HTTP/1.1 for all proxy calls to match chat_streaming
         .timeout(std::time::Duration::from_secs(30)) // Allow time for file uploads (base64 images can be large)
         .cookie_store(false) // Disable reqwest cookie handling
         .build()

@@ -149,6 +149,7 @@ pub async fn stream_chat_response(
     // SAFETY: This is safe because we only connect to localhost:38080 (our own embedded backend)
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true) // Accept self-signed cert for https://localhost:38080
+        .http1_only() // Enforce HTTP/1.1 to avoid framing issues with HTTP/2 SSE
         .timeout(std::time::Duration::from_secs(300)) // 5 minutes for long responses
         .build()
         .map_err(|e| {
@@ -433,9 +434,11 @@ pub async fn stream_chat_response(
                     event_count
                 );
 
-                // Check for done event to exit loop
+                // Check for done event, but DO NOT exit loop immediately.
+                // The backend may send "game_state" asynchronously after "done" if Game Master mode is enabled.
+                // The loop will naturally exit when the HTTP stream ends (rx.next() returns None).
                 if sse_event.event == "done" {
-                    break;
+                    log::info!("🔥 [stream_chat_response] 'done' event processed. Keeping connection open for potential async GameState updates...");
                 }
             }
             Err(e) => {

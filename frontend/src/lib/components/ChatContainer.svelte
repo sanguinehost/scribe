@@ -211,7 +211,7 @@
 						JSON.stringify(parsedGameState).substring(0, 200) + '...'
 					);
 				}
-			}, 1500); // 1.5s delay for game state processing
+			}, 5000); // 5.0s delay for game state processing (fallback if stream event drops)
 		}
 		previousStreamStatus = currentStatus;
 	});

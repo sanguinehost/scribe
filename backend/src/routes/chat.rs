@@ -60,7 +60,7 @@ use axum::{
 };
 use bigdecimal::ToPrimitive;
 use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use rig::message::Message as RigMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -539,7 +539,9 @@ async fn generate_chat_response_sse(
 
         yield Ok(Event::default().event("status").data("Retrieving secure cognitive memories..."));
 
-        // Cognitive Recall
+        // Cognitive Recall — wrapped in catch_unwind to prevent LanceDB/Arrow panics
+        // from killing the SSE async task. .ok() only catches Result::Err, not panics.
+        tracing::info!("[SSE-DIAG] Starting cognitive recall...");
         let cognitive_context = if let Some(chronicle_id) = player_chronicle_id {
             let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
             let mut recall_query_parts = Vec::new();
@@ -550,28 +552,66 @@ async fn generate_chat_response_sse(
             recall_query_parts.push(current_user_content.clone());
             let recall_query = recall_query_parts.join("\n");
 
-            state_arc.recall_pipeline.recall_context(
-                user_id_value, chronicle_id, &recall_query, &session_dek_ref, state_arc.clone(), None,
-                initial_game_state.as_ref().and_then(|gs| gs["game_time"]["day"].as_i64()), None
-            ).await.ok()
-        } else {
-            None
-        };
-
-        // Core Memory
-        let core_memory = if let Some(chronicle_id) = player_chronicle_id {
-            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone());
-            match chronicle_service.get_core_memory(user_id_value, chronicle_id).await {
-                Ok(Some(mem)) => {
-                    let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
-                    mem.decrypt(&session_dek_ref).ok()
+            tracing::info!("[SSE-DIAG] Calling recall_pipeline.recall_context (chronicle_id={})", chronicle_id);
+            let recall_result = std::panic::AssertUnwindSafe(
+                state_arc.recall_pipeline.recall_context(
+                    user_id_value, chronicle_id, &recall_query, &session_dek_ref, state_arc.clone(), None,
+                    initial_game_state.as_ref().and_then(|gs| gs["game_time"]["day"].as_i64()), None
+                )
+            );
+            match recall_result.catch_unwind().await {
+                Ok(Ok(ctx)) => {
+                    tracing::info!("[SSE-DIAG] Cognitive recall succeeded ({} chars)", ctx.len());
+                    Some(ctx)
                 }
-                _ => None
+                Ok(Err(e)) => {
+                    tracing::warn!("[SSE-DIAG] Cognitive recall returned error (non-fatal): {}", e);
+                    None
+                }
+                Err(_panic_info) => {
+                    tracing::error!("[SSE-DIAG] PANIC in cognitive recall (caught and swallowed!)");
+                    None
+                }
             }
         } else {
+            tracing::info!("[SSE-DIAG] No chronicle_id, skipping cognitive recall");
             None
         };
 
+        // Core Memory — also panic-safe
+        tracing::info!("[SSE-DIAG] Starting core memory retrieval...");
+        let core_memory = if let Some(chronicle_id) = player_chronicle_id {
+            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone());
+            tracing::info!("[SSE-DIAG] Calling get_core_memory (chronicle_id={})", chronicle_id);
+            let core_mem_result = std::panic::AssertUnwindSafe(
+                chronicle_service.get_core_memory(user_id_value, chronicle_id)
+            );
+            match core_mem_result.catch_unwind().await {
+                Ok(Ok(Some(mem))) => {
+                    let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+                    let decrypted = mem.decrypt(&session_dek_ref).ok();
+                    tracing::info!("[SSE-DIAG] Core memory retrieved: has_data={}", decrypted.is_some());
+                    decrypted
+                }
+                Ok(Ok(None)) => {
+                    tracing::info!("[SSE-DIAG] No core memory found");
+                    None
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("[SSE-DIAG] Core memory error (non-fatal): {}", e);
+                    None
+                }
+                Err(_panic_info) => {
+                    tracing::error!("[SSE-DIAG] PANIC in core memory retrieval (caught and swallowed!)");
+                    None
+                }
+            }
+        } else {
+            tracing::info!("[SSE-DIAG] No chronicle_id, skipping core memory");
+            None
+        };
+
+        tracing::info!("[SSE-DIAG] About to build final prompt...");
         yield Ok(Event::default().event("status").data("Finalizing prompt and starting generation..."));
 
         // Build Final LLM Prompt

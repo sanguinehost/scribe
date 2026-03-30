@@ -557,22 +557,19 @@ class DesktopStreamingService implements IStreamingService {
 		// Update buffer content
 		buffer.content = reconstructedContent;
 
-		// Update UI
-		this.messages = this.messages.map((msg) => {
-			if (msg.id === assistantMessageId || msg.backend_id === assistantMessageId) {
-				return {
-					...msg,
-					content: buffer.content,
-					displayedContent: buffer.content,
-					contentVersion: (msg.contentVersion || 0) + 1,
-					isAnimating: true, // Keep true while streaming
-					shouldAnimate: true, // Keep true while streaming
-					isRegenerating: false,
-					isThinking: false
-				};
-			}
-			return msg;
-		});
+		// Find and mutate in place
+		const message = this.messages.find(
+			(msg) => msg.id === assistantMessageId || msg.backend_id === assistantMessageId
+		);
+		if (message) {
+			message.content = buffer.content;
+			message.displayedContent = buffer.content;
+			message.contentVersion = (message.contentVersion || 0) + 1;
+			message.isAnimating = true; // Keep true while streaming
+			message.shouldAnimate = true; // Keep true while streaming
+			message.isRegenerating = false;
+			message.isThinking = false;
+		}
 	}
 
 	/**
@@ -588,24 +585,21 @@ class DesktopStreamingService implements IStreamingService {
 		buffer.reasoningContent = (buffer.reasoningContent || '') + content;
 		buffer.isThinking = true;
 
-		// Update message using atomic .map() pattern
-		this.messages = this.messages.map((msg) => {
-			if (msg.id === messageId || msg.backend_id === messageId) {
-				console.log('✨ [DesktopStreamingService] UPDATING message with reasoning', {
-					id: msg.id,
-					reasoningLen: buffer.reasoningContent.length,
-					isThinking: true
-				});
-				return {
-					...msg,
-					reasoningContent: buffer.reasoningContent,
-					isThinking: true,
-					// Increment content version for reactivity in Svelte 5
-					contentVersion: (msg.contentVersion || 0) + 1
-				};
-			}
-			return msg;
-		});
+		// Find and mutate in place
+		const message = this.messages.find(
+			(msg) => msg.id === messageId || msg.backend_id === messageId
+		);
+		if (message) {
+			console.log('✨ [DesktopStreamingService] UPDATING message with reasoning', {
+				id: message.id,
+				reasoningLen: buffer.reasoningContent.length,
+				isThinking: true
+			});
+			message.reasoningContent = buffer.reasoningContent;
+			message.isThinking = true;
+			// Increment content version for reactivity in Svelte 5
+			message.contentVersion = (message.contentVersion || 0) + 1;
+		}
 
 		logger.debug('desktop-streaming', 'Appended reasoning content', {
 			messageId,
@@ -756,7 +750,9 @@ class DesktopStreamingService implements IStreamingService {
 					backend_id: messageId,
 					variant_count: variantCount,
 					current_variant_index: currentVariantIndex,
-					status: 'completed'
+					status: 'completed',
+					isAnimating: false,
+					isRegenerating: false
 				};
 			}
 			return msg;
@@ -837,10 +833,22 @@ class DesktopStreamingService implements IStreamingService {
 	private handleDoneEvent(assistantMessageId?: string): void {
 		logger.debug('desktop-streaming', 'Done event received');
 
-		if (assistantMessageId) {
-			this.flushBuffer(assistantMessageId);
-		} else if (this.currentAssistantMessageId) {
-			this.flushBuffer(this.currentAssistantMessageId);
+		const targetId = assistantMessageId || this.currentAssistantMessageId;
+		if (targetId) {
+			this.flushBuffer(targetId);
+
+			// CRITICAL: Clear animation state on the message so the UI
+			// transitions from the 'stop' button back to default state.
+			this.messages = this.messages.map((msg) => {
+				if (msg.id === targetId || msg.backend_id === targetId) {
+					return {
+						...msg,
+						isAnimating: false,
+						isRegenerating: false
+					};
+				}
+				return msg;
+			});
 		}
 
 		this.isTyping = false;

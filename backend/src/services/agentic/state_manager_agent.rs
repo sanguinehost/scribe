@@ -1109,8 +1109,14 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             }
 
             // Parse "currency_name: amount" format
-            if let Some((name, amount_str)) = trimmed.split_once(':') {
-                let name = name.trim().to_string();
+            if let Some((mut name, amount_str)) = trimmed.split_once(':') {
+                name = name.trim();
+                // Strip common markdown bullets if present (e.g., "- Gold: 1500" -> "Gold", not "- Gold")
+                let name = name
+                    .trim_start_matches('-')
+                    .trim_start_matches('*')
+                    .trim()
+                    .to_string();
                 let amount_str = amount_str.trim();
 
                 // Extract numeric value, handling commas and other non-numeric chars

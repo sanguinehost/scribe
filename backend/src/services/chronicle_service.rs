@@ -167,8 +167,22 @@ impl ChronicleService {
             .into_iter()
             .map(|(id_str, p_id_str, idx)| {
                 (
-                    crate::db::DbId::parse_str(&id_str).unwrap(),
-                    crate::db::DbId::parse_str(&p_id_str).unwrap(),
+                    crate::db::DbId::parse_str(&id_str).unwrap_or_else(|e| {
+                        tracing::error!(
+                            "FATAL: Failed to parse DbId from id_str '{}': {}",
+                            id_str,
+                            e
+                        );
+                        crate::db::DbId::default() // Or handle it safely
+                    }),
+                    crate::db::DbId::parse_str(&p_id_str).unwrap_or_else(|e| {
+                        tracing::error!(
+                            "FATAL: Failed to parse DbId from p_id_str '{}': {}",
+                            p_id_str,
+                            e
+                        );
+                        crate::db::DbId::default()
+                    }),
                     idx,
                 )
             })
