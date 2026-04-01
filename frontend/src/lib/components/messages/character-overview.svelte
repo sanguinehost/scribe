@@ -76,6 +76,7 @@
 	// Appearance Editor state
 	let appearanceEditorOpen = $state(false);
 	let editBannerUrl = $state('');
+	let editBannerFile = $state<File | null>(null);
 	let editPrimaryColor = $state('');
 	let editCardStyle = $state<'default' | 'dossier' | 'minimal' | 'terminal'>('dossier');
 
@@ -503,6 +504,7 @@
 
 	function handleOpenAppearance() {
 		editBannerUrl = visualMetadata?.banner_url || '';
+		editBannerFile = null;
 		editPrimaryColor = visualMetadata?.primary_color || '';
 		editCardStyle = visualMetadata?.card_style || 'dossier';
 		appearanceEditorOpen = true;
@@ -510,29 +512,44 @@
 
 	async function handleSaveAppearance() {
 		if (!character) return;
-		
+
 		isSaving = true;
 		try {
+			// First, handle banner upload if a file was selected
+			let newBannerUrl = editBannerUrl;
+			if (editBannerFile) {
+				const uploadResult = await _apiClient.uploadCharacterBanner(character.id, editBannerFile);
+				if (uploadResult.isOk()) {
+					// The backend usually sets the banner URL to /api/avatars/character/{id}/banner or similar.
+					// We'll construct the canonical URL for the character banner.
+					newBannerUrl = `/api/characters/${character.id}/banner?t=${Date.now()}`;
+				} else {
+					toast.error('Failed to upload banner: ' + uploadResult.error.message);
+					isSaving = false;
+					return;
+				}
+			}
+
 			// Construct new extensions object safely
 			const currentExtensions = character.extensions || {};
 			const updatedVisualMetadata = {
 				...(currentExtensions.visual_metadata || {}),
-				banner_url: editBannerUrl || undefined,
+				banner_url: newBannerUrl || undefined,
 				primary_color: editPrimaryColor || undefined,
 				card_style: editCardStyle !== 'dossier' ? editCardStyle : undefined // dossier is default
 			};
-			
+
 			const updatedExtensions = {
 				...currentExtensions,
-				visual_metadata: Object.keys(updatedVisualMetadata).filter(k => (updatedVisualMetadata as any)[k] !== undefined).length > 0 
-					? updatedVisualMetadata 
+				visual_metadata: Object.keys(updatedVisualMetadata).filter(k => (updatedVisualMetadata as any)[k] !== undefined).length > 0
+					? updatedVisualMetadata
 					: undefined
 			};
-			
+
 			const result = await _apiClient.updateCharacter(character.id, {
 				extensions: updatedExtensions
 			});
-			
+
 			if (result.isOk()) {
 				character.extensions = updatedExtensions;
 				toast.success('Appearance updated successfully');
@@ -597,7 +614,7 @@
 			</Card>
 		{:else if character}
 			<!-- Dossier Character Header -->
-			<Card 
+			<Card
 				class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4 transition-all duration-300 relative border-0 sm:border"
 				style={cssVars}
 			>
@@ -614,7 +631,7 @@
 						<div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5"></div>
 						<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
 					{/if}
-					
+
 					<!-- Top Right Appearance Buttons -->
 					<div class="absolute top-4 right-4 z-10 flex gap-2">
 						<ButtonComponent variant="outline" size="sm" class="bg-background/40 backdrop-blur-md border-border/20 text-foreground hover:bg-background/80" onclick={handleOpenAppearance}>
@@ -682,7 +699,7 @@
 											</div>
 										</div>
 									{/if}
-									
+
 									{#if character.creator || character.character_version}
 										<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium mt-1">
 											{#if character.creator}<span>By <span class="text-foreground/80">{character.creator}</span></span>{/if}
@@ -1540,15 +1557,43 @@
 
 		<div class="grid gap-4 py-4">
 			<div class="grid gap-2">
+				<label for="banner_file" class="text-sm font-medium leading-none">Banner Image</label>
+				<Input
+					id="banner_file"
+					type="file"
+					accept="image/png, image/jpeg, image/webp"
+					onchange={(e) => {
+						const target = e.target as HTMLInputElement;
+						if (target.files && target.files.length > 0) {
+							editBannerFile = target.files[0];
+						} else {
+							editBannerFile = null;
+						}
+					}}
+				/>
+				<p class="text-[0.8rem] text-muted-foreground">Upload a hero banner image (max 5MB).</p>
+			</div>
+
+			<div class="grid gap-2 relative">
+				<div class="absolute inset-0 flex items-center" aria-hidden="true">
+					<div class="w-full border-t border-border"></div>
+				</div>
+				<div class="relative flex justify-center">
+					<span class="bg-background px-2 text-xs text-muted-foreground uppercase">OR</span>
+				</div>
+			</div>
+
+			<div class="grid gap-2">
 				<label for="banner_url" class="text-sm font-medium leading-none">Banner Image URL</label>
 				<Input
 					id="banner_url"
 					bind:value={editBannerUrl}
+					disabled={editBannerFile !== null}
 					placeholder="https://example.com/image.png"
 				/>
-				<p class="text-[0.8rem] text-muted-foreground">URL to a wide image to use as the hero banner.</p>
+				<p class="text-[0.8rem] text-muted-foreground">External URL for the hero banner.</p>
 			</div>
-			
+
 			<div class="grid gap-2">
 				<label for="primary_color" class="text-sm font-medium leading-none">Primary Color</label>
 				<div class="flex gap-2 items-center">

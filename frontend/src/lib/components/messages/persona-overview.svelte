@@ -35,6 +35,14 @@
 	import PencilEditIcon from '../icons/pencil-edit.svelte';
 	import CheckCircleFill from '../icons/check-circle-fill.svelte';
 	import MarkdownRenderer from '../markdown/renderer.svelte';
+	import {
+		Dialog,
+		DialogContent,
+		DialogHeader,
+		DialogTitle,
+		DialogDescription,
+		DialogFooter
+	} from '$lib/components/ui/dialog';
 
 	let {
 		personaId,
@@ -63,6 +71,13 @@
 	let editedSystemPrompt = $state('');
 	let editedMesExample = $state('');
 	let editedPostHistoryInstructions = $state('');
+
+	// Appearance & Banner state
+	let bannerTimestamp = $state(Date.now());
+	let bannerUrl = $state('');
+	let bannerLoadError = $state(false);
+	let appearanceEditorOpen = $state(false);
+	let editBannerFile = $state<File | null>(null);
 
 	// Image lightbox state
 	let avatarLightboxOpen = $state(false);
@@ -137,6 +152,11 @@
 		} finally {
 			isLoading = false;
 		}
+
+		// Reset banner variables on load
+		bannerLoadError = false;
+		bannerUrl = '';
+		bannerTimestamp = Date.now();
 	}
 
 	function handleEdit() {
@@ -317,6 +337,35 @@
 			previousPersonaId = personaId;
 		}
 	});
+
+	async function handleSaveAppearance() {
+		if (!persona) return;
+		
+		if (editBannerFile) {
+			isSaving = true;
+			try {
+				const uploadResult = await _apiClient.uploadPersonaBanner(persona.id, editBannerFile);
+				if (uploadResult.isOk()) {
+					toast.success('Persona banner updated successfully');
+					// Trigger banner reload
+					bannerTimestamp = Date.now();
+					bannerUrl = `/api/personas/${persona.id}/banner?t=${bannerTimestamp}`;
+					bannerLoadError = false;
+					appearanceEditorOpen = false;
+					editBannerFile = null;
+				} else {
+					toast.error('Failed to upload banner: ' + uploadResult.error.message);
+				}
+			} catch (_error) {
+				toast.error('An unexpected error occurred while saving the banner');
+			} finally {
+				isSaving = false;
+			}
+		} else {
+			appearanceEditorOpen = false;
+		}
+	}
+
 </script>
 
 <div
@@ -345,108 +394,130 @@
 						</CardHeader>
 					</Card>
 				{:else if persona}
-					<Card class="border border-border shadow-sm">
-						<CardHeader class="px-6 py-6">
-							<div class="flex items-start space-x-6">
-								<Avatar
-									class="h-24 w-24 border-2 border-muted transition-transform hover:scale-105 {persona.avatar
-										? 'cursor-pointer'
-										: ''}"
-									onclick={() => persona?.avatar && (avatarLightboxOpen = true)}
-								>
-									{#if persona.avatar}
-										<AvatarImage src={`${persona.avatar}?width=96&height=96`} alt={persona.name} />
-									{/if}
-									<AvatarFallback class="text-3xl font-semibold">
-										{getInitials(persona.name)}
-									</AvatarFallback>
-								</Avatar>
-								<div class="flex-1 space-y-4">
-									<div class="relative">
-										{#if !isEditMode}
-											<div>
-												<h2 class="text-3xl font-bold">{persona.name}</h2>
-												{#if persona.description}
-													<div
-														class="prose prose-sm dark:prose-invert mt-2 max-w-none text-muted-foreground [&_*]:!text-muted-foreground"
-													>
-														{#if containsHtml(persona.description)}
-															<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-															{@html sanitizeHtml(persona.description)}
-														{:else}
-															<MarkdownRenderer md={persona.description} />
-														{/if}
-													</div>
-												{/if}
-											</div>
-										{:else}
-											<div class="space-y-3">
-												<div>
-													<Label for="edit-name" class="text-sm font-medium">Name</Label>
-													<Input
-														id="edit-name"
-														bind:value={editedName}
-														class="mt-1"
-														placeholder="Persona name"
-													/>
-												</div>
-												<div>
-													<Label for="edit-description" class="text-sm font-medium"
-														>Description</Label
-													>
-													<TextareaComponent
-														id="edit-description"
-														bind:value={editedDescription}
-														class="mt-1"
-														placeholder="Persona description"
-														rows={3}
-													/>
-												</div>
-											</div>
-										{/if}
-									</div>
-									<div class="flex gap-2">
-										{#if !isEditMode}
-											<ButtonComponent onclick={handleEdit} size="lg" class="gap-2">
-												<PencilEditIcon class="h-4 w-4" />
-												Edit Persona
-											</ButtonComponent>
-											<ButtonComponent
-												onclick={handleSetDefault}
-												variant="outline"
-												size="lg"
-												disabled={isSettingDefault}
-											>
-												{isSettingDefault ? 'Setting...' : 'Set as Default'}
-											</ButtonComponent>
-											<ButtonComponent onclick={handleDeleteClick} variant="destructive" size="lg">
-												<TrashIcon class="h-4 w-4" />
-											</ButtonComponent>
-										{:else}
-											<ButtonComponent
-												onclick={handleSave}
-												disabled={isSaving}
-												size="lg"
-												class="gap-2"
-											>
-												{#if isSaving}
-													<div
-														class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-													></div>
-													Saving...
-												{:else}
-													<CheckCircleFill class="h-4 w-4" />
-													Save Changes
-												{/if}
-											</ButtonComponent>
-											<ButtonComponent onclick={handleCancelEdit} variant="outline" size="lg"
-												>Cancel</ButtonComponent
-											>
-										{/if}
-									</div>
-								</div>
-							</div>
-						</CardHeader>
+					<Card
+class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden transition-all duration-300 relative border-0 sm:border"
+>
+<!-- Hero Banner Image -->
+<div class="h-32 sm:h-48 w-full relative overflow-hidden bg-muted/30">
+{#if bannerUrl}
+<img src={bannerUrl} alt="Banner" class="w-full h-full object-cover" onerror={() => { bannerLoadError = true; bannerUrl = ''; }} />
+<div class="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent"></div>
+{:else if !bannerLoadError && persona.avatar}
+<!-- Attempt to load banner -->
+<img src={`/api/personas/${persona?.id}/banner?t=${bannerTimestamp}`} alt="Banner" class="w-full h-full object-cover" onload={() => { bannerUrl = `/api/personas/${persona?.id}/banner?t=${bannerTimestamp}` }} onerror={() => { bannerLoadError = true; bannerUrl = ''; }} class:hidden={!bannerUrl} />
+<!-- Fallback to blurred avatar -->
+{#if !bannerUrl}
+<img src={`${persona?.avatar}?width=128&height=128`} alt="" class="w-full h-full object-cover blur-[32px] scale-125 opacity-40 dark:opacity-30" />
+<div class="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-background/10"></div>
+{/if}
+{:else if persona?.avatar}
+<img src={`${persona?.avatar}?width=128&height=128`} alt="" class="w-full h-full object-cover blur-[32px] scale-125 opacity-40 dark:opacity-30" />
+<div class="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-background/10"></div>
+{:else}
+<div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
+{/if}
+
+<!-- Top Right Appearance Buttons -->
+<div class="absolute top-4 right-4 z-10 flex gap-2">
+<ButtonComponent variant="outline" size="sm" class="bg-background/40 backdrop-blur-md border-border/20 text-foreground hover:bg-background/80" onclick={() => (appearanceEditorOpen = true)}>
+Settings
+</ButtonComponent>
+</div>
+</div>
+
+<div class="px-4 sm:px-6 pb-6 relative">
+<div class="flex flex-col sm:flex-row gap-4 sm:gap-6 -mt-12 sm:-mt-16">
+<Avatar
+class="h-24 w-24 sm:h-32 sm:w-32 border-4 border-background shadow-lg transition-transform hover:scale-105 {persona?.avatar ? 'cursor-pointer' : ''} bg-background z-10 shrink-0"
+onclick={() => persona?.avatar && (avatarLightboxOpen = true)}
+>
+{#if persona?.avatar}
+<AvatarImage src={`${persona?.avatar}?width=128&height=128`} alt={persona?.name} class="object-cover" />
+{/if}
+<AvatarFallback class="text-3xl sm:text-4xl font-bold bg-muted text-muted-foreground">
+{getInitials(persona?.name || '')}
+</AvatarFallback>
+</Avatar>
+
+<!-- Persona Name and Actions -->
+<div class="min-w-0 flex-1 pt-2 sm:pt-16 flex flex-col justify-between gap-4">
+<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+<!-- Name Section -->
+<div class="min-w-0 flex-1 space-y-1">
+{#if !isEditMode}
+<div class="relative flex items-center max-w-full">
+<h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-balance leading-tight pr-8 drop-shadow-sm">{persona?.name}</h1>
+</div>
+{#if persona?.description}
+<div class="mt-2 text-sm text-muted-foreground line-clamp-2">
+{persona?.description}
+</div>
+{/if}
+{:else}
+<div class="space-y-3">
+<div>
+<Label for="edit-name" class="text-xs font-medium uppercase text-muted-foreground">Name</Label>
+<Input
+id="edit-name"
+bind:value={editedName}
+class="mt-1 h-auto py-1 text-2xl font-bold w-full max-w-sm"
+placeholder="Persona name"
+/>
+</div>
+<div>
+<Label for="edit-description" class="text-xs font-medium uppercase text-muted-foreground">Description</Label>
+<TextareaComponent
+id="edit-description"
+bind:value={editedDescription}
+class="mt-1"
+placeholder="Persona description"
+rows={2}
+/>
+</div>
+</div>
+{/if}
+</div>
+
+<!-- Primary Actions -->
+<div class="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+{#if !isEditMode}
+<ButtonComponent onclick={handleEdit} class="gap-2 shadow-sm flex-1 sm:flex-none justify-center">
+<PencilEditIcon class="h-4 w-4" />
+Edit
+</ButtonComponent>
+<ButtonComponent
+onclick={handleSetDefault}
+variant="outline"
+disabled={isSettingDefault}
+class="bg-background/50 flex-1 sm:flex-none justify-center border-border/40"
+>
+{isSettingDefault ? 'Setting...' : 'Set as Default'}
+</ButtonComponent>
+<ButtonComponent onclick={handleDeleteClick} variant="outline" class="text-destructive border-destructive/20 hover:bg-destructive/10">
+<TrashIcon class="h-4 w-4" />
+</ButtonComponent>
+{:else}
+<ButtonComponent
+onclick={handleSave}
+disabled={isSaving}
+class="gap-2 shadow-sm flex-1 sm:flex-none justify-center"
+>
+{#if isSaving}
+<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+Saving...
+{:else}
+<CheckCircleFill class="h-4 w-4" />
+Save Changes
+{/if}
+</ButtonComponent>
+<ButtonComponent onclick={handleCancelEdit} variant="outline" class="flex-none bg-background/50 border-border/40">Cancel</ButtonComponent>
+{/if}
+</div>
+</div>
+</div>
+</div>
+</div>
 
 						{#if isEditMode || persona.scenario || persona.personality || persona.first_mes || persona.system_prompt || persona.mes_example || persona.post_history_instructions}
 							<CardContent class="grid grid-cols-1 md:grid-cols-2 gap-6 px-6 pb-6 mt-4">
@@ -632,6 +703,52 @@
 {#if persona && persona.avatar}
 	<ImageLightbox src={persona.avatar} alt={persona.name} bind:open={avatarLightboxOpen} />
 {/if}
+
+<!-- Appearance Settings Dialog -->
+<Dialog bind:open={appearanceEditorOpen}>
+	<DialogContent class="max-w-md">
+		<DialogHeader>
+			<DialogTitle>Persona Appearance Settings</DialogTitle>
+			<DialogDescription>
+				Customize how the persona looks in the dossier interface.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="grid gap-4 py-4">
+			<div class="grid gap-2">
+				<label for="persona_banner_file" class="text-sm font-medium leading-none">Banner Image</label>
+				<Input
+					id="persona_banner_file"
+					type="file"
+					accept="image/png, image/jpeg, image/webp"
+					onchange={(e) => {
+						const target = e.target as HTMLInputElement;
+						if (target.files && target.files.length > 0) {
+							editBannerFile = target.files[0];
+						} else {
+							editBannerFile = null;
+						}
+					}}
+				/>
+				<p class="text-[0.8rem] text-muted-foreground">Upload a hero banner image (max 5MB).</p>
+			</div>
+		</div>
+
+		<DialogFooter>
+			<ButtonComponent variant="outline" onclick={() => (appearanceEditorOpen = false)}
+				>Cancel</ButtonComponent
+			>
+			<ButtonComponent onclick={handleSaveAppearance} disabled={isSaving || !editBannerFile}>
+				{#if isSaving}
+					<span class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+					Saving...
+				{:else}
+					Save Changes
+				{/if}
+			</ButtonComponent>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
 
 <style>
 	/* Override inline styles from HTML content to respect theme */

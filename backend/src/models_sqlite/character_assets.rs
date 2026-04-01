@@ -71,4 +71,36 @@ impl NewCharacterAsset {
             content_type, // Use provided content_type
         }
     }
+
+    pub fn new_banner(
+        character_id: crate::db::DbId,
+        name: &str,
+        image_data: Vec<u8>,
+        content_type: Option<String>,
+    ) -> Self {
+        let ext = content_type.as_ref().map_or("png".to_string(), |ct| {
+            if ct.contains("png") {
+                "png".to_string()
+            } else if ct.contains("jpeg") || ct.contains("jpg") {
+                "jpeg".to_string()
+            } else {
+                "bin".to_string() 
+            }
+        });
+
+        let now = DbTimestamp::now();
+
+        Self {
+            id: DbId::new(),
+            character_id,
+            asset_type: "banner".to_string(),
+            uri: None,
+            name: name.to_string(),
+            ext,
+            created_at: now,
+            updated_at: now,
+            data: Some(image_data),
+            content_type,
+        }
+    }
 }

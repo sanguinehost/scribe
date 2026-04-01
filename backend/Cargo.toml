@@ -79,6 +79,7 @@ diesel = { version = "2.3", default-features = false, features = [
     "numeric",
     "64-column-tables",
     "128-column-tables",
+    "with-deprecated",
 ] }
 diesel_migrations = { version = "2.3", default-features = false }
 dirs = "6.0" # Platform-specific directories for desktop config

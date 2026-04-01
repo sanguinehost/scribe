@@ -30,7 +30,7 @@
 	// Public routes that don't require authentication, supporting trailing slashes
 	const publicRoutes = ['/welcome', '/signin', '/signup', '/pricing', '/verify-email'];
 	const isPublicRoute = $derived(
-		publicRoutes.some(route => 
+		publicRoutes.some(route =>
 			$page.url.pathname === route || $page.url.pathname === `${route}/`
 		)
 	);

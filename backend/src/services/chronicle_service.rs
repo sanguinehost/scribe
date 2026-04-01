@@ -686,6 +686,9 @@ impl ChronicleService {
     ) -> Result<PlayerChronicle, AppError> {
         let update: UpdatePlayerChronicle = request.into();
 
+        let update_name = update.name;
+        let update_desc = update.description;
+
         #[cfg(feature = "postgres-backend")]
         let chronicle = {
             crate::db::with_conn(&self.db_pool, move |conn| {
@@ -696,7 +699,7 @@ impl ChronicleService {
                 );
 
                 // Use pattern matching to handle the different update combinations
-                let result = match (&update.name, &update.description) {
+                let result = match (&update_name, &update_desc) {
                     (Some(name), Some(description)) => diesel::update(target)
                         .set((
                             player_chronicles::name.eq(name),
@@ -753,7 +756,7 @@ impl ChronicleService {
                 );
 
                 // SQLite doesn't support RETURNING, execute update and query back
-                let rows_updated = match (&update.name, &update.description) {
+                let rows_updated = match (&update_name, &update_desc) {
                     (Some(name), Some(description)) => diesel::update(target)
                         .set((
                             player_chronicles::name.eq(name),

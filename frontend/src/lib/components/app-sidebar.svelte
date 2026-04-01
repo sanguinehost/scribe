@@ -467,15 +467,15 @@
 	<SidebarFooter class="p-3 border-t border-border/5 bg-background/50 backdrop-blur-sm mt-auto">
 		<!-- Main Footer Controls -->
 		<div class="flex items-center justify-between w-full gap-1 mb-2">
-			<ButtonComponent 
-				variant="ghost" 
-				class="flex-1 justify-start h-9 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors" 
+			<ButtonComponent
+				variant="ghost"
+				class="flex-1 justify-start h-9 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
 				onclick={openSettings}
 			>
 				<SettingsIcon size={16} class="mr-2" />
 				<span class="text-sm font-medium">Settings</span>
 			</ButtonComponent>
-			
+
 			<div class="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/10">
 				<ButtonComponent
 					variant="ghost"

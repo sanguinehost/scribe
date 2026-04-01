@@ -32,6 +32,9 @@ pub fn avatar_routes() -> Router<AppState> {
             "/personas/{persona_id}/avatar",
             delete(delete_persona_avatar),
         )
+        .route("/personas/{persona_id}/banner", get(get_persona_banner))
+        .route("/personas/{persona_id}/banner", post(upload_persona_banner))
+        .route("/personas/{persona_id}/banner", delete(delete_persona_banner))
 }
 
 // Get user avatar
@@ -469,5 +472,211 @@ pub async fn delete_persona_avatar(
     }
 
     info!(persona_id = %persona_id, "Persona avatar deleted successfully");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// Get persona banner
+#[debug_handler]
+#[instrument(skip(state, auth), err)]
+pub async fn get_persona_banner(
+    Path(persona_id): Path<crate::db::DbId>,
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+) -> Result<Response<Body>, AppError> {
+    let user_id = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?
+        .id;
+
+    let asset = crate::db::with_conn(&state.pool, move |conn_block| {
+        user_assets
+            .filter(crate::schema::user_assets::user_id.eq(user_id))
+            .filter(crate::schema::user_assets::persona_id.eq(persona_id))
+            .filter(crate::schema::user_assets::asset_type.eq("banner"))
+            .first::<UserAsset>(conn_block)
+            .optional()
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}"))
+            })
+    })
+    .await?;
+
+    let asset = asset.ok_or_else(|| AppError::NotFound("Persona banner not found".to_string()))?;
+
+    let image_data = asset
+        .data
+        .ok_or_else(|| AppError::NotFound("Banner asset has no image data".to_string()))?;
+
+    let content_type = asset
+        .content_type
+        .unwrap_or_else(|| "image/png".to_string());
+
+    let image_data_len = image_data.len();
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", &content_type)
+        .header("Cache-Control", "public, max-age=3600")
+        .body(Body::from(image_data.into_bytes()))
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
+        })?;
+
+    debug!(persona_id = %persona_id, content_type = %content_type, image_data_len = image_data_len, "Persona banner served successfully");
+    Ok(response)
+}
+
+// Upload persona banner
+#[debug_handler]
+#[instrument(skip(state, auth, multipart), err)]
+pub async fn upload_persona_banner(
+    Path(persona_id): Path<crate::db::DbId>,
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<crate::DbJson>), AppError> {
+    let user_id = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?
+        .id;
+
+    let mut image_data: Option<Bytes> = None;
+    let mut content_type: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await? {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "banner" || field_name == "file" || field_name == "avatar" {
+            content_type = field.content_type().map(std::string::ToString::to_string);
+            let data = field.bytes().await?;
+            image_data = Some(data);
+            break;
+        }
+    }
+
+    let image_bytes = image_data
+        .ok_or_else(|| AppError::BadRequest("Missing 'banner' field in upload".to_string()))?;
+
+    // Validate size constraint (5MB)
+    if image_bytes.len() > 5 * 1024 * 1024 {
+        return Err(AppError::BadRequest("File exceeds 5MB size limit".to_string()));
+    }
+
+    if let Some(ct) = &content_type {
+        if ct.starts_with("image/") {
+            let format = match ct.as_str() {
+                "image/png" => Some(image::ImageFormat::Png),
+                "image/jpeg" => Some(image::ImageFormat::Jpeg),
+                _ => None,
+            };
+
+            if let Some(fmt) = format {
+                match image::load_from_memory_with_format(&image_bytes, fmt) {
+                    Ok(_) => info!("Image data validated successfully as {}", ct),
+                    Err(e) => {
+                        error!("Failed to decode image data as {}: {}", ct, e);
+                        return Err(AppError::BadRequest(format!("Invalid image file format/content: {}", e)));
+                    }
+                }
+            } else {
+                return Err(AppError::BadRequest(format!("Unsupported image format: {}. Only PNG and JPEG are allowed.", ct)));
+            }
+        } else {
+            return Err(AppError::BadRequest("Invalid MIME type. Must be an image.".to_string()));
+        }
+    } else {
+        return Err(AppError::BadRequest("No content type provided for persona banner upload.".to_string()));
+    }
+
+    let new_asset = NewUserAsset::new_persona_banner(
+        user_id,
+        persona_id,
+        &format!("persona_{}_banner", persona_id),
+        crate::db::DbBlob::from(image_bytes.to_vec()),
+        content_type,
+    );
+
+    let asset_result = crate::db::with_conn(&state.pool, move |conn_block| {
+        // Delete existing banner first
+        diesel::delete(
+            user_assets
+                .filter(crate::schema::user_assets::user_id.eq(user_id))
+                .filter(crate::schema::user_assets::persona_id.eq(persona_id))
+                .filter(crate::schema::user_assets::asset_type.eq("banner")),
+        )
+        .execute(conn_block)?;
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            diesel::insert_into(user_assets)
+                .values(new_asset)
+                .returning(UserAsset::as_returning())
+                .get_result::<UserAsset>(conn_block)
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}"))
+                })
+        }
+
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        {
+            diesel::insert_into(user_assets)
+                .values(&new_asset)
+                .execute(conn_block)
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}"))
+                })?;
+
+            user_assets
+                .filter(crate::schema::user_assets::user_id.eq(user_id))
+                .filter(crate::schema::user_assets::persona_id.eq(persona_id))
+                .filter(crate::schema::user_assets::asset_type.eq("banner"))
+                .first::<UserAsset>(conn_block)
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset query DB error: {e}"))
+                })
+        }
+    })
+    .await?;
+
+    info!(persona_id = %persona_id, asset_id = ?asset_result.id, "Persona banner uploaded successfully");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(crate::db::Json(serde_json::json!({
+            "message": "Persona banner uploaded successfully",
+            "asset_id": asset_result.id,
+            "url": format!("/api/v1/personas/{}/banner", persona_id)
+        }))),
+    ))
+}
+
+// Delete persona banner
+#[debug_handler]
+#[instrument(skip(state, auth), err)]
+pub async fn delete_persona_banner(
+    Path(persona_id): Path<crate::db::DbId>,
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+) -> Result<StatusCode, AppError> {
+    let user_id = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?
+        .id;
+
+    let deleted_count = crate::db::with_conn(&state.pool, move |conn_block| {
+        diesel::delete(
+            user_assets
+                .filter(crate::schema::user_assets::user_id.eq(user_id))
+                .filter(crate::schema::user_assets::persona_id.eq(Some(persona_id)))
+                .filter(crate::schema::user_assets::asset_type.eq("banner")),
+        )
+        .execute(conn_block)
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset delete DB error: {e}")))
+    })
+    .await?;
+
+    if deleted_count == 0 {
+        return Err(AppError::NotFound("Persona banner not found".to_string()));
+    }
+
+    info!(persona_id = %persona_id, "Persona banner deleted successfully");
     Ok(StatusCode::NO_CONTENT)
 }
