@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { Button as ButtonComponent } from './ui/button';
 	import {
 		useSidebar,
@@ -314,7 +315,7 @@
 		<SidebarMenu>
 			<div class="flex h-10 flex-row items-center justify-between md:h-[34px]">
 				<a
-					href="/"
+					href={resolve("/")}
 					onclick={(_e) => {
 						// Allow default navigation to / but ensure state is cleared
 						context.setOpenMobile(false);

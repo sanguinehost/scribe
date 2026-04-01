@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto as _goto } from '$app/navigation';
 	import { apiClient as _apiClient } from '$lib/api';
@@ -301,7 +302,7 @@
 
 				// Navigate back to chronicles list by showing the list view
 				selectedChronicleStore.showList();
-				_goto('/');
+				_goto(resolve('/'));
 			} else {
 				toast.error('Failed to delete chronicle', {
 					description: result.error.message

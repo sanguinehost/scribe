@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	/**
 	 * Research Dialog
 	 *
@@ -374,7 +375,7 @@
 							Please configure your Firecrawl API key in Settings → AI Settings before using web
 							research.
 							<a
-								href="/settings/ai"
+								href={resolve("/settings/ai")}
 								class="ml-2 inline-flex items-center gap-1 text-primary hover:underline"
 							>
 								Configure Now

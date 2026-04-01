@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto as _goto } from '$app/navigation';
@@ -52,7 +53,7 @@
 				console.log('🔄 Transaction already processed, redirecting to main app...');
 				loading = false;
 				setTimeout(() => {
-					_goto('/');
+					_goto(resolve('/'));
 				}, 1000);
 				return;
 			}
@@ -177,7 +178,7 @@
 
 				// Redirect to main app after a short delay
 				setTimeout(() => {
-					_goto('/');
+					_goto(resolve('/'));
 				}, 2000);
 			} else {
 				// Verification failed after retries - but payment might still be successful
@@ -206,7 +207,7 @@
 
 					// Redirect to main app
 					setTimeout(() => {
-						_goto('/');
+						_goto(resolve('/'));
 					}, 2000);
 				} else {
 					// Show error but provide options
@@ -302,7 +303,7 @@
 
 				// Redirect to main app after a short delay
 				setTimeout(() => {
-					_goto('/');
+					_goto(resolve('/'));
 				}, 2000);
 			} else {
 				// No active subscription found - this might be normal if on the free plan
@@ -313,7 +314,7 @@
 
 				// Redirect to main app after a delay
 				setTimeout(() => {
-					_goto('/');
+					_goto(resolve('/'));
 				}, 4000);
 			}
 		} catch (err) {
@@ -323,14 +324,14 @@
 
 			// Redirect to main app anyway
 			setTimeout(() => {
-				_goto('/');
+				_goto(resolve('/'));
 			}, 3000);
 		}
 	}
 
 	function handleContinue() {
 		// Redirect to dashboard or appropriate page after payment
-		_goto('/');
+		_goto(resolve('/'));
 	}
 </script>
 

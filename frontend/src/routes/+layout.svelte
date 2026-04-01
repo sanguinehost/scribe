@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import '../app.css';
 	import { ThemeProvider } from '@sejohnson/svelte-themes';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -210,7 +211,7 @@
 								log('[STEP 15] Setup not complete, redirecting to /welcome');
 								isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 								hideLoadingOverlay();
-								_goto('/welcome');
+								_goto(resolve('/welcome'));
 								return;
 							}
 
@@ -346,14 +347,14 @@
 										// Token save or auth initialization failed - redirect to welcome to retry setup
 										isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 										hideLoadingOverlay();
-										_goto('/welcome');
+										_goto(resolve('/welcome'));
 									}
 								} else {
 									logError(`[STEP 32] ✗ Auto-login failed: ${autoLoginResult.error}`);
 									// Auto-login failed - redirect to welcome to retry setup
 									isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 									hideLoadingOverlay();
-									_goto('/welcome');
+									_goto(resolve('/welcome'));
 								}
 							} else {
 								// For non-Quick-Start modes, run normal auth init
@@ -390,7 +391,7 @@
 							// Config load failed - redirect to welcome
 							isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 							hideLoadingOverlay();
-							_goto('/welcome');
+							_goto(resolve('/welcome'));
 						}
 					} else {
 						// Non-desktop mode (web/cloud) - run normal auth init
@@ -468,7 +469,7 @@
 				subscriptionStore.clearData();
 			}
 
-			_goto('/signin');
+			_goto(resolve('/signin'));
 		};
 
 		window.addEventListener('auth:invalidated', handleAuthInvalidated);
@@ -489,7 +490,7 @@
 			});
 			// Redirect to signin after a brief delay
 			setTimeout(() => {
-				_goto('/signin');
+				_goto(resolve('/signin'));
 			}, 1000);
 		};
 
@@ -595,7 +596,7 @@
 			});
 
 			// Redirect to login page
-			await _goto('/login');
+			await _goto(resolve('/login'));
 		};
 
 		window.addEventListener('auth:connection-error', handleConnectionError);
@@ -654,13 +655,13 @@
 		// Only redirect if auth initialization is complete and we're not on a public route
 		if (ready && !loading && !authenticated && !isPublic) {
 			console.warn(`[AuthRedirect] Unauthenticated access to private route ${path}, redirecting to /signin`);
-			_goto('/signin');
+			_goto(resolve('/signin'));
 		}
 
 		// Also handle the edge case where we are at / and not authenticated - usually / should redirect to /signin
 		if (ready && !loading && !authenticated && path === '/') {
 			console.warn(`[AuthRedirect] Root access while unauthenticated, redirecting to /signin`);
-			_goto('/signin');
+			_goto(resolve('/signin'));
 		}
 	});
 

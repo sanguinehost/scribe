@@ -1,4 +1,5 @@
 // frontend/src/lib/types.ts
+import type { ScribeCharacterExtensions } from './types/character';
 
 // Placeholder for User type - Define based on expected fields from backend
 export interface User {
@@ -472,7 +473,7 @@ export interface CharacterDataForClient {
 	greeting?: string | null;
 	definition?: string | null;
 	default_voice?: string | null;
-	extensions?: unknown | null;
+	extensions?: ScribeCharacterExtensions | null;
 	data_id?: number | null;
 	category?: string | null;
 	definition_visibility?: string | null;

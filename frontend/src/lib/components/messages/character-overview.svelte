@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { goto as _goto } from '$app/navigation';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
@@ -72,6 +73,12 @@
 	let isSaving = $state(false);
 	let editValue = $state('');
 
+	// Appearance Editor state
+	let appearanceEditorOpen = $state(false);
+	let editBannerUrl = $state('');
+	let editPrimaryColor = $state('');
+	let editCardStyle = $state<'default' | 'dossier' | 'minimal' | 'terminal'>('dossier');
+
 	// Character editor dialog state
 	let characterEditorOpen = $state(false);
 
@@ -95,6 +102,17 @@
 	function getInitials(name: string): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
 	}
+
+	// Extract visual metadata safely
+	const visualMetadata = $derived.by(() => {
+		if (!character?.extensions?.visual_metadata) return null;
+		return character.extensions.visual_metadata as any;
+	});
+
+	const customPrimaryColor = $derived(visualMetadata?.primary_color);
+	const heroBannerUrl = $derived(visualMetadata?.banner_url);
+	const cssVars = $derived(customPrimaryColor ? `--char-primary: ${customPrimaryColor};` : '');
+	const cardStyle = $derived(visualMetadata?.card_style || 'dossier');
 
 	// Create properly formatted avatar URL
 	const characterAvatarSrc = $derived.by(() => {
@@ -373,7 +391,7 @@
 	}
 
 	function handleSelectChat(chatId: string) {
-		_goto(`/chat/${chatId}`);
+		_goto(resolve(`/chat/${chatId}`));
 	}
 
 	async function handleDeleteClick(e: MouseEvent, chat: ScribeChatSession) {
@@ -483,6 +501,53 @@
 		popoutContent = '';
 	}
 
+	function handleOpenAppearance() {
+		editBannerUrl = visualMetadata?.banner_url || '';
+		editPrimaryColor = visualMetadata?.primary_color || '';
+		editCardStyle = visualMetadata?.card_style || 'dossier';
+		appearanceEditorOpen = true;
+	}
+
+	async function handleSaveAppearance() {
+		if (!character) return;
+		
+		isSaving = true;
+		try {
+			// Construct new extensions object safely
+			const currentExtensions = character.extensions || {};
+			const updatedVisualMetadata = {
+				...(currentExtensions.visual_metadata || {}),
+				banner_url: editBannerUrl || undefined,
+				primary_color: editPrimaryColor || undefined,
+				card_style: editCardStyle !== 'dossier' ? editCardStyle : undefined // dossier is default
+			};
+			
+			const updatedExtensions = {
+				...currentExtensions,
+				visual_metadata: Object.keys(updatedVisualMetadata).filter(k => (updatedVisualMetadata as any)[k] !== undefined).length > 0 
+					? updatedVisualMetadata 
+					: undefined
+			};
+			
+			const result = await _apiClient.updateCharacter(character.id, {
+				extensions: updatedExtensions
+			});
+			
+			if (result.isOk()) {
+				character.extensions = updatedExtensions;
+				toast.success('Appearance updated successfully');
+				appearanceEditorOpen = false;
+			} else {
+				toast.error('Failed to update appearance: ' + result.error.message);
+			}
+		} catch (_error) {
+			toast.error('Error updating appearance');
+			console.error('Error updating appearance:', _error);
+		} finally {
+			isSaving = false;
+		}
+	}
+
 	// Track the last loaded character ID to prevent unnecessary reloads
 	let lastLoadedCharacterId = $state<string | null>(null);
 	let isTransitioning = $state(false);
@@ -531,130 +596,170 @@
 				</CardHeader>
 			</Card>
 		{:else if character}
-			<!-- Compact Character Header -->
-			<Card class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4">
-				<CardHeader class="py-5 px-6">
-					<div class="flex flex-col md:flex-row flex-wrap md:justify-between gap-5">
-						<div class="flex items-center gap-5 min-w-0 flex-1 basis-[300px]">
-							<!-- Compact Avatar -->
-							<Avatar
-							class="h-20 w-20 border-[3px] border-primary/40 shadow-sm transition-transform hover:scale-105 ring-2 ring-primary/20 ring-offset-2 ring-offset-background flex-shrink-0 {characterAvatarSrc
-								? 'cursor-pointer'
-								: ''}"
+			<!-- Dossier Character Header -->
+			<Card 
+				class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4 transition-all duration-300 relative border-0 sm:border"
+				style={cssVars}
+			>
+				<!-- Hero Banner Image or blurred background placeholder -->
+				<div class="h-32 sm:h-48 w-full relative overflow-hidden bg-muted/30">
+					{#if heroBannerUrl}
+						<img src={heroBannerUrl} alt="Banner" class="w-full h-full object-cover" />
+						<div class="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent"></div>
+					{:else if characterAvatarSrc}
+						<!-- Fallback to blurred avatar -->
+						<img src={characterAvatarSrc} alt="" class="w-full h-full object-cover blur-[32px] scale-125 opacity-40 dark:opacity-30" />
+						<div class="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-background/10"></div>
+					{:else}
+						<div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5"></div>
+						<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
+					{/if}
+					
+					<!-- Top Right Appearance Buttons -->
+					<div class="absolute top-4 right-4 z-10 flex gap-2">
+						<ButtonComponent variant="outline" size="sm" class="bg-background/40 backdrop-blur-md border-border/20 text-foreground hover:bg-background/80" onclick={handleOpenAppearance}>
+							<SettingsIcon class="h-4 w-4 sm:mr-2" />
+							<span class="hidden sm:inline">Appearance</span>
+						</ButtonComponent>
+					</div>
+				</div>
+
+				<div class="px-4 sm:px-6 pb-6 relative">
+					<div class="flex flex-col sm:flex-row gap-4 sm:gap-6 -mt-12 sm:-mt-16">
+						<!-- Dossier Avatar -->
+						<Avatar
+							class="h-24 w-24 sm:h-32 sm:w-32 border-4 border-background shadow-lg transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''} bg-background z-10 shrink-0"
 							onclick={() => characterAvatarSrc && (avatarLightboxOpen = true)}
+							style={customPrimaryColor ? `box-shadow: 0 4px 20px -5px ${customPrimaryColor}` : ''}
 						>
 							{#if characterAvatarSrc}
 								<AvatarImage src={characterAvatarSrc} alt={character.name} class="object-cover" />
 							{/if}
-							<AvatarFallback class="text-2xl font-bold bg-primary/10 text-primary">
+							<AvatarFallback class="text-3xl sm:text-4xl font-bold bg-muted text-muted-foreground">
 								{getInitials(character.name)}
 							</AvatarFallback>
 						</Avatar>
 
-						<!-- Character Name and Inline Edit -->
-						<div class="min-w-0 flex-1">
-							{#if editingField !== 'name'}
-								<div class="group relative flex items-center max-w-full">
-									<h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-balance leading-tight pr-6">{character.name}</h1>
+						<!-- Character Name and Actions -->
+						<div class="min-w-0 flex-1 pt-2 sm:pt-16 flex flex-col justify-between gap-4">
+							<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+								<!-- Name Section -->
+								<div class="min-w-0 flex-1 space-y-1">
+									{#if editingField !== 'name'}
+										<div class="group relative flex items-center max-w-full">
+											<h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-balance leading-tight pr-8 drop-shadow-sm" style={customPrimaryColor ? `color: ${customPrimaryColor}` : ''}>{character.name}</h1>
+											<ButtonComponent
+												variant="ghost"
+												size="sm"
+												class="absolute right-0 top-1 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground flex-shrink-0"
+												onclick={() => handleEditField('name', character?.name || '')}
+												aria-label="Edit character name"
+											>
+												<PencilEdit class="h-3 w-3" />
+											</ButtonComponent>
+										</div>
+									{:else}
+										<div class="space-y-2 max-w-sm">
+											<Input
+												bind:value={editValue}
+												class="h-auto py-1 text-2xl font-bold"
+												placeholder="Character name"
+												onfocus={(e) => (e.target as HTMLInputElement)?.select()}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') handleSaveField();
+													if (e.key === 'Escape') handleCancelEdit();
+												}}
+											/>
+											<div class="flex gap-2">
+												<ButtonComponent onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+													{#if isSaving}
+														<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+													{:else}
+														<CheckCircleFill class="h-3 w-3" />
+													{/if}
+												</ButtonComponent>
+												<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm">Cancel</ButtonComponent>
+											</div>
+										</div>
+									{/if}
+									
+									{#if character.creator || character.character_version}
+										<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium mt-1">
+											{#if character.creator}<span>By <span class="text-foreground/80">{character.creator}</span></span>{/if}
+											{#if character.creator && character.character_version}<span class="text-border text-xs">•</span>{/if}
+											{#if character.character_version}<span>v{character.character_version}</span>{/if}
+										</div>
+									{/if}
+								</div>
+
+								<!-- Primary Actions -->
+								<div class="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
 									<ButtonComponent
-										variant="ghost"
-										size="sm"
-										class="absolute right-0 top-1 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground hover:text-primary flex-shrink-0"
-										onclick={() => handleEditField('name', character?.name || '')}
-										aria-label="Edit character name"
+										onclick={handleStartNewChat}
+										class="gap-2 shadow-sm text-primary-foreground relative overflow-hidden group flex-1 sm:flex-none justify-center"
+										style={customPrimaryColor ? `background-color: var(--char-primary); border-color: var(--char-primary);` : ''}
 									>
-										<PencilEdit class="h-3 w-3" />
+										{#if customPrimaryColor}
+											<div class="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity bg-black dark:bg-white"></div>
+										{/if}
+										<PlusIcon class="h-4 w-4 relative z-10" />
+										<span class="relative z-10">Chat</span>
+									</ButtonComponent>
+									{#if getMostRecentChat()}
+										<ButtonComponent
+											variant="outline"
+											class="gap-2 shadow-sm bg-background/50 flex-1 sm:flex-none justify-center border-border/40"
+											onclick={() => handleSelectChat(getMostRecentChat()!.id)}
+										>
+											<MessageIcon class="h-4 w-4" />
+											Continue
+										</ButtonComponent>
+									{/if}
+									<ButtonComponent
+										variant="outline"
+										class="gap-2 shadow-sm bg-background/50 flex-none justify-center border-border/40 px-3 hidden sm:flex"
+										onclick={() => _goto('/chronicles?character=' + characterId)}
+										title="View chronicles"
+									>
+										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+											/>
+										</svg>
 									</ButtonComponent>
 								</div>
-							{:else}
-								<div class="space-y-2">
-									<Input
-										bind:value={editValue}
-										class="h-auto py-1 text-2xl font-bold"
-										placeholder="Character name"
-										onfocus={(e) => (e.target as HTMLInputElement)?.select()}
-										onkeydown={(e) => {
-											if (e.key === 'Enter') handleSaveField();
-											if (e.key === 'Escape') handleCancelEdit();
-										}}
-									/>
-									<div class="flex gap-2">
-										<ButtonComponent
-											onclick={handleSaveField}
-											disabled={isSaving}
-											size="sm"
-											class="gap-2"
-										>
-											{#if isSaving}
-												<div
-													class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-												></div>
-												Saving...
-											{:else}
-												<CheckCircleFill class="h-3 w-3" />
-												Save
-											{/if}
-										</ButtonComponent>
-										<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm"
-											>Cancel</ButtonComponent
-										>
-									</div>
+							</div>
+
+							<!-- Stat Grid (Tags, Context, etc) -->
+							<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs sm:text-sm mt-1 border-t sm:border-t-0 border-border/10 pt-3 sm:pt-0">
+								<div class="flex items-center gap-1.5 text-muted-foreground bg-muted/30 px-2 py-1 rounded-md border border-border/5">
+									<MessageIcon class="h-3.5 w-3.5 opacity-70" />
+									<span class="font-medium text-foreground/80">{allChats.length}</span> entries
 								</div>
-							{/if}
-							<div class="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
-								<span class="bg-muted/40 px-2 py-0.5 rounded text-xs font-medium border border-border/40 text-foreground/70">{allChats.length} conversation{allChats.length !== 1 ? 's' : ''}</span>
+								{#if character.token_budget}
+									<div class="flex items-center gap-1.5 text-muted-foreground bg-muted/30 px-2 py-1 rounded-md border border-border/5">
+										<div class="h-3.5 w-3.5 rounded-full border border-current flex items-center justify-center opacity-70"><span class="text-[8px] font-bold">C</span></div>
+										<span class="font-medium text-foreground/80">{character.token_budget}</span> tokens
+									</div>
+								{/if}
+								{#if character.tags && character.tags.length > 0}
+									<div class="w-px h-4 bg-border/40 hidden sm:block"></div>
+									<div class="flex items-center gap-1.5 flex-wrap">
+										{#each character.tags.slice(0, 4) as tag}
+											<span class="px-2 py-0.5 rounded-full bg-secondary/40 text-secondary-foreground font-medium border border-border/40">{tag}</span>
+										{/each}
+										{#if character.tags.length > 4}
+											<span class="text-muted-foreground font-medium ml-1">+{character.tags.length - 4}</span>
+										{/if}
+									</div>
+								{/if}
 							</div>
 						</div>
-						</div>
-
-						<!-- Primary Actions -->
-						<div class="flex flex-wrap items-center gap-2 mt-2 md:mt-0 flex-shrink-0">
-							<ButtonComponent onclick={handleStartNewChat} size="default" class="gap-2">
-								<PlusIcon class="h-4 w-4" />
-								New Chat
-							</ButtonComponent>
-							{#if getMostRecentChat()}
-								<ButtonComponent
-									variant="outline"
-									size="default"
-									class="gap-2"
-									onclick={() => handleSelectChat(getMostRecentChat()!.id)}
-								>
-									<MessageIcon class="h-4 w-4" />
-									Continue
-								</ButtonComponent>
-							{/if}
-							<ButtonComponent
-								variant="outline"
-								size="default"
-								class="gap-2"
-								onclick={() => _goto('/chronicles?character=' + characterId)}
-								title="View character's chronicles"
-							>
-								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-									/>
-								</svg>
-								<span class="hidden md:inline">Chronicles</span>
-							</ButtonComponent>
-							<ButtonComponent
-								variant="outline"
-								size="default"
-								class="gap-1"
-								onclick={() => {
-									characterEditorOpen = true;
-								}}
-							>
-								<SettingsIcon class="h-4 w-4" />
-								<span class="hidden md:inline">Edit</span>
-							</ButtonComponent>
-						</div>
 					</div>
-				</CardHeader>
+				</div>
 			</Card>
 
 			<!-- Two-Column Layout -->
@@ -1422,3 +1527,69 @@
 		margin-bottom: 1rem;
 	}
 </style>
+
+<!-- Appearance Settings Dialog -->
+<Dialog bind:open={appearanceEditorOpen}>
+	<DialogContent class="sm:max-w-md">
+		<DialogHeader>
+			<DialogTitle>Appearance Settings</DialogTitle>
+			<DialogDescription>
+				Customize the visual presentation of this character.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="grid gap-4 py-4">
+			<div class="grid gap-2">
+				<label for="banner_url" class="text-sm font-medium leading-none">Banner Image URL</label>
+				<Input
+					id="banner_url"
+					bind:value={editBannerUrl}
+					placeholder="https://example.com/image.png"
+				/>
+				<p class="text-[0.8rem] text-muted-foreground">URL to a wide image to use as the hero banner.</p>
+			</div>
+			
+			<div class="grid gap-2">
+				<label for="primary_color" class="text-sm font-medium leading-none">Primary Color</label>
+				<div class="flex gap-2 items-center">
+					<Input
+						id="primary_color"
+						type="color"
+						bind:value={editPrimaryColor}
+						class="w-12 h-10 p-1 bg-background"
+					/>
+					<Input
+						bind:value={editPrimaryColor}
+						placeholder="#ff0000 or hsl(0, 100%, 50%)"
+						class="flex-1"
+					/>
+				</div>
+				<p class="text-[0.8rem] text-muted-foreground">Custom accent color for buttons and typography.</p>
+			</div>
+
+			<div class="grid gap-2">
+				<label for="card_style" class="text-sm font-medium leading-none">Layout Style</label>
+				<select
+					id="card_style"
+					bind:value={editCardStyle}
+					class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					<option value="dossier">Dossier (Immersive)</option>
+					<option value="default">Default</option>
+					<option value="minimal">Minimal</option>
+					<option value="terminal">Terminal</option>
+				</select>
+			</div>
+		</div>
+
+		<DialogFooter>
+			<ButtonComponent variant="outline" onclick={() => (appearanceEditorOpen = false)}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={handleSaveAppearance} disabled={isSaving}>
+				{#if isSaving}
+					<div class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+				{/if}
+				Save Changes
+			</ButtonComponent>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>

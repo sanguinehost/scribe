@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { PageData } from './$types';
 	import { CheckCircle, XCircle, Loader2 } from 'lucide-svelte';
 	import { Button as _ButtonComponent } from '$lib/components/ui/button';
@@ -18,7 +19,7 @@
 			<h1 class="mt-4 text-2xl font-semibold">Verification Successful!</h1>
 			<p class="mt-2 text-muted-foreground">{data.message}</p>
 			<a
-				href="/signin"
+				href={resolve("/signin")}
 				class="mt-6 inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
 				>Go to Login</a
 			>
@@ -27,7 +28,7 @@
 			<h1 class="mt-4 text-2xl font-semibold">Verification Failed</h1>
 			<p class="mt-2 text-muted-foreground">{data.message}</p>
 			<a
-				href="/signup"
+				href={resolve("/signup")}
 				class="mt-6 inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
 				>Return to Sign Up</a
 			>

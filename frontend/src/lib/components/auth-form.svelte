@@ -1,4 +1,5 @@
 <script module lang="ts">
+	import { resolve } from '$app/paths';
 	// Snippet is imported in the main script block below
 
 	export type FormSuccessData = {
@@ -71,7 +72,7 @@
 					await initializeAuth(true);
 
 					toast.success('Successfully signed in');
-					goto('/'); // Redirect to home/chat on success
+					goto(resolve('/')); // Redirect to home/chat on success
 				} else {
 					errorMessage = result.error.message;
 					toast.error(errorMessage);
@@ -95,7 +96,7 @@
 					});
 
 					// Redirect to signin with success message
-					goto('/signin?registration=success');
+					goto(resolve('/signin?registration=success'));
 				} else {
 					errorMessage = result.error.message;
 					toast.error(errorMessage);
