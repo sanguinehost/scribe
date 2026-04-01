@@ -4,13 +4,65 @@
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#ffffff" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&family=Space+Grotesk:wght@300..700&display=swap"
+			rel="stylesheet"
+		/>
+		<script>
+			try {
+				const activeTheme = localStorage.getItem('scribe-theme-preset') || 'theme-sanguine';
+				document.documentElement.classList.add(activeTheme);
+			} catch (e) {}
+		</script>
+		<style>
+			/* Inlined critical styles for immediate loading screen render */
+			.loading-overlay {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				background: linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--muted)) 100%);
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				z-index: 9999;
+			}
+			.loading-content {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				gap: 1.5rem;
+			}
+			.loading-logo {
+				color: hsl(var(--primary));
+				filter: drop-shadow(0 4px 12px hsl(var(--primary) / 0.3));
+			}
+			.loading-text {
+				font-family: inherit;
+				font-size: 1.125rem;
+				font-weight: 500;
+				color: hsl(var(--foreground));
+				letter-spacing: 0.025em;
+				opacity: 0.8;
+			}
+		</style>
 		%sveltekit.head%
 	</head>
 	<body class="antialiased" data-sveltekit-preload-data="hover">
 		<!-- Loading overlay (hidden once auth initializes) -->
 		<div id="loading-overlay" class="loading-overlay">
 			<div class="loading-content">
-				<svg class="loading-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+				<svg
+					class="loading-logo"
+					width="80"
+					height="80"
+					viewBox="0 0 100 100"
+					xmlns="http://www.w3.org/2000/svg"
+				>
 					<circle
 						cx="50"
 						cy="50"

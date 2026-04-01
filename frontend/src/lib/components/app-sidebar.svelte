@@ -21,6 +21,7 @@
 	import LorebooksSidebarList from './LorebooksSidebarList.svelte'; // Import the LorebooksSidebarList component
 	import ChroniclesSidebarList from './ChroniclesSidebarList.svelte'; // Import the ChroniclesSidebarList component
 	import SettingsIcon from './icons/settings.svelte'; // Import the new SettingsIcon
+	import ThemeSwitcher from './theme-switcher.svelte'; // Import ThemeSwitcher
 	import { SettingsStore } from '$lib/stores/settings.svelte'; // Import SettingsStore
 	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
@@ -328,6 +329,7 @@
 						}
 					}}
 					class="flex flex-row items-center gap-3"
+					aria-label="Home"
 				>
 					<span class="cursor-pointer rounded-md px-2 text-lg font-semibold hover:bg-muted">
 						Scribe
@@ -339,6 +341,7 @@
 					size="icon"
 					class="hidden h-8 w-8 md:flex"
 					onclick={() => context.toggle()}
+					aria-label="Toggle Sidebar"
 				>
 					<ChevronLeft class="h-4 w-4" />
 				</ButtonComponent>
@@ -348,13 +351,13 @@
 	<SidebarContent class="p-0">
 		<!-- Tab Navigation -->
 		<Tooltip.Provider>
-			<div class="flex min-w-0 border-b">
+			<div class="m-2 flex rounded-lg bg-muted/40 p-1">
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
 						'characters'
-							? 'border-b-2 border-primary bg-background text-foreground'
-							: 'text-muted-foreground hover:text-foreground'}"
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
 						onclick={() => switchTab('characters')}
 					>
 						<Users class="h-4 w-4" />
@@ -366,10 +369,10 @@
 
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
 						'personas'
-							? 'border-b-2 border-primary bg-background text-foreground'
-							: 'text-muted-foreground hover:text-foreground'}"
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
 						onclick={() => switchTab('personas')}
 					>
 						<UserCircle class="h-4 w-4" />
@@ -381,10 +384,10 @@
 
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
 						'lorebooks'
-							? 'border-b-2 border-primary bg-background text-foreground'
-							: 'text-muted-foreground hover:text-foreground'}"
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
 						onclick={() => switchTab('lorebooks')}
 					>
 						<BookOpen class="h-4 w-4" />
@@ -396,10 +399,10 @@
 
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center px-2 py-3 transition-all duration-200 hover:bg-muted/50 {sidebarStore.activeTab ===
+						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
 						'chronicles'
-							? 'border-b-2 border-primary bg-background text-foreground'
-							: 'text-muted-foreground hover:text-foreground'}"
+							? 'bg-background text-foreground shadow-sm'
+							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
 						onclick={() => switchTab('chronicles')}
 					>
 						<ScrollText class="h-4 w-4" />
@@ -460,27 +463,43 @@
 			</div>
 		</div>
 	</SidebarContent>
-	<SidebarFooter class="flex flex-col gap-2">
-		<div class="flex gap-2">
-			<ButtonComponent variant="ghost" class="flex-1 justify-start" onclick={openSettings}>
-				<SettingsIcon size={16} class="mr-2" />
-				Settings
-			</ButtonComponent>
-			<ButtonComponent
-				variant="ghost"
-				size="icon"
-				onclick={toggleTheme}
-				title={theme.resolvedTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+	<SidebarFooter class="p-3 border-t border-border/5 bg-background/50 backdrop-blur-sm mt-auto">
+		<!-- Main Footer Controls -->
+		<div class="flex items-center justify-between w-full gap-1 mb-2">
+			<ButtonComponent 
+				variant="ghost" 
+				class="flex-1 justify-start h-9 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors" 
+				onclick={openSettings}
 			>
-				{#if theme.resolvedTheme === 'light'}
-					<Moon size={16} />
-				{:else}
-					<Sun size={16} />
-				{/if}
+				<SettingsIcon size={16} class="mr-2" />
+				<span class="text-sm font-medium">Settings</span>
 			</ButtonComponent>
+			
+			<div class="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/10">
+				<ButtonComponent
+					variant="ghost"
+					size="icon"
+					class="w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-background shadow-sm transition-all"
+					onclick={toggleTheme}
+					title={theme.resolvedTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+				>
+					{#if theme.resolvedTheme === 'light'}
+						<Moon size={15} />
+					{:else}
+						<Sun size={15} />
+					{/if}
+				</ButtonComponent>
+				<div class="scale-90">
+					<ThemeSwitcher />
+				</div>
+			</div>
 		</div>
+
+		<!-- User Nav Area -->
 		{#if getIsAuthenticated() && getCurrentUser()}
-			<SidebarUserNav />
+			<div class="pt-1 border-t border-border/10">
+				<SidebarUserNav />
+			</div>
 		{/if}
 	</SidebarFooter>
 </Sidebar>

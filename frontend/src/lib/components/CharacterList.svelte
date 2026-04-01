@@ -116,8 +116,8 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex items-center justify-between border-b p-2">
-		<h2 class="px-2 text-lg font-semibold">Characters</h2>
+	<div class="flex items-center justify-between border-b border-border/40 bg-muted/10 p-2 pb-2">
+		<h2 class="px-2 text-lg font-semibold tracking-tight">Characters</h2>
 		<div class="flex gap-1">
 			<ButtonComponent
 				variant="ghost"

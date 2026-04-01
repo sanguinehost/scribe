@@ -508,16 +508,16 @@
 	});
 </script>
 
-<div class="mx-auto flex h-[90vh] max-w-7xl flex-col gap-6 px-4">
+<div class="mx-auto flex h-[90vh] max-w-7xl flex-col gap-6 px-4 pt-6 pb-4">
 	<div
 		class="flex min-h-0 flex-1 flex-col gap-6"
 		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
 	>
 		<!-- Compact Character Header -->
 		{#if isLoadingCharacter}
-			<Card class="border-0 shadow-sm">
-				<CardHeader class="py-4">
-					<div class="flex items-center gap-4">
+			<Card class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4">
+				<CardHeader class="py-5 px-6">
+					<div class="flex flex-col sm:flex-row sm:items-center gap-5">
 						<Skeleton class="h-16 w-16 rounded-full" />
 						<div class="flex-1 space-y-2">
 							<Skeleton class="h-7 w-1/2" />
@@ -532,20 +532,21 @@
 			</Card>
 		{:else if character}
 			<!-- Compact Character Header -->
-			<Card class="border-0 shadow-sm">
-				<CardHeader class="py-4">
-					<div class="flex items-center gap-4">
-						<!-- Compact Avatar -->
-						<Avatar
-							class="h-16 w-16 border-2 border-muted transition-transform hover:scale-105 {characterAvatarSrc
+			<Card class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4">
+				<CardHeader class="py-5 px-6">
+					<div class="flex flex-col md:flex-row flex-wrap md:justify-between gap-5">
+						<div class="flex items-center gap-5 min-w-0 flex-1 basis-[300px]">
+							<!-- Compact Avatar -->
+							<Avatar
+							class="h-20 w-20 border-[3px] border-primary/40 shadow-sm transition-transform hover:scale-105 ring-2 ring-primary/20 ring-offset-2 ring-offset-background flex-shrink-0 {characterAvatarSrc
 								? 'cursor-pointer'
 								: ''}"
 							onclick={() => characterAvatarSrc && (avatarLightboxOpen = true)}
 						>
 							{#if characterAvatarSrc}
-								<AvatarImage src={characterAvatarSrc} alt={character.name} />
+								<AvatarImage src={characterAvatarSrc} alt={character.name} class="object-cover" />
 							{/if}
-							<AvatarFallback class="text-xl font-semibold">
+							<AvatarFallback class="text-2xl font-bold bg-primary/10 text-primary">
 								{getInitials(character.name)}
 							</AvatarFallback>
 						</Avatar>
@@ -553,12 +554,12 @@
 						<!-- Character Name and Inline Edit -->
 						<div class="min-w-0 flex-1">
 							{#if editingField !== 'name'}
-								<div class="group relative">
-									<h1 class="truncate text-2xl font-bold">{character.name}</h1>
+								<div class="group relative flex items-center max-w-full">
+									<h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-balance leading-tight pr-6">{character.name}</h1>
 									<ButtonComponent
 										variant="ghost"
 										size="sm"
-										class="absolute -right-2 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
+										class="absolute right-0 top-1 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground hover:text-primary flex-shrink-0"
 										onclick={() => handleEditField('name', character?.name || '')}
 										aria-label="Edit character name"
 									>
@@ -600,13 +601,14 @@
 									</div>
 								</div>
 							{/if}
-							<p class="mt-1 text-sm text-muted-foreground">
-								{allChats.length} conversation{allChats.length !== 1 ? 's' : ''}
-							</p>
+							<div class="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+								<span class="bg-muted/40 px-2 py-0.5 rounded text-xs font-medium border border-border/40 text-foreground/70">{allChats.length} conversation{allChats.length !== 1 ? 's' : ''}</span>
+							</div>
+						</div>
 						</div>
 
 						<!-- Primary Actions -->
-						<div class="flex flex-shrink-0 gap-2">
+						<div class="flex flex-wrap items-center gap-2 mt-2 md:mt-0 flex-shrink-0">
 							<ButtonComponent onclick={handleStartNewChat} size="default" class="gap-2">
 								<PlusIcon class="h-4 w-4" />
 								New Chat
@@ -637,7 +639,7 @@
 										d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
 									/>
 								</svg>
-								Chronicles
+								<span class="hidden md:inline">Chronicles</span>
 							</ButtonComponent>
 							<ButtonComponent
 								variant="outline"
@@ -648,7 +650,7 @@
 								}}
 							>
 								<SettingsIcon class="h-4 w-4" />
-								Edit
+								<span class="hidden md:inline">Edit</span>
 							</ButtonComponent>
 						</div>
 					</div>
@@ -656,13 +658,13 @@
 			</Card>
 
 			<!-- Two-Column Layout -->
-			<div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-5">
+			<div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-5 mt-2">
 				<!-- Left Column: Recent Chats & Character Details (2/5 width) -->
-				<div class="flex flex-col gap-4 md:col-span-2 md:min-h-0">
+				<div class="flex flex-col gap-6 md:col-span-2 md:min-h-0">
 					<!-- Recent Chats -->
-					<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-						<CardHeader class="pb-3">
-							<h3 class="text-lg font-semibold">Recent Chats</h3>
+					<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+						<CardHeader class="pb-3 border-b border-border/5">
+							<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Recent Chats</h3>
 						</CardHeader>
 						<CardContent class="flex-1 overflow-y-auto pt-0">
 							{#if isLoadingChats}
@@ -721,10 +723,11 @@
 
 					{#if character}
 						<!-- Scenario Section -->
-						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-							<CardHeader class="pb-3">
+						{#if character.scenario || editingField === 'scenario'}
+						<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+							<CardHeader class="pb-3 border-b border-border/5">
 								<div class="flex items-center justify-between">
-									<h3 class="text-lg font-semibold">Scenario</h3>
+									<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Scenario</h3>
 									<div class="flex items-center gap-2">
 										{#if character.scenario && editingField !== 'scenario'}
 											<ButtonComponent
@@ -831,12 +834,14 @@
 								{/if}
 							</CardContent>
 						</Card>
+						{/if}
 
 						<!-- Personality Section -->
-						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-							<CardHeader class="pb-3">
+						{#if character.personality || editingField === 'personality'}
+						<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+							<CardHeader class="pb-3 border-b border-border/5">
 								<div class="flex items-center justify-between">
-									<h3 class="text-lg font-semibold">Personality</h3>
+									<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Personality</h3>
 									<div class="flex items-center gap-2">
 										{#if character.personality && editingField !== 'personality'}
 											<ButtonComponent
@@ -943,16 +948,17 @@
 								{/if}
 							</CardContent>
 						</Card>
+						{/if}
 					{/if}
 				</div>
 
 				<!-- Right Column: Character Description (3/5 width) -->
-				<div class="flex flex-col gap-4 md:col-span-3 md:min-h-0">
+				<div class="flex flex-col gap-6 md:col-span-3 md:min-h-0">
 					{#if character.description || editingField === 'description'}
-						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-							<CardHeader class="pb-3">
+						<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+							<CardHeader class="pb-3 border-b border-border/5">
 								<div class="flex items-center justify-between">
-									<h3 class="text-lg font-semibold">Description</h3>
+									<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Description</h3>
 									<div class="flex items-center gap-2">
 										{#if character.description && editingField !== 'description'}
 											<ButtonComponent

@@ -98,9 +98,9 @@
 </script>
 
 <Card
-	class="group/card relative cursor-pointer rounded-lg border-border/40 transition-all hover:border-primary hover:shadow-lg {isSelected
-		? 'border-primary ring-1 ring-primary'
-		: 'hover:bg-muted/50'}"
+	class="group/card relative cursor-pointer rounded-xl border border-border/40 bg-card/60 backdrop-blur-sm transition-all duration-300 hover:border-primary/50 hover:bg-card/80 hover:shadow-lg {isSelected
+		? 'border-primary shadow-md ring-1 ring-primary'
+		: 'hover:bg-muted/40'}"
 	onclick={handleClick}
 	onkeydown={(e) => e.key === 'Enter' && handleClick()}
 	tabindex={0}

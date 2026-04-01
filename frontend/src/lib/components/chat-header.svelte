@@ -141,7 +141,7 @@
 	}
 </script>
 
-<header class="sticky top-0 flex items-center gap-2 bg-background p-2">
+<header class="sticky top-0 z-40 flex items-center gap-2 border-b border-border/40 bg-background/80 px-4 py-3 backdrop-blur-xl">
 	<SidebarToggle />
 
 	{#if isLoadingSettings}

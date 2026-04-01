@@ -194,86 +194,97 @@
 					<ButtonComponent
 						type="button"
 						variant="ghost"
-						class="flex w-full items-center justify-between p-3 text-left hover:bg-muted/50"
+						class="flex w-full items-center justify-between p-4 rounded-xl bg-accent/30 text-left hover:bg-accent/50 transition-colors border border-border/10"
 						onclick={() => (showAdvancedOptions = !showAdvancedOptions)}
 					>
-						<span class="text-lg font-medium">Advanced Options</span>
+						<div class="flex flex-col">
+							<span class="text-lg font-semibold tracking-tight">Advanced Configuration</span>
+							<span class="text-sm text-muted-foreground font-normal">System prompts, instructions, and contextual scenario parameters.</span>
+						</div>
 						{#if showAdvancedOptions}
-							<ChevronUp class="h-5 w-5" />
+							<ChevronUp class="h-5 w-5 opacity-70" />
 						{:else}
-							<ChevronDown class="h-5 w-5" />
+							<ChevronDown class="h-5 w-5 opacity-70" />
 						{/if}
 					</ButtonComponent>
 
 					{#if showAdvancedOptions}
-						<div class="space-y-6 rounded-lg border bg-muted/20 p-4">
+						<div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-1">
 							<!-- Personality & Behavior -->
-							<div class="space-y-4">
-								<h4 class="text-base font-medium text-muted-foreground">Personality & Behavior</h4>
+							<div class="space-y-4 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm">
+								<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Personality & Context</h4>
 
 								<div class="space-y-2">
-									<Label for="personality">Personality</Label>
+									<Label for="personality" class="text-xs font-semibold">Personality</Label>
 									<TextareaComponent
 										id="personality"
 										bind:value={formData.personality}
 										placeholder="Describe the personality traits, speaking style, and character..."
-										rows={3}
+										rows={5}
+										class="resize-y bg-background/50 focus:bg-background transition-colors"
 									/>
 								</div>
 
 								<div class="space-y-2">
-									<Label for="scenario">Scenario</Label>
+									<Label for="scenario" class="text-xs font-semibold">Scenario</Label>
 									<TextareaComponent
 										id="scenario"
 										bind:value={formData.scenario}
 										placeholder="Describe the context or situation this persona operates in..."
-										rows={3}
+										rows={5}
+										class="resize-y bg-background/50 focus:bg-background transition-colors"
 									/>
 								</div>
 							</div>
 
 							<!-- Messages & Prompts -->
-							<div class="space-y-4">
-								<h4 class="text-base font-medium text-muted-foreground">Messages & Prompts</h4>
+							<div class="space-y-4 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm">
+								<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Generation Prompts</h4>
 
 								<div class="space-y-2">
-									<Label for="first_mes">First Message</Label>
-									<TextareaComponent
-										id="first_mes"
-										bind:value={formData.first_mes}
-										placeholder="The first message this persona will send..."
-										rows={2}
-									/>
-								</div>
-
-								<div class="space-y-2">
-									<Label for="system_prompt">System Prompt</Label>
+									<Label for="system_prompt" class="text-xs font-semibold">System Prompt</Label>
 									<TextareaComponent
 										id="system_prompt"
 										bind:value={formData.system_prompt}
 										placeholder="System-level instructions for how this persona should behave..."
 										rows={3}
+										class="resize-y bg-background/50 focus:bg-background transition-colors"
 									/>
 								</div>
 
 								<div class="space-y-2">
-									<Label for="mes_example">Message Examples</Label>
+									<Label for="first_mes" class="text-xs font-semibold">First Message</Label>
 									<TextareaComponent
-										id="mes_example"
-										bind:value={formData.mes_example}
-										placeholder="Example messages to help train the persona's style..."
+										id="first_mes"
+										bind:value={formData.first_mes}
+										placeholder="The first message this persona will send..."
 										rows={3}
+										class="resize-y bg-background/50 focus:bg-background transition-colors font-serif italic"
 									/>
 								</div>
 
-								<div class="space-y-2">
-									<Label for="post_history_instructions">Post-History Instructions</Label>
-									<TextareaComponent
-										id="post_history_instructions"
-										bind:value={formData.post_history_instructions}
-										placeholder="Instructions to apply after the conversation history..."
-										rows={2}
-									/>
+								<div class="grid grid-cols-1 gap-4">
+									<div class="space-y-2">
+										<Label for="mes_example" class="text-xs font-semibold">Message Examples</Label>
+										<TextareaComponent
+											id="mes_example"
+											bind:value={formData.mes_example}
+											placeholder="Example messages to help train the persona's style..."
+											rows={3}
+											class="resize-y bg-background/50 focus:bg-background transition-colors font-mono text-xs"
+										/>
+									</div>
+
+									<div class="space-y-2">
+										<Label for="post_history_instructions" class="text-xs font-semibold">Post-History Instructions</Label>
+										<TextareaComponent
+											id="post_history_instructions"
+											bind:value={formData.post_history_instructions}
+											placeholder="Instructions to apply after the conversation history..."
+											rows={2}
+											class="resize-y bg-background/50 focus:bg-background transition-colors font-mono text-xs"
+										/>
+									</div>
 								</div>
 							</div>
 						</div>

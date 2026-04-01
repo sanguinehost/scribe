@@ -169,7 +169,7 @@
 			{placeholder}
 			bind:value
 			class={_cn(
-				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
+				'max-h-[calc(37.5dvh)] min-h-[56px] resize-none overflow-y-auto rounded-[24px] border border-border/40 bg-muted/30 pb-12 pl-5 pr-5 pt-4 !text-base shadow-sm backdrop-blur-md transition-all focus-within:border-primary/50 focus-within:bg-muted/50 focus-within:shadow-md focus-within:ring-1 focus-within:ring-primary/20 hover:bg-muted/40',
 				c
 			)}
 			rows={2}
@@ -215,7 +215,8 @@
 
 {#snippet stopButton()}
 	<ButtonComponent
-		class="h-fit rounded-full border p-1.5 dark:border-zinc-600"
+		variant="ghost"
+		class="h-9 w-9 my-auto rounded-full border border-border/40 bg-background/50 p-0 text-muted-foreground shadow-sm backdrop-blur-md transition-all hover:bg-destructive/10 hover:border-destructive/30 hover:text-destructive"
 		onclick={(_event: MouseEvent) => {
 			_event.preventDefault();
 			stopGeneration(); // Use stopGeneration prop

@@ -448,100 +448,149 @@
 							</div>
 						</CardHeader>
 
-						{#if persona.scenario || persona.personality || persona.first_mes || persona.system_prompt}
-							<CardContent class="space-y-4 px-6 pb-6">
-								{#if persona.scenario}
-									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Scenario</h4>
-										<div
-											class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-										>
-											{#if containsHtml(persona.scenario)}
-												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-												{@html sanitizeHtml(persona.scenario)}
-											{:else}
-												<MarkdownRenderer md={persona.scenario} />
-											{/if}
-										</div>
+						{#if isEditMode || persona.scenario || persona.personality || persona.first_mes || persona.system_prompt || persona.mes_example || persona.post_history_instructions}
+							<CardContent class="grid grid-cols-1 md:grid-cols-2 gap-6 px-6 pb-6 mt-4">
+								{#if isEditMode || persona.personality}
+									<div class="space-y-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Personality</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-personality"
+												bind:value={editedPersonality}
+												placeholder="Describe personality traits..."
+												rows={5}
+												class="resize-y bg-background/50 focus:bg-background transition-colors flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.personality)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.personality)}
+												{:else}
+													<MarkdownRenderer md={persona.personality || ''} />
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
-								{#if persona.personality}
-									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">Personality</h4>
-										<div
-											class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold prose-headings:font-bold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-										>
-											{#if containsHtml(persona.personality)}
-												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-												{@html sanitizeHtml(persona.personality)}
-											{:else}
-												<MarkdownRenderer md={persona.personality} />
-											{/if}
-										</div>
+
+								{#if isEditMode || persona.scenario}
+									<div class="space-y-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Scenario</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-scenario"
+												bind:value={editedScenario}
+												placeholder="Context and scenario..."
+												rows={5}
+												class="resize-y bg-background/50 focus:bg-background transition-colors flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.scenario)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.scenario)}
+												{:else}
+													<MarkdownRenderer md={persona.scenario || ''} />
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
-								{#if persona.first_mes}
-									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">First Message</h4>
-										<div
-											class="prose prose-sm dark:prose-invert max-w-none text-sm italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-										>
-											{#if containsHtml(persona.first_mes)}
-												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-												{@html sanitizeHtml(persona.first_mes)}
-											{:else}
-												<MarkdownRenderer md={persona.first_mes} />
-											{/if}
-										</div>
+								
+								{#if isEditMode || persona.system_prompt}
+									<div class="space-y-2 md:col-span-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">System Prompt</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-system-prompt"
+												bind:value={editedSystemPrompt}
+												placeholder="System-level instructions..."
+												rows={4}
+												class="resize-y bg-background/50 focus:bg-background transition-colors flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.system_prompt)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.system_prompt)}
+												{:else}
+													<MarkdownRenderer md={persona.system_prompt || ''} />
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
-								{#if persona.system_prompt}
-									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">System Prompt</h4>
-										<div
-											class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-										>
-											{#if containsHtml(persona.system_prompt)}
-												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-												{@html sanitizeHtml(persona.system_prompt)}
-											{:else}
-												<MarkdownRenderer md={persona.system_prompt} />
-											{/if}
-										</div>
+
+								{#if isEditMode || persona.first_mes}
+									<div class="space-y-2 md:col-span-2 rounded-xl border border-border/20 border-l-4 border-l-primary/50 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">First Message</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-first-mes"
+												bind:value={editedFirstMes}
+												placeholder="The first message sent by the persona..."
+												rows={4}
+												class="resize-y bg-background/50 focus:bg-background transition-colors font-serif italic text-base flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm dark:prose-invert max-w-none text-base font-serif italic [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.first_mes)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.first_mes)}
+												{:else}
+													<MarkdownRenderer md={persona.first_mes || ''} />
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
-								{#if persona.mes_example}
-									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
-											Message Example
-										</h4>
-										<div
-											class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-										>
-											{#if containsHtml(persona.mes_example)}
-												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-												{@html sanitizeHtml(persona.mes_example)}
-											{:else}
-												<MarkdownRenderer md={persona.mes_example} />
-											{/if}
-										</div>
+
+								{#if isEditMode || persona.mes_example}
+									<div class="space-y-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Message Examples</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-mes-example"
+												bind:value={editedMesExample}
+												placeholder="Example dialogue..."
+												rows={4}
+												class="resize-y bg-background/50 focus:bg-background transition-colors font-mono text-xs flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm dark:prose-invert max-w-none text-xs font-mono bg-background/40 p-3 rounded overflow-x-auto whitespace-pre-wrap [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.mes_example)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.mes_example)}
+												{:else}
+													{persona.mes_example}
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
-								{#if persona.post_history_instructions}
-									<div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-										<h4 class="mb-2 text-sm font-semibold text-muted-foreground">
-											Post-History Instructions
-										</h4>
-										<div
-											class="prose prose-sm dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground"
-										>
-											{#if containsHtml(persona.post_history_instructions)}
-												<!-- eslint-disable-next-line svelte/no-at-html-tags -->
-												{@html sanitizeHtml(persona.post_history_instructions)}
-											{:else}
-												<MarkdownRenderer md={persona.post_history_instructions} />
-											{/if}
-										</div>
+
+								{#if isEditMode || persona.post_history_instructions}
+									<div class="space-y-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Post-History Instructions</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-phi"
+												bind:value={editedPostHistoryInstructions}
+												placeholder="Instructions for the bottom of the prompt..."
+												rows={4}
+												class="resize-y bg-background/50 focus:bg-background transition-colors font-mono text-xs flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm dark:prose-invert max-w-none text-xs font-mono bg-background/40 p-3 rounded overflow-x-auto whitespace-pre-wrap [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.post_history_instructions)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.post_history_instructions)}
+												{:else}
+													{persona.post_history_instructions}
+												{/if}
+											</div>
+										{/if}
 									</div>
 								{/if}
 							</CardContent>

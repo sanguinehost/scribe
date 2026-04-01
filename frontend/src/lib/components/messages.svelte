@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import Message from './messages/message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
+	import GameStateEventCard from './gamemaster/GameStateEventCard.svelte';
 	import type { ScribeChatMessage, ScribeCharacter, ScribeChatSession, User } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
@@ -516,6 +517,8 @@
 						_user={user}
 						{substituteTemplateVariables}
 					/>
+				{:else if chat?.game_master_mode_enabled && message.message_type === 'System'}
+					<GameStateEventCard {message} />
 				{:else}
 					{@const currentIndex = message.current_variant_index ?? 0}
 					{@const variantCount = message.variant_count ?? 0}

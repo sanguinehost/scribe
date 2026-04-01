@@ -33,18 +33,18 @@
 </script>
 
 <!-- Toggle Button (always visible on the right edge) -->
-<div class="fixed right-4 top-1/2 z-50 -translate-y-1/2">
+<div class="fixed right-0 top-1/2 z-40 -translate-y-1/2">
 	<ButtonComponent
-		variant="ghost"
+		variant="outline"
 		size="sm"
 		onclick={toggleSidebar}
-		class="rounded-l-lg rounded-r-none border-y border-l bg-background shadow-lg hover:bg-accent"
+		class="h-12 w-6 rounded-l-xl rounded-r-none border-y border-l border-border/40 bg-card/50 px-1 shadow-lg backdrop-blur-md transition-all hover:w-8 hover:bg-accent/50"
 		aria-label={isOpen ? 'Close chat settings' : 'Open chat settings'}
 	>
 		{#if isOpen}
-			<ChevronRight class="h-4 w-4" />
+			<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
 		{:else}
-			<ChevronLeft class="h-4 w-4" />
+			<ChevronLeft class="h-4 w-4 shrink-0 text-muted-foreground" />
 		{/if}
 	</ButtonComponent>
 </div>
@@ -52,13 +52,13 @@
 <!-- Sidebar Panel -->
 {#if isOpen}
 	<div
-		class="fixed right-0 top-0 z-40 h-full w-80 border-l bg-background shadow-xl transition-transform duration-300 ease-in-out"
-		style="transform: translateX(0)"
+		class="fixed right-0 top-0 z-50 h-full w-80 border-l border-border/40 bg-card/60 shadow-2xl backdrop-blur-xl transition-transform duration-300 ease-out md:w-96"
 	>
 		<div class="flex h-full flex-col">
 			<!-- Close Button Header -->
-			<div class="flex justify-end border-b p-2">
-				<ButtonComponent variant="ghost" size="sm" onclick={toggleSidebar}>
+			<div class="flex items-center justify-between border-b border-border/40 bg-muted/20 px-4 py-3">
+				<h2 class="text-sm font-semibold tracking-tight text-foreground">Chat Configuration</h2>
+				<ButtonComponent variant="ghost" size="icon" class="h-8 w-8 rounded-full text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground" onclick={toggleSidebar}>
 					<ChevronRight class="h-4 w-4" />
 				</ButtonComponent>
 			</div>
@@ -80,7 +80,7 @@
 <!-- Backdrop -->
 {#if isOpen}
 	<div
-		class="fixed inset-0 z-30 bg-black/20 md:hidden"
+		class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
 		onclick={toggleSidebar}
 		onkeydown={(e) => e.key === 'Escape' && toggleSidebar()}
 		role="button"

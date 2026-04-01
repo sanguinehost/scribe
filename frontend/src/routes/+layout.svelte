@@ -26,9 +26,13 @@
 
 	let { children } = $props<{ data?: { user?: User | null }; children: unknown }>();
 
-	// Public routes that don't require authentication
+	// Public routes that don't require authentication, supporting trailing slashes
 	const publicRoutes = ['/welcome', '/signin', '/signup', '/pricing', '/verify-email'];
-	const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
+	const isPublicRoute = $derived(
+		publicRoutes.some(route => 
+			$page.url.pathname === route || $page.url.pathname === `${route}/`
+		)
+	);
 
 	// Re-authentication modal state
 	let showReAuthModal = $state(false);
@@ -704,7 +708,7 @@
 		{:else}
 			<div class="flex h-screen items-center justify-center">
 				<div class="loading-content">
-					<svg class="loading-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+					<svg class="loading-logo" width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
 						<circle
 							cx="50"
 							cy="50"

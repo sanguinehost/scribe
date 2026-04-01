@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './lib/theme/themes.css';
 @plugin 'tailwindcss-animate';
 
 @theme {
@@ -37,8 +38,9 @@
 	--color-sidebar-ring: hsl(var(--sidebar-ring));
 
 	--font-sans:
-		'Lato', 'geist', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+		'Inter', 'geist', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
 		'Segoe UI Symbol', 'Noto Color Emoji';
+	--font-heading: 'Space Grotesk', sans-serif;
 	--font-serif: 'Lora', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
 	--font-mono:
 		'Fira Code', 'geist-mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -120,7 +122,8 @@
 		--sidebar-accent-foreground: 0 24.4444% 8.8235%;
 		--sidebar-border: 0 20.6349% 87.6471%;
 		--sidebar-ring: 0 100% 27.2549%;
-		--font-sans: Lato;
+		--font-sans: Inter;
+		--font-heading: Space Grotesk;
 		--font-serif: Lora;
 		--font-mono: Fira Code;
 		--radius: 0.5rem;
@@ -169,7 +172,8 @@
 		--sidebar-accent-foreground: 0 33.3333% 98.8235%;
 		--sidebar-border: 0 24.4444% 8.8235%;
 		--sidebar-ring: 37.6119 60.9091% 56.8627%;
-		--font-sans: Lato;
+		--font-sans: Inter;
+		--font-heading: Space Grotesk;
 		--font-serif: Lora;
 		--font-mono: Fira Code;
 		--radius: 0.5rem;
@@ -260,5 +264,26 @@
 		color: hsl(var(--foreground));
 		letter-spacing: 0.025em;
 		opacity: 0.8;
+	}
+}
+
+/* Accessibility settings */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	::before,
+	::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+@media (prefers-contrast: more) {
+	:root {
+		--border: 0 0% 0%; /* Black borders */
+	}
+	.dark {
+		--border: 0 0% 100%; /* White borders */
 	}
 }
