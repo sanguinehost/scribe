@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { goto as _goto } from '$app/navigation';
 	import { apiClient as _apiClient } from '$lib/api';
 	import type { ChatMode } from '$lib/types';
@@ -65,7 +66,7 @@
 			if (createChatResult.isOk()) {
 				const chat = createChatResult.value;
 				toast.success('Chat created successfully');
-				await _goto(`/chat/${chat.id}`, { invalidateAll: true });
+				await _goto(resolve(`/chat/${chat.id}` as any), { invalidateAll: true });
 				open = false;
 				onOpenChange?.(false);
 			} else {

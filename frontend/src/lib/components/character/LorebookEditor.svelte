@@ -116,7 +116,7 @@
 				<h3 class="text-lg font-semibold">Lorebook Settings</h3>
 				<div class="flex gap-2">
 					<LorebookAIAssistant onclick={() => (showAIDialog = true)} />
-					<ResearchWebButton onclick={() => (showResearchDialog = true)} />
+					<!-- <ResearchWebButton onclick={() => (showResearchDialog = true)} /> -->
 				</div>
 			</div>
 
@@ -265,5 +265,5 @@
 <!-- AI Assistant Dialog -->
 <LorebookAIDialog bind:open={showAIDialog} />
 
-<!-- Research Dialog -->
-<ResearchDialog bind:open={showResearchDialog} />
+<!-- Research Dialog (Disabled temporarily) -->
+<!-- <ResearchDialog bind:open={showResearchDialog} /> -->

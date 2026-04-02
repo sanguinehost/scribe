@@ -49,13 +49,11 @@ export default defineConfig({
 		)
 	},
 	server: {
-		hmr: {
-			// Allow HMR over the network (Tailscale)
-			// The host must match where the browser accesses the app
-			host: 'localhost',
-			protocol: certsExist ? 'wss' : 'ws',
-			clientPort: certsExist ? 5174 : 5173
-		},
+		hmr: certsExist
+			? {
+					protocol: 'wss'
+				}
+			: true,
 		host: true, // Listen on all network interfaces
 		...(certsExist && {
 			https: {

@@ -1347,6 +1347,25 @@ class ApiClient {
 		});
 	}
 
+	async uploadPersonaAvatar(
+		personaId: string,
+		file: File,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<{ message: string }, ApiError>> {
+		const formData = new FormData();
+		// The backend expects the file to be uploaded in the 'avatar' field, just like banner expects 'banner' or 'file'
+		formData.append('avatar', file);
+
+		return this.fetch<{ message: string }>(
+			`/api/personas/${personaId}/avatar`,
+			{
+				method: 'POST',
+				body: formData
+			},
+			fetchFn
+		);
+	}
+
 	async uploadPersonaBanner(
 		personaId: string,
 		file: File,

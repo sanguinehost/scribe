@@ -78,7 +78,7 @@
 	let editBannerUrl = $state('');
 	let editBannerFile = $state<File | null>(null);
 	let editPrimaryColor = $state('');
-	let editCardStyle = $state<'default' | 'dossier' | 'minimal' | 'terminal'>('dossier');
+
 
 	// Character editor dialog state
 	let characterEditorOpen = $state(false);
@@ -113,7 +113,7 @@
 	const customPrimaryColor = $derived(visualMetadata?.primary_color);
 	const heroBannerUrl = $derived(visualMetadata?.banner_url);
 	const cssVars = $derived(customPrimaryColor ? `--char-primary: ${customPrimaryColor};` : '');
-	const cardStyle = $derived(visualMetadata?.card_style || 'dossier');
+
 
 	// Create properly formatted avatar URL
 	const characterAvatarSrc = $derived.by(() => {
@@ -379,7 +379,7 @@
 				if (onStartChat) {
 					onStartChat(chat.id);
 				}
-				await _goto(`/chat/${chat.id}`, { invalidateAll: true });
+				await _goto(resolve(`/chat/${chat.id}` as any), { invalidateAll: true });
 			} else {
 				toast.error('Failed to start chat', {
 					description: createChatResult.error.message
@@ -506,7 +506,7 @@
 		editBannerUrl = visualMetadata?.banner_url || '';
 		editBannerFile = null;
 		editPrimaryColor = visualMetadata?.primary_color || '';
-		editCardStyle = visualMetadata?.card_style || 'dossier';
+
 		appearanceEditorOpen = true;
 	}
 
@@ -535,8 +535,7 @@
 			const updatedVisualMetadata = {
 				...(currentExtensions.visual_metadata || {}),
 				banner_url: newBannerUrl || undefined,
-				primary_color: editPrimaryColor || undefined,
-				card_style: editCardStyle !== 'dossier' ? editCardStyle : undefined // dossier is default
+				primary_color: editPrimaryColor || undefined
 			};
 
 			const updatedExtensions = {
@@ -645,7 +644,7 @@
 					<div class="flex flex-col sm:flex-row gap-4 sm:gap-6 -mt-12 sm:-mt-16">
 						<!-- Dossier Avatar -->
 						<Avatar
-							class="h-24 w-24 sm:h-32 sm:w-32 border-4 border-background shadow-lg transition-transform hover:scale-105 {characterAvatarSrc ? 'cursor-pointer' : ''} bg-background z-10 shrink-0"
+							class="h-32 w-32 md:h-48 md:w-48 rounded-2xl border-4 shadow-xl transition-transform hover:scale-[1.02] duration-300 {characterAvatarSrc ? 'cursor-pointer' : ''} bg-background z-10 shrink-0 border-background/80 backdrop-blur-sm"
 							onclick={() => characterAvatarSrc && (avatarLightboxOpen = true)}
 							style={customPrimaryColor ? `box-shadow: 0 4px 20px -5px ${customPrimaryColor}` : ''}
 						>
@@ -658,13 +657,13 @@
 						</Avatar>
 
 						<!-- Character Name and Actions -->
-						<div class="min-w-0 flex-1 pt-2 sm:pt-16 flex flex-col justify-between gap-4">
-							<div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+						<div class="min-w-0 flex-1 pt-4 md:pt-[4.5rem] flex flex-col justify-between gap-4">
+							<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
 								<!-- Name Section -->
 								<div class="min-w-0 flex-1 space-y-1">
 									{#if editingField !== 'name'}
 										<div class="group relative flex items-center max-w-full">
-											<h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-balance leading-tight pr-8 drop-shadow-sm" style={customPrimaryColor ? `color: ${customPrimaryColor}` : ''}>{character.name}</h1>
+											<h1 class="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-balance leading-tight pr-8 drop-shadow-sm">{character.name}</h1>
 											<ButtonComponent
 												variant="ghost"
 												size="sm"
@@ -710,7 +709,7 @@
 								</div>
 
 								<!-- Primary Actions -->
-								<div class="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0">
+								<div class="flex flex-wrap md:flex-nowrap items-center gap-3 shrink-0 w-full md:w-auto mt-4 md:mt-0 pt-2 self-start md:self-center">
 									<ButtonComponent
 										onclick={handleStartNewChat}
 										class="gap-2 shadow-sm text-primary-foreground relative overflow-hidden group flex-1 sm:flex-none justify-center"
@@ -735,7 +734,7 @@
 									<ButtonComponent
 										variant="outline"
 										class="gap-2 shadow-sm bg-background/50 flex-none justify-center border-border/40 px-3 hidden sm:flex"
-										onclick={() => _goto('/chronicles?character=' + characterId)}
+										onclick={() => _goto(resolve('/chronicles') + '?character=' + characterId)}
 										title="View chronicles"
 									>
 										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1612,19 +1611,7 @@
 				<p class="text-[0.8rem] text-muted-foreground">Custom accent color for buttons and typography.</p>
 			</div>
 
-			<div class="grid gap-2">
-				<label for="card_style" class="text-sm font-medium leading-none">Layout Style</label>
-				<select
-					id="card_style"
-					bind:value={editCardStyle}
-					class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					<option value="dossier">Dossier (Immersive)</option>
-					<option value="default">Default</option>
-					<option value="minimal">Minimal</option>
-					<option value="terminal">Terminal</option>
-				</select>
-			</div>
+
 		</div>
 
 		<DialogFooter>

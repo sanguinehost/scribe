@@ -149,7 +149,6 @@
 					console.log('[STEP 5] Importing isDesktopMode...');
 					const { isDesktopMode } = await import('$lib/utils/features');
 					console.log('[STEP 6] isDesktopMode imported');
-
 					console.log('[STEP 7] Importing apiClient...');
 					const { apiClient } = await import('$lib/api');
 					console.log('[STEP 8] apiClient imported');
@@ -441,7 +440,7 @@
 			Promise.race([
 				initPromise,
 				new Promise((_, reject) =>
-					setTimeout(() => reject(new Error('Initialization IIFE timed out after 8 seconds')), 8000)
+					setTimeout(() => reject(new Error('Initialization IIFE timed out after 12 seconds')), 12000)
 				)
 			]).catch((error) => {
 				console.error('[TIMEOUT] Initialization IIFE did not complete:', error);

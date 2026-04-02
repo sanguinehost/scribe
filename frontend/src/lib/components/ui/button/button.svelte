@@ -1,3 +1,4 @@
+<!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts" module>
 	import type { WithElementRef } from 'bits-ui';
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
@@ -38,6 +39,7 @@
 </script>
 
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	// Disable custom elements to avoid props inference issues
 	import { cn as _cn } from '$lib/utils/shadcn.js';
 
@@ -57,14 +59,25 @@
 </script>
 
 {#if href}
-	<a
-		bind:this={ref}
-		class={_cn(buttonVariants({ variant, size }), className)}
-		{href}
-		{...restProps}
-	>
-		{@render children?.()}
-	</a>
+	{#if href.startsWith('http') || href.startsWith('mailto:')}
+		<a
+			bind:this={ref}
+			class={_cn(buttonVariants({ variant, size }), className)}
+			{href}
+			{...restProps}
+		>
+			{@render children?.()}
+		</a>
+	{:else}
+		<a
+			bind:this={ref}
+			class={_cn(buttonVariants({ variant, size }), className)}
+			href={resolve(href as unknown as "/")}
+			{...restProps}
+		>
+			{@render children?.()}
+		</a>
+	{/if}
 {:else}
 	<button
 		bind:this={ref}

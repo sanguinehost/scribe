@@ -3,9 +3,9 @@
 	import { createEventDispatcher } from 'svelte';
 	import type { ScribeChatSession } from '$lib/types';
 	import type { UserPersona } from '$lib/types';
-	import ChevronLeft from './icons/chevron-down.svelte';
-	import ChevronRight from './icons/chevron-up.svelte';
+	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import ChatConfigPanel from './settings/ChatConfigPanel.svelte';
+	import { fly, fade } from 'svelte/transition';
 
 	let {
 		isOpen = $bindable(false),
@@ -52,7 +52,8 @@
 <!-- Sidebar Panel -->
 {#if isOpen}
 	<div
-		class="fixed right-0 top-0 z-50 h-full w-80 border-l border-border/40 bg-card/60 shadow-2xl backdrop-blur-xl transition-transform duration-300 ease-out md:w-96"
+		transition:fly={{ x: 300, duration: 300 }}
+		class="fixed right-0 top-0 z-50 h-full w-80 border-l border-border/40 bg-card/60 shadow-2xl backdrop-blur-xl md:w-96"
 	>
 		<div class="flex h-full flex-col">
 			<!-- Close Button Header -->
@@ -80,6 +81,7 @@
 <!-- Backdrop -->
 {#if isOpen}
 	<div
+		transition:fade={{ duration: 200 }}
 		class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
 		onclick={toggleSidebar}
 		onkeydown={(e) => e.key === 'Escape' && toggleSidebar()}

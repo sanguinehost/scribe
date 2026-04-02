@@ -39,8 +39,8 @@
 		DEFAULT_CONTEXT_RAG_BUDGET
 	} from '$lib/ai/models';
 	import { SettingsStore as _SettingsStore } from '$lib/stores/settings.svelte';
-	import ChevronDown from '../icons/chevron-down.svelte';
-	import ChevronUp from '../icons/chevron-up.svelte';
+	import { ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { slide } from 'svelte/transition';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ContextConfiguratorCompact from '$lib/components/shared/ContextConfiguratorCompact.svelte';
@@ -875,7 +875,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.persona}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							<div class="space-y-2">
 								<select
 									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -890,6 +891,7 @@
 								<p class="text-xs text-muted-foreground">Override the user persona for this chat</p>
 							</div>
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -909,7 +911,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.templates}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							<TemplateSelector
 								bind:selectedTemplateId={localSettings.prompt_template_id}
 								onTemplateChange={handleTemplateChange}
@@ -919,6 +922,7 @@
 								hideLabel={true}
 							/>
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -943,7 +947,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.sessionStyle}
-						<CardContent class="space-y-4">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-4">
 							{#if isLoadingSessionStyle}
 								<div class="space-y-2">
 									<Skeleton class="h-8 w-full" />
@@ -1047,6 +1052,7 @@
 								{/if}
 							{/if}
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -1071,7 +1077,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.chronicles}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							{#if isLoadingChronicles}
 								<div class="space-y-2">
 									<Skeleton class="h-8 w-full" />
@@ -1173,6 +1180,7 @@
 								</div>
 							{/if}
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -1194,7 +1202,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.lorebooks}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							{#if isLoadingLorebooks}
 								<div class="space-y-2">
 									<Skeleton class="h-8 w-full" />
@@ -1277,6 +1286,7 @@
 								Manage Lorebooks
 							</ButtonComponent>
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 

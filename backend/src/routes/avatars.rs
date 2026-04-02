@@ -34,7 +34,10 @@ pub fn avatar_routes() -> Router<AppState> {
         )
         .route("/personas/{persona_id}/banner", get(get_persona_banner))
         .route("/personas/{persona_id}/banner", post(upload_persona_banner))
-        .route("/personas/{persona_id}/banner", delete(delete_persona_banner))
+        .route(
+            "/personas/{persona_id}/banner",
+            delete(delete_persona_banner),
+        )
 }
 
 // Get user avatar
@@ -557,7 +560,9 @@ pub async fn upload_persona_banner(
 
     // Validate size constraint (5MB)
     if image_bytes.len() > 5 * 1024 * 1024 {
-        return Err(AppError::BadRequest("File exceeds 5MB size limit".to_string()));
+        return Err(AppError::BadRequest(
+            "File exceeds 5MB size limit".to_string(),
+        ));
     }
 
     if let Some(ct) = &content_type {
@@ -573,17 +578,27 @@ pub async fn upload_persona_banner(
                     Ok(_) => info!("Image data validated successfully as {}", ct),
                     Err(e) => {
                         error!("Failed to decode image data as {}: {}", ct, e);
-                        return Err(AppError::BadRequest(format!("Invalid image file format/content: {}", e)));
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid image file format/content: {}",
+                            e
+                        )));
                     }
                 }
             } else {
-                return Err(AppError::BadRequest(format!("Unsupported image format: {}. Only PNG and JPEG are allowed.", ct)));
+                return Err(AppError::BadRequest(format!(
+                    "Unsupported image format: {}. Only PNG and JPEG are allowed.",
+                    ct
+                )));
             }
         } else {
-            return Err(AppError::BadRequest("Invalid MIME type. Must be an image.".to_string()));
+            return Err(AppError::BadRequest(
+                "Invalid MIME type. Must be an image.".to_string(),
+            ));
         }
     } else {
-        return Err(AppError::BadRequest("No content type provided for persona banner upload.".to_string()));
+        return Err(AppError::BadRequest(
+            "No content type provided for persona banner upload.".to_string(),
+        ));
     }
 
     let new_asset = NewUserAsset::new_persona_banner(

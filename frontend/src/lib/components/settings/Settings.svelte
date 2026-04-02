@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { fly as _fly } from 'svelte/transition';
-	import { quintOut as _quintOut } from 'svelte/easing';
+	import { fade, slide } from 'svelte/transition';
 	import { Button as ButtonComponent } from '../ui/button';
 	import { Card, CardHeader, CardTitle, CardContent } from '../ui/card';
 	import { Input } from '../ui/input';
@@ -10,19 +9,15 @@
 	import { toast } from 'svelte-sonner';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { ENABLE_LOCAL_LLM, ENABLE_PAYMENTS, isDesktopMode } from '$lib/utils/features';
-	import { chatModels, DEFAULT_CHAT_MODEL as _DEFAULT_CHAT_MODEL } from '$lib/ai/models';
+	import { chatModels } from '$lib/ai/models';
 	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
 	import ApiKeysManager from '$lib/components/settings/ApiKeysManager.svelte';
-	import ChevronDown from '../icons/chevron-down.svelte';
-	import ChevronUp from '../icons/chevron-up.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
-	import type {
-		UserSettingsResponse as _UserSettingsResponse,
-		UpdateUserSettingsRequest
-	} from '$lib/types';
+	import type { UpdateUserSettingsRequest } from '$lib/types';
 	import { MembershipSettings } from '$lib/components/membership';
 	import NarrativeStyleConfigurator from '$lib/components/settings/NarrativeStyleConfigurator.svelte';
 	import DesktopAccountSettings from '$lib/components/settings/DesktopAccountSettings.svelte';
+	import { CreditCard, Monitor, Sliders, BrainCircuit, PenTool, Key, HardDrive, ChevronDown, ChevronUp } from 'lucide-svelte';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -243,14 +238,14 @@
 
 	// Dynamic tabs based on feature flags and runtime availability
 	const tabs = $derived([
-		...(ENABLE_PAYMENTS ? [{ id: 'membership', label: 'Membership', icon: '💳' }] : []),
-		...(inDesktopMode ? [{ id: 'desktop', label: 'Desktop Account', icon: '🖥️' }] : []),
-		{ id: 'generation', label: 'Generation', icon: '🎛️' },
-		{ id: 'context', label: 'Context', icon: '🧠' },
-		{ id: 'writingstyle', label: 'Writing Style', icon: '✍️' },
-		{ id: 'apikeys', label: 'API Keys', icon: '🔑' },
-		...(ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
-			? [{ id: 'models', label: 'Local Models', icon: '💾' }]
+		...(ENABLE_PAYMENTS ? [{ id: 'membership', label: 'Membership', icon: CreditCard }] : []),
+		...(inDesktopMode ? [{ id: 'desktop', label: 'Desktop Account', icon: Monitor }] : []),
+		{ id: 'generation', label: 'Generation', icon: Sliders },
+		{ id: 'context', label: 'Context', icon: BrainCircuit },
+		{ id: 'writingstyle', label: 'Writing Style', icon: PenTool },
+		{ id: 'apikeys', label: 'API Keys', icon: Key },
+		...(inDesktopMode && ENABLE_LOCAL_LLM && llmStoreReactive?.localLlmFeatureAvailable
+			? [{ id: 'models', label: 'Local Models', icon: HardDrive }]
 			: [])
 	]);
 </script>
@@ -295,6 +290,7 @@
 			<div class="border-b">
 				<nav class="flex space-x-8">
 					{#each tabs as tab}
+						{@const Icon = tab.icon}
 						<button
 							onclick={() => (activeTab = tab.id)}
 							class="flex items-center gap-2 border-b-2 px-1 py-2 text-sm font-medium transition-colors {activeTab ===
@@ -302,7 +298,7 @@
 								? 'border-primary text-primary'
 								: 'border-transparent text-muted-foreground hover:border-border hover:text-foreground'}"
 						>
-							<span>{tab.icon}</span>
+							<Icon class="h-4 w-4" />
 							{tab.label}
 						</button>
 					{/each}
@@ -312,7 +308,7 @@
 			<div class="space-y-6">
 				<!-- Membership Tab -->
 				{#if activeTab === 'membership' && ENABLE_PAYMENTS}
-					<div class="space-y-6">
+					<div class="space-y-6" in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 						<Card>
 							<CardHeader>
 								<CardTitle class="text-lg">Subscription & Billing</CardTitle>
@@ -326,6 +322,7 @@
 
 				<!-- Desktop Account Tab -->
 				{#if activeTab === 'desktop' && inDesktopMode}
+					<div in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 					<Card>
 						<CardHeader>
 							<CardTitle class="text-lg">Desktop Account Settings</CardTitle>
@@ -334,10 +331,12 @@
 							<DesktopAccountSettings />
 						</CardContent>
 					</Card>
+					</div>
 				{/if}
 
 				<!-- Generation Tab -->
 				{#if activeTab === 'generation'}
+					<div class="space-y-6" in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 					<!-- Model Selection -->
 					<Card>
 						<CardHeader>
@@ -445,6 +444,7 @@
 							</div>
 						</CardHeader>
 						{#if expandedSections.advanced}
+							<div transition:slide={{ duration: 200 }}>
 							<CardContent class="space-y-4">
 								<div class="grid grid-cols-2 gap-4">
 									<div class="space-y-2">
@@ -484,6 +484,7 @@
 									<p class="text-xs text-muted-foreground">For reproducible generation</p>
 								</div>
 							</CardContent>
+							</div>
 						{/if}
 					</Card>
 
@@ -506,6 +507,7 @@
 							</div>
 						</CardHeader>
 						{#if expandedSections.gemini}
+							<div transition:slide={{ duration: 200 }}>
 							<CardContent class="space-y-4">
 								<div class="grid grid-cols-2 gap-4">
 									<div class="space-y-2">
@@ -536,6 +538,7 @@
 									</div>
 								</div>
 							</CardContent>
+							</div>
 						{/if}
 					</Card>
 
@@ -562,10 +565,12 @@
 							</div>
 						</CardContent>
 					</Card>
+					</div>
 				{/if}
 
 				<!-- Context Tab -->
 				{#if activeTab === 'context'}
+					<div in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 					<ContextConfigurator
 						bind:total_token_limit={settings.context_total_token_limit}
 						bind:recent_history_budget={settings.context_recent_history_budget}
@@ -576,23 +581,30 @@
 						title="Default Context Window Management"
 						description="Set default token allocation for new chats."
 					/>
+					</div>
 				{/if}
 
 				<!-- Writing Style Tab -->
 				{#if activeTab === 'writingstyle'}
+					<div in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 					<NarrativeStyleConfigurator />
+					</div>
 				{/if}
 
 				<!-- API Keys Tab -->
 				{#if activeTab === 'apikeys'}
+					<div in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 					<ApiKeysManager />
+					</div>
 				{/if}
 
 				<!-- Models Tab (Local LLM) -->
 				{#if activeTab === 'models' && ENABLE_LOCAL_LLM}
+					<div in:fade={{ duration: 150, delay: 150 }} out:fade={{ duration: 150 }}>
 					{#await import('$lib/components/model-selector.svelte') then { default: ModelSelector }}
 						<ModelSelector class="" />
 					{/await}
+					</div>
 				{/if}
 
 				<!-- Save Button -->

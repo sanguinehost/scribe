@@ -486,7 +486,7 @@ fn insert_chat_session(
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
     }
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     {
         use diesel::prelude::*;
         tracing::info!("Inserting new chat session with payment fields: total_credits_used=0, total_actual_cost=0.0, total_modified_cost=0.0, total_credit_cost=0, total_actual_charge=0.0");

@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { isDesktopMode } from '$lib/utils/features';
+	import { resolve } from '$app/paths';
 
 	// Desktop mode: form data from server actions is not available with ssr:false
 	let { form }: { form?: unknown } = $props();
@@ -145,7 +146,7 @@
 })}
 	<p class="mt-4 text-center text-sm text-gray-600 dark:text-zinc-400">
 		{question}
-		<a {href} class="font-semibold text-gray-800 hover:underline dark:text-zinc-200">
+		<a href={resolve(href as unknown as "/")} class="font-semibold text-gray-800 hover:underline dark:text-zinc-200">
 			{cta}
 		</a>
 		{postscript}

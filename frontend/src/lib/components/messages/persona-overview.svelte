@@ -340,7 +340,7 @@
 
 	async function handleSaveAppearance() {
 		if (!persona) return;
-		
+
 		if (editBannerFile) {
 			isSaving = true;
 			try {
@@ -373,7 +373,7 @@
 	in:slideAndFade={{ y: 20, duration: 300 }}
 	out:slideAndFade={{ y: -20, duration: 200 }}
 >
-	<div class="flex min-h-full w-full items-center justify-center py-8">
+	<div class="flex min-h-full w-full items-start justify-center py-8">
 		<div class="mx-auto w-full max-w-6xl">
 			<div
 				class="space-y-6"
@@ -445,37 +445,22 @@ onclick={() => persona?.avatar && (avatarLightboxOpen = true)}
 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
 <!-- Name Section -->
 <div class="min-w-0 flex-1 space-y-1">
-{#if !isEditMode}
-<div class="relative flex items-center max-w-full">
-<h1 class="text-2xl sm:text-4xl font-extrabold tracking-tight text-balance leading-tight pr-8 drop-shadow-sm">{persona?.name}</h1>
-</div>
-{#if persona?.description}
-<div class="mt-2 text-sm text-muted-foreground line-clamp-2">
-{persona?.description}
-</div>
-{/if}
-{:else}
+								{#if !isEditMode}
+									<div class="relative flex items-center max-w-full">
+										<h1 class="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-balance leading-tight pr-8 drop-shadow-sm">{persona?.name}</h1>
+									</div>
+								{:else}
 <div class="space-y-3">
 <div>
 <Label for="edit-name" class="text-xs font-medium uppercase text-muted-foreground">Name</Label>
-<Input
-id="edit-name"
-bind:value={editedName}
-class="mt-1 h-auto py-1 text-2xl font-bold w-full max-w-sm"
-placeholder="Persona name"
-/>
-</div>
-<div>
-<Label for="edit-description" class="text-xs font-medium uppercase text-muted-foreground">Description</Label>
-<TextareaComponent
-id="edit-description"
-bind:value={editedDescription}
-class="mt-1"
-placeholder="Persona description"
-rows={2}
-/>
-</div>
-</div>
+											<Input
+												id="edit-name"
+												bind:value={editedName}
+												class="mt-1 h-auto py-1 text-2xl font-bold w-full max-w-sm"
+												placeholder="Persona name"
+											/>
+										</div>
+									</div>
 {/if}
 </div>
 
@@ -519,8 +504,32 @@ Save Changes
 </div>
 </div>
 
-						{#if isEditMode || persona.scenario || persona.personality || persona.first_mes || persona.system_prompt || persona.mes_example || persona.post_history_instructions}
+						{#if isEditMode || persona.description || persona.scenario || persona.personality || persona.first_mes || persona.system_prompt || persona.mes_example || persona.post_history_instructions}
 							<CardContent class="grid grid-cols-1 md:grid-cols-2 gap-6 px-6 pb-6 mt-4">
+								{#if isEditMode || persona.description}
+									<div class="space-y-2 md:col-span-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
+										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Description</h4>
+										{#if isEditMode}
+											<TextareaComponent
+												id="edit-description"
+												bind:value={editedDescription}
+												placeholder="Persona description..."
+												rows={4}
+												class="resize-y bg-background/50 focus:bg-background transition-colors flex-grow"
+											/>
+										{:else}
+											<div class="prose prose-sm prose-p:my-2 prose-p:leading-relaxed prose-strong:font-semibold dark:prose-invert max-w-none text-sm [&_*[style*='color']]:!text-foreground [&_p]:!text-foreground [&_span]:!text-foreground [&_strong]:!text-foreground flex-grow">
+												{#if containsHtml(persona.description)}
+													<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+													{@html sanitizeHtml(persona.description)}
+												{:else}
+													<MarkdownRenderer md={persona.description || ''} />
+												{/if}
+											</div>
+										{/if}
+									</div>
+								{/if}
+
 								{#if isEditMode || persona.personality}
 									<div class="space-y-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
 										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">Personality</h4>
@@ -568,7 +577,7 @@ Save Changes
 										{/if}
 									</div>
 								{/if}
-								
+
 								{#if isEditMode || persona.system_prompt}
 									<div class="space-y-2 md:col-span-2 rounded-xl border border-border/20 bg-muted/10 p-5 shadow-sm flex flex-col h-full">
 										<h4 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80 mb-2 border-b border-border/10 pb-2">System Prompt</h4>

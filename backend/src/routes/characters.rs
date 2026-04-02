@@ -96,8 +96,14 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
             get(get_character_asset_handler),
         )
         .route("/{character_id}/banner", get(get_character_banner_handler))
-        .route("/{character_id}/banner", post(upload_character_banner_handler))
-        .route("/{character_id}/banner", delete(delete_character_banner_handler))
+        .route(
+            "/{character_id}/banner",
+            post(upload_character_banner_handler),
+        )
+        .route(
+            "/{character_id}/banner",
+            delete(delete_character_banner_handler),
+        )
         // Apply LoginRequired middleware to all routes in this router
         // It checks auth_session.user and returns 401 if None.
         .with_state(state)
@@ -2085,7 +2091,8 @@ pub async fn get_character_banner_handler(
     })
     .await?;
 
-    let asset = asset.ok_or_else(|| AppError::NotFound("Character banner not found".to_string()))?;
+    let asset =
+        asset.ok_or_else(|| AppError::NotFound("Character banner not found".to_string()))?;
 
     let image_data = asset
         .data
@@ -2158,7 +2165,9 @@ pub async fn upload_character_banner_handler(
 
     // Validate size constraint (5MB)
     if image_bytes.len() > 5 * 1024 * 1024 {
-        return Err(AppError::BadRequest("File exceeds 5MB size limit".to_string()));
+        return Err(AppError::BadRequest(
+            "File exceeds 5MB size limit".to_string(),
+        ));
     }
 
     if let Some(ct) = &content_type {
@@ -2174,17 +2183,27 @@ pub async fn upload_character_banner_handler(
                     Ok(_) => info!("Image data validated successfully as {}", ct),
                     Err(e) => {
                         error!("Failed to decode image data as {}: {}", ct, e);
-                        return Err(AppError::BadRequest(format!("Invalid image file format/content: {}", e)));
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid image file format/content: {}",
+                            e
+                        )));
                     }
                 }
             } else {
-                return Err(AppError::BadRequest(format!("Unsupported image format: {}. Only PNG and JPEG are allowed.", ct)));
+                return Err(AppError::BadRequest(format!(
+                    "Unsupported image format: {}. Only PNG and JPEG are allowed.",
+                    ct
+                )));
             }
         } else {
-            return Err(AppError::BadRequest("Invalid MIME type. Must be an image.".to_string()));
+            return Err(AppError::BadRequest(
+                "Invalid MIME type. Must be an image.".to_string(),
+            ));
         }
     } else {
-        return Err(AppError::BadRequest("No content type provided for character banner upload.".to_string()));
+        return Err(AppError::BadRequest(
+            "No content type provided for character banner upload.".to_string(),
+        ));
     }
 
     let new_asset = NewCharacterAsset::new_banner(
@@ -2275,7 +2294,9 @@ pub async fn delete_character_banner_handler(
     .await?;
 
     if character.is_none() {
-        return Err(AppError::NotFound("Character not found or not accessible".to_string()));
+        return Err(AppError::NotFound(
+            "Character not found or not accessible".to_string(),
+        ));
     }
 
     let deleted_count = crate::db::with_conn(&state.pool, move |conn_block| {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { goto as _goto } from '$app/navigation';
 	import { getIsAuthenticated, getIsLoadingAuth } from '$lib/auth.svelte';
 	import { Loader } from 'lucide-svelte';
@@ -22,7 +23,7 @@
 			// Use untrack to prevent navigation from triggering $effect again
 			untrack(() => {
 				hasRedirected = true;
-				_goto(redirectTo);
+				_goto(resolve(redirectTo));
 			});
 		}
 	});

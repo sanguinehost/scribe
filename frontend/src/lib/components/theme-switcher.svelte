@@ -19,27 +19,27 @@
 			Theme Preset
 		</DropdownMenu.Label>
 		<DropdownMenu.Separator class="bg-border/50" />
-		
+
 		{#each THEMES as theme}
 			<DropdownMenu.Item
 				class="flex items-center justify-between gap-0 p-0 cursor-pointer transition-colors duration-200 rounded-md hover:bg-accent"
 			>
-				<div 
-					class="flex items-center justify-between gap-3 px-2 py-2 w-full h-full rounded-md {themeStore.activeTheme === theme.id ? 'bg-primary/10 text-primary-foreground font-medium' : ''}"
+				<div
+					class="flex items-center justify-between gap-3 px-2 py-2 w-full h-full rounded-md {themeStore.activeTheme === theme.id ? 'bg-primary/10 text-primary font-medium' : ''}"
 					role="button"
 					tabindex="0"
 					onclick={() => themeStore.setTheme(theme.id)}
 					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') themeStore.setTheme(theme.id); }}
 				>
 					<div class="flex items-center gap-3">
-						<div 
+						<div
 							class="w-4 h-4 rounded-full border border-border/50 shadow-sm"
 							style="background-color: {theme.colorHex}"
 							aria-hidden="true"
 						></div>
 						<span>{theme.name}</span>
 					</div>
-					
+
 					{#if themeStore.activeTheme === theme.id}
 						<div class="w-1.5 h-1.5 rounded-full bg-primary" aria-label="Active"></div>
 					{/if}

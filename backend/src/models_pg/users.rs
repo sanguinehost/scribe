@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use tracing;
 
+// diesel_derive_enum generates traits for *Mapping structs, and ExistingTypePath fails on some versions without the alias
+pub type UserRoleMapping = crate::schema::sql_types::UserRole;
+pub type AccountStatusMapping = crate::schema::sql_types::AccountStatus;
+
 // User role enum
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, diesel_derive_enum::DbEnum,

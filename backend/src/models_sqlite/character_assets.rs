@@ -84,7 +84,7 @@ impl NewCharacterAsset {
             } else if ct.contains("jpeg") || ct.contains("jpg") {
                 "jpeg".to_string()
             } else {
-                "bin".to_string() 
+                "bin".to_string()
             }
         });
 

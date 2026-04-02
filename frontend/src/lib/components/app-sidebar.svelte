@@ -66,7 +66,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			_goto('/', { replaceState: true });
+			_goto(resolve('/'), { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
@@ -114,7 +114,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			_goto('/', { replaceState: true });
+			_goto(resolve('/'), { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
@@ -131,7 +131,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			_goto('/', { replaceState: true });
+			_goto(resolve('/'), { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
@@ -166,7 +166,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			await _goto('/', { replaceState: true });
+			await _goto(resolve('/'), { replaceState: true });
 			// Small delay to ensure navigation completes smoothly
 			await new Promise((resolve) => setTimeout(resolve, 50));
 		}
@@ -232,7 +232,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			_goto('/', { replaceState: true });
+			_goto(resolve('/'), { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar on selection
 	}
@@ -254,7 +254,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			_goto('/', { replaceState: true });
+			_goto(resolve('/'), { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
@@ -271,7 +271,7 @@
 		// Only navigate if we're not on the home page already
 		// This prevents unnecessary page reloads that break transitions
 		if ($page.url.pathname !== '/') {
-			_goto('/', { replaceState: true });
+			_goto(resolve('/'), { replaceState: true });
 		}
 		context.setOpenMobile(false); // Close mobile sidebar
 	}
