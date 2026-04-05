@@ -1,15 +1,15 @@
 // @generated automatically by Diesel CLI.
 
 pub mod sql_types {
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "account_status"))]
     pub struct AccountStatus;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "message_type"))]
     pub struct MessageType;
 
-    #[derive(diesel::sql_types::SqlType, diesel::query_builder::QueryId)]
+    #[derive(diesel::query_builder::QueryId, diesel::sql_types::SqlType)]
     #[diesel(postgres_type(name = "user_role"))]
     pub struct UserRole;
 }

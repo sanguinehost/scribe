@@ -3,6 +3,7 @@
 	import { apiClient as _apiClient } from '$lib/api';
 	import type { ScribeCharacter as Character } from '$lib/types';
 	import { getIsAuthenticated, getIsAuthReady } from '$lib/auth.svelte';
+	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
@@ -20,6 +21,7 @@
 	let showCreator = $state(false);
 
 	const dispatch = createEventDispatcher();
+	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 
 	// Function to fetch characters, reusable for initial load and refresh
 	async function fetchCharacters() {
@@ -88,6 +90,13 @@
 	}
 
 	function handleDelete(_event: CustomEvent<{ characterId: string }>) {
+		const deletedId = _event.detail.characterId;
+
+		// If the deleted character was being viewed, clear the selection
+		if (selectedCharacterStore.characterId === deletedId) {
+			selectedCharacterStore.clear();
+		}
+
 		// Refresh the character list after successful deletion
 		fetchCharacters();
 	}
