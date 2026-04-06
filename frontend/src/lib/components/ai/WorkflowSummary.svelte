@@ -142,7 +142,7 @@
 </script>
 
 <div class="space-y-2">
-	{#each toolExecutions as execution, i}
+	{#each toolExecutions as execution, i (i)}
 		{@const formatted = formatExecution(execution)}
 		{@const IconComponent = formatted.icon}
 		{@const timeSeconds = ((execution.executionTimeMs ?? 0) / 1000).toFixed(1)}

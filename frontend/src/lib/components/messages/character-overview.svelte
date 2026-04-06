@@ -107,7 +107,7 @@
 	// Extract visual metadata safely
 	const visualMetadata = $derived.by(() => {
 		if (!character?.extensions?.visual_metadata) return null;
-		return character.extensions.visual_metadata as any;
+		return character.extensions.visual_metadata as Record<string, string | undefined>;
 	});
 
 	const customPrimaryColor = $derived(visualMetadata?.primary_color);
@@ -379,7 +379,7 @@
 				if (onStartChat) {
 					onStartChat(chat.id);
 				}
-				await _goto(resolve(`/chat/${chat.id}` as any), { invalidateAll: true });
+				await _goto(resolve(`/chat/${chat.id}` as `/${string}`), { invalidateAll: true });
 			} else {
 				toast.error('Failed to start chat', {
 					description: createChatResult.error.message
@@ -540,7 +540,7 @@
 
 			const updatedExtensions = {
 				...currentExtensions,
-				visual_metadata: Object.keys(updatedVisualMetadata).filter(k => (updatedVisualMetadata as any)[k] !== undefined).length > 0
+				visual_metadata: Object.keys(updatedVisualMetadata).filter(k => (updatedVisualMetadata as Record<string, string | undefined>)[k] !== undefined).length > 0
 					? updatedVisualMetadata
 					: undefined
 			};
@@ -734,7 +734,7 @@
 									<ButtonComponent
 										variant="outline"
 										class="gap-2 shadow-sm bg-background/50 flex-none justify-center border-border/40 px-3 hidden sm:flex"
-										onclick={() => _goto(resolve('/chronicles') + '?character=' + characterId)}
+										onclick={() => _goto(resolve(`/chronicles?character=${characterId}` as `/${string}`))}
 										title="View chronicles"
 									>
 										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -764,7 +764,7 @@
 								{#if character.tags && character.tags.length > 0}
 									<div class="w-px h-4 bg-border/40 hidden sm:block"></div>
 									<div class="flex items-center gap-1.5 flex-wrap">
-										{#each character.tags.slice(0, 4) as tag}
+										{#each character.tags.slice(0, 4) as tag, i (i)}
 											<span class="px-2 py-0.5 rounded-full bg-secondary/40 text-secondary-foreground font-medium border border-border/40">{tag}</span>
 										{/each}
 										{#if character.tags.length > 4}
@@ -790,7 +790,7 @@
 						<CardContent class="flex-1 overflow-y-auto pt-0">
 							{#if isLoadingChats}
 								<div class="space-y-2">
-									{#each Array(3) as _}
+									{#each Array(3) as _, i (i)}
 										<div class="flex items-center gap-3 p-2">
 											<Skeleton class="h-2 w-2 rounded-full" />
 											<div class="flex-1 space-y-1">
@@ -807,7 +807,7 @@
 								</div>
 							{:else}
 								<div class="space-y-1">
-									{#each chats as chat}
+									{#each chats as chat, i (i)}
 										<div
 											class="group cursor-pointer rounded-md p-2 transition-colors hover:bg-muted/50"
 											onclick={() => handleSelectChat(chat.id)}
@@ -829,7 +829,7 @@
 													variant="ghost"
 													size="sm"
 													class="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-													onclick={(e) => handleDeleteClick(e, chat)}
+													onclick={(e: MouseEvent) => handleDeleteClick(e, chat)}
 													aria-label="Delete chat"
 												>
 													<TrashIcon class="h-3 w-3 text-destructive" />

@@ -57,7 +57,7 @@
 	<!-- Loading state -->
 	{#if lorebookStore.isLoading}
 		<div class="space-y-2 p-4">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="animate-pulse">
 					<div class="h-10 rounded border border-primary/10 bg-primary/5"></div>
 				</div>

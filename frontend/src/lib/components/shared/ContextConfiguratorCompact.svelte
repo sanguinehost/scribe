@@ -83,8 +83,8 @@
 	function calculatePresetBudgets(total: number) {
 		// Backend defaults suggest 75% for recent history, 20% for RAG, 5% buffer
 		// But we'll use more balanced allocations
-		let history_ratio = 0.75;
-		let rag_ratio = 0.2;
+		let history_ratio: number;
+		let rag_ratio: number;
 
 		// Adjust ratios based on context size
 		if (total <= 8192) {

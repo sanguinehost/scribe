@@ -291,7 +291,7 @@
 
 				<!-- Plan Cards -->
 				<div class="grid gap-4 md:grid-cols-2">
-					{#each Object.entries(plans) as [planKey, plan]}
+					{#each Object.entries(plans) as [planKey, plan] (planKey)}
 						<Card
 							class="cursor-pointer transition-all {selectedPlan === planKey
 								? 'ring-2 ring-primary'
@@ -320,7 +320,7 @@
 									</div>
 
 									<ul class="space-y-2">
-										{#each plan.features as feature}
+										{#each plan.features as feature, i (i)}
 											<li class="flex items-start gap-2">
 												<svg
 													class="mt-0.5 h-5 w-5 text-accent"

@@ -12,8 +12,6 @@
 	import LorebookBrowser from './LorebookBrowser.svelte';
 	import LorebookAIAssistant from '$lib/components/ai/LorebookAIAssistant.svelte';
 	import LorebookAIDialog from '$lib/components/ai/LorebookAIDialog.svelte';
-	import ResearchWebButton from '$lib/components/ai/ResearchWebButton.svelte';
-	import ResearchDialog from '$lib/components/ai/ResearchDialog.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { toast } from 'svelte-sonner';
 
@@ -25,7 +23,6 @@
 	let editingEntry = $state<LorebookEntry | null>(null);
 	let editingIndex = $state<number>(-1);
 	let showAIDialog = $state(false);
-	let showResearchDialog = $state(false);
 
 	// Helper function to update lorebook settings
 	function updateSettings(

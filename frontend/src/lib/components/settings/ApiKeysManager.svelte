@@ -1,9 +1,7 @@
 <script lang="ts">
-	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button as ButtonComponent } from '$lib/components/ui/button';
-	import { AlertCircle, Lock, Key, Eye, EyeOff } from 'lucide-svelte';
+	import { AlertCircle, Lock } from 'lucide-svelte';
 
 	// Placeholder state (will be replaced with actual backend integration)
 	let isLoading = $state(false);

@@ -33,6 +33,7 @@
 	const llmStore = LLMStore.fromContext();
 
 	// Local component state
+	// eslint-disable-next-line svelte/prefer-writable-derived
 	let chatInput = $state('');
 	let isInitialized = $state(false);
 

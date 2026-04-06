@@ -6,24 +6,29 @@
 	import { CheckoutButton } from '$lib/components/payment';
 	import { Button as ButtonComponent } from '$lib/components/ui/button';
 
-	// Props
-	export let compact: boolean = false;
-	export let showUpgradeButton: boolean = true;
-	export let showUsage: boolean = true;
+	let {
+		compact = false,
+		showUpgradeButton = true,
+		showUsage = true
+	}: {
+		compact?: boolean;
+		showUpgradeButton?: boolean;
+		showUsage?: boolean;
+	} = $props();
 
 	// Reactive subscription data
-	$: subscription = subscriptionStore.subscription;
-	$: _planFeatures = subscriptionStore.planFeatures;
-	$: usageLimits = subscriptionStore.usageLimits;
-	$: loading = subscriptionStore.loading;
-	$: error = subscriptionStore.error;
-	$: currentPlan = subscriptionStore.currentPlan;
-	$: _isSubscribed = subscriptionStore.isSubscribed;
-	$: isTrialing = subscriptionStore.isTrialing;
-	$: trialDaysRemaining = subscriptionStore.trialDaysRemaining;
-	$: daysUntilRenewal = subscriptionStore.daysUntilRenewal;
-	$: isAtLimit = subscriptionStore.isAtLimit;
-	$: isNearLimit = subscriptionStore.isNearLimit;
+	const subscription = $derived(subscriptionStore.subscription);
+	const _planFeatures = $derived(subscriptionStore.planFeatures);
+	const usageLimits = $derived(subscriptionStore.usageLimits);
+	const loading = $derived(subscriptionStore.loading);
+	const error = $derived(subscriptionStore.error);
+	const currentPlan = $derived(subscriptionStore.currentPlan);
+	const _isSubscribed = $derived(subscriptionStore.isSubscribed);
+	const isTrialing = $derived(subscriptionStore.isTrialing);
+	const trialDaysRemaining = $derived(subscriptionStore.trialDaysRemaining);
+	const daysUntilRenewal = $derived(subscriptionStore.daysUntilRenewal);
+	const isAtLimit = $derived(subscriptionStore.isAtLimit);
+	const isNearLimit = $derived(subscriptionStore.isNearLimit);
 
 	function handleUpgrade() {
 		window.location.href = '/pricing';

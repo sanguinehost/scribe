@@ -144,7 +144,7 @@
 
 	{#if chronicleStore.isLoading}
 		<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _}
+			{#each Array(6) as _, i (i)}
 				<Card>
 					<CardHeader>
 						<div class="animate-pulse">

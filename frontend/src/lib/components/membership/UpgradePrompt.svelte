@@ -5,11 +5,17 @@
 	import { subscriptionStore } from '$lib/stores/subscription.svelte';
 	import { AlertTriangle, Zap as _Zap } from 'lucide-svelte';
 
-	export let variant: 'banner' | 'modal' | 'inline' = 'inline';
-	export let showCloseButton: boolean = true;
-	export let title: string = 'Token Limit Reached';
-	export let message: string =
-		'You have reached your token limit. Please upgrade your plan to continue chatting.';
+	let {
+		variant = 'inline',
+		showCloseButton = true,
+		title = 'Token Limit Reached',
+		message = 'You have reached your token limit. Please upgrade your plan to continue chatting.'
+	}: {
+		variant?: 'banner' | 'modal' | 'inline';
+		showCloseButton?: boolean;
+		title?: string;
+		message?: string;
+	} = $props();
 
 	const dispatch = createEventDispatcher<{
 		close: void;
@@ -25,7 +31,7 @@
 	}
 
 	// No longer using token percentage since we moved away from token limits
-	$: usagePercent = 0;
+	let usagePercent = 0;
 </script>
 
 <div class="upgrade-prompt upgrade-prompt-{variant}" class:banner-gradient={variant === 'banner'}>

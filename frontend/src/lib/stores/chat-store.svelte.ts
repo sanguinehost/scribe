@@ -1,3 +1,4 @@
+import { SvelteDate } from 'svelte/reactivity';
 import { type ChatMessage, type MessageVariant, type MessageRole } from '$lib/types/chat';
 
 export class ChatStore {
@@ -21,7 +22,7 @@ export class ChatStore {
 			id: crypto.randomUUID(),
 			content,
 			model,
-			createdAt: new Date()
+			createdAt: new SvelteDate()
 		};
 
 		if (existingMessageIndex !== -1) {
@@ -52,7 +53,7 @@ export class ChatStore {
 				variants: [newVariant],
 				currentVariantIndex: 0,
 				isAnimating,
-				timestamp: new Date()
+				timestamp: new SvelteDate()
 			});
 		}
 	}

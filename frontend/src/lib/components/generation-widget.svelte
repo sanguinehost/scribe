@@ -130,7 +130,7 @@
 				class="h-7 rounded-md border border-input bg-transparent px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
 				title="Select generation style"
 			>
-				{#each availableStyles as style}
+				{#each availableStyles as style, i (i)}
 					<option value={style}>
 						{style === 'auto'
 							? 'Auto'

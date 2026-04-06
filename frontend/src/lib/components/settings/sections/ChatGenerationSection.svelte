@@ -12,8 +12,10 @@
 		expanded = $bindable(false),
 		clearOverride
 	}: {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		localSettings: any;
 		expanded: boolean;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		clearOverride: (field: any) => void;
 	} = $props();
 </script>
@@ -45,7 +47,7 @@
 						Use global default ({chatModels.find((m) => m.id === DEFAULT_CHAT_MODEL)?.name ||
 							DEFAULT_CHAT_MODEL})
 					</option>
-					{#each chatModels as model}
+					{#each chatModels as model, i (i)}
 						<option value={model.id}>{model.name}</option>
 					{/each}
 				</select>

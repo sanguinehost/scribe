@@ -801,7 +801,7 @@
 									<div class="space-y-2">
 										<h5 class="font-medium">Tool Executions</h5>
 										<div class="space-y-2">
-											{#each result.toolExecutions as execution, i}
+											{#each result.toolExecutions as execution, i (i)}
 												<div
 													class="rounded border border-amber-200 bg-white p-2 dark:border-amber-800 dark:bg-amber-950"
 												>

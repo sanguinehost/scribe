@@ -226,7 +226,7 @@
 
 					<!-- Content skeleton -->
 					<div class="space-y-4">
-						{#each Array(3) as _}
+						{#each Array(3) as _, i (i)}
 							<div class="space-y-3 rounded-lg border p-4">
 								<div class="h-5 w-48 animate-pulse rounded bg-muted"></div>
 								<div class="h-4 w-full animate-pulse rounded bg-muted"></div>

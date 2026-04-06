@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
+
 	import { Button } from '$lib/components/ui/button';
 	import {
 		Dialog,
@@ -42,7 +44,7 @@
 
 	// State
 	let selectedLorebookId = $state<string | undefined>(undefined);
-	let selectedMessageIndices = $state<Set<number>>(new Set());
+	const selectedMessageIndices = new SvelteSet<number>();
 	let isExtracting = $state(false);
 	let error = $state<string | null>(null);
 
@@ -69,22 +71,19 @@
 
 	// Toggle message selection
 	function toggleMessage(index: number) {
-		const newSet = new Set(selectedMessageIndices);
-		if (newSet.has(index)) {
-			newSet.delete(index);
+		if (selectedMessageIndices.has(index)) {
+			selectedMessageIndices.delete(index);
 		} else {
-			newSet.add(index);
+			selectedMessageIndices.add(index);
 		}
-		selectedMessageIndices = newSet;
 	}
 
 	// Select range of messages
 	function selectRange(startIndex: number, endIndex: number) {
-		const newSet = new Set<number>();
+		selectedMessageIndices.clear();
 		for (let i = startIndex; i <= endIndex; i++) {
-			newSet.add(i);
+			selectedMessageIndices.add(i);
 		}
-		selectedMessageIndices = newSet;
 	}
 
 	// Extract lorebook entries
@@ -109,7 +108,7 @@
 			onSuccess?.(data.entries);
 			onOpenChange(false);
 			// Reset state
-			selectedMessageIndices = new Set();
+			selectedMessageIndices.clear();
 			selectedLorebookId = undefined;
 		} else {
 			error = result.error.message || 'Failed to extract lorebook entries';
@@ -154,7 +153,7 @@
 						</span>
 					</SelectTrigger>
 					<SelectContent>
-						{#each lorebooks as lorebook}
+						{#each lorebooks as lorebook, i (i)}
 							<SelectItem value={lorebook.id}>{lorebook.name}</SelectItem>
 						{/each}
 					</SelectContent>
@@ -169,7 +168,7 @@
 				<Button variant="outline" size="sm" onclick={() => selectRange(0, messages.length - 1)}>
 					All Messages
 				</Button>
-				<Button variant="outline" size="sm" onclick={() => (selectedMessageIndices = new Set())}>
+				<Button variant="outline" size="sm" onclick={() => selectedMessageIndices.clear()}>
 					Clear Selection
 				</Button>
 			</div>

@@ -8,19 +8,17 @@
 	import { Coins, Zap, Star, Loader } from 'lucide-svelte';
 	import type { CreditPackage } from '$lib/types/payment';
 
-	export let onPackageSelect: (pkg: CreditPackage) => void = () => {};
-	export let selectedPackageId: string | null = null;
+	let {
+		onPackageSelect = () => {},
+		selectedPackageId = null
+	}: {
+		onPackageSelect?: (pkg: CreditPackage) => void;
+		selectedPackageId?: string | null;
+	} = $props();
 
-	let packages: CreditPackage[] = [];
-	let isLoading = false;
-	let error: string | null = null;
-
-	// Subscribe to credit store
-	$: {
-		packages = $creditStore.packages;
-		isLoading = $creditStore.isLoading;
-		error = $creditStore.error;
-	}
+	const packages = $derived($creditStore.packages);
+	const isLoading = $derived($creditStore.isLoading);
+	const error = $derived($creditStore.error);
 
 	onMount(async () => {
 		if (!PAYMENT_FEATURES.credits) {
@@ -68,8 +66,8 @@
 		return sorted[middleIndex]?.package_id || null;
 	}
 
-	$: bestValueId = getBestValuePackage();
-	$: popularId = getPopularPackage();
+	const bestValueId = $derived(getBestValuePackage());
+	const popularId = $derived(getPopularPackage());
 </script>
 
 {#if !PAYMENT_FEATURES.credits}

@@ -1,3 +1,4 @@
+import { SvelteSet } from 'svelte/reactivity';
 // frontend/src/lib/stores/llm.svelte.ts
 import { browser as _browser } from '$app/environment';
 import { getContext, setContext } from 'svelte';
@@ -57,7 +58,7 @@ export class LLMStore {
 		lastFetched: null,
 		localLlmEnabled: false,
 		activeModelId: null,
-		downloadingModels: new Set<string>(),
+		downloadingModels: new SvelteSet<string>(),
 		downloadProgress: {},
 		hardwareCapabilities: null
 	});

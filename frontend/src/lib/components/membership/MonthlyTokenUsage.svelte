@@ -2,17 +2,23 @@
 	import { Zap, Calendar, TrendingUp } from 'lucide-svelte';
 	import type { UsageLimitsResponse } from '$lib/types';
 
-	// Props
-	export let usageLimits: UsageLimitsResponse | null = null;
-	export let size: 'sm' | 'md' | 'lg' = 'md';
-	export let showNumbers: boolean = true;
-	export let showPeriod: boolean = true;
+	let {
+		usageLimits = null,
+		size = 'md',
+		showNumbers = true,
+		showPeriod = true
+	}: {
+		usageLimits?: UsageLimitsResponse | null;
+		size?: 'sm' | 'md' | 'lg';
+		showNumbers?: boolean;
+		showPeriod?: boolean;
+	} = $props();
 
 	// Computed properties
-	$: tokensUsed = usageLimits ? usageLimits.tokens_used_total : 0;
-	$: containerClass = getContainerClass();
+	const tokensUsed = $derived(usageLimits ? usageLimits.tokens_used_total : 0);
+	const containerClass = $derived(getContainerClass(size));
 
-	function getContainerClass(): string {
+	function getContainerClass(size: 'sm' | 'md' | 'lg'): string {
 		const heights = {
 			sm: 'h-1.5',
 			md: 'h-2',
@@ -67,7 +73,7 @@
 			<!-- Header -->
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-2">
-					<svelte:component this={Zap} size={16} class="text-blue-500" />
+					<Zap size={16} class="text-blue-500" />
 					<span class="text-sm font-medium text-slate-900 dark:text-slate-100">
 						Monthly Token Usage
 					</span>

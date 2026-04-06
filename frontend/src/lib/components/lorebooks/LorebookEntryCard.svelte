@@ -85,7 +85,7 @@
 					<CardDescription class="mt-2">
 						<span class="text-xs font-medium">Keywords:</span>
 						<div class="mt-1 flex flex-wrap gap-1">
-							{#each keywordsList.slice(0, 5) as keyword}
+							{#each keywordsList.slice(0, 5) as keyword, i (i)}
 								<BadgeComponent variant="outline" class="text-xs">{keyword}</BadgeComponent>
 							{/each}
 							{#if keywordsList.length > 5}

@@ -81,7 +81,7 @@
 	// Sort filtered entries
 	const sortedEntries = $derived(
 		[...searchedEntries].sort((a, b) => {
-			let comparison = 0;
+			let comparison: number;
 
 			switch (sortBy) {
 				case 'name':
@@ -152,7 +152,7 @@
 						bind:value={sortBy}
 						class="flex h-9 items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
 					>
-						{#each sortOptions as option}
+						{#each sortOptions as option, i (i)}
 							<option value={option.value}>{option.label}</option>
 						{/each}
 					</select>
@@ -207,7 +207,7 @@
 	<!-- Loading state -->
 	{#if isLoading}
 		<div class="space-y-4">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="animate-pulse">
 					<div class="space-y-3 rounded-lg bg-muted p-6">
 						<div class="flex justify-between">
@@ -314,7 +314,7 @@
 									</td>
 									<td class="px-4 py-3">
 										<div class="flex flex-wrap gap-1">
-											{#each (entry.keys || []).slice(0, 3) as keyword}
+											{#each (entry.keys || []).slice(0, 3) as keyword, i (i)}
 												<Badge variant="outline" class="text-xs">{keyword}</Badge>
 											{/each}
 											{#if (entry.keys?.length || 0) > 3}

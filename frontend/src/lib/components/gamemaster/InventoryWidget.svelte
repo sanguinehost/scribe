@@ -258,7 +258,7 @@
 			<!-- EDIT MODE -->
 			{#if activeTab === 'onPerson'}
 				<div class="space-y-2">
-					{#each editInventory as item, i}
+					{#each editInventory as item, i (i)}
 						{@render editItemCard(item, 'onPerson', i)}
 					{/each}
 					<Button
@@ -272,7 +272,7 @@
 				</div>
 			{:else if activeTab === 'stored'}
 				<div class="space-y-4">
-					{#each Object.entries(editStored) as [location, items]}
+					{#each Object.entries(editStored) as [location, items] (location)}
 						<div class="space-y-2 rounded-lg border border-border p-2">
 							<div class="flex items-center justify-between">
 								<Input
@@ -297,7 +297,7 @@
 								</Button>
 							</div>
 							<div class="space-y-2 border-l-2 border-muted pl-2">
-								{#each items as item, i}
+								{#each items as item, i (i)}
 									{@render editItemCard(item, location, i)}
 								{/each}
 								<Button
@@ -322,7 +322,7 @@
 				</div>
 			{:else if activeTab === 'assets'}
 				<div class="space-y-2">
-					{#each editAssets as _asset, i}
+					{#each editAssets as _asset, i (i)}
 						<div class="flex items-center gap-2">
 							<Input bind:value={editAssets[i]} class="h-7 flex-1 text-xs" />
 							<Button
@@ -356,7 +356,7 @@
 				{#if Object.keys(storedItems).length === 0}
 					<p class="py-4 text-center text-sm italic text-muted-foreground">No stored items</p>
 				{:else}
-					{#each Object.entries(storedItems) as [location, items]}
+					{#each Object.entries(storedItems) as [location, items] (location)}
 						<div class="mb-2">
 							<div class="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
 								<Home class="h-3 w-3" />
@@ -375,7 +375,7 @@
 				{#if assetsList.length === 0}
 					<p class="py-4 text-center text-sm italic text-muted-foreground">No major assets</p>
 				{:else}
-					{#each assetsList as asset, _i}
+					{#each assetsList as asset, _i (_i)}
 						<div
 							class="flex items-center gap-2 rounded-lg border border-border bg-muted/50 p-2 hover:bg-muted"
 						>

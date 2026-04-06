@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
+
 	import { createEventDispatcher } from 'svelte';
 	import {
 		Dialog,
@@ -45,7 +47,7 @@
 		// Initialize selectedLorebookIds and originalAssociationIds based on the actual enabled state
 		// A lorebook is considered "selected" if it's manually added ('Chat' source)
 		// OR if it's character-derived ('Character' source) and NOT overridden to 'disable'.
-		const initiallySelectedIds = new Set(
+		const initiallySelectedIds = new SvelteSet(
 			currentAssociations
 				.filter((a) => {
 					if (a.source === 'Chat') {
@@ -59,8 +61,8 @@
 				})
 				.map((a) => a.lorebook_id)
 		);
-		selectedLorebookIds = new Set(initiallySelectedIds);
-		originalAssociationIds = new Set(initiallySelectedIds); // original state for comparison
+		selectedLorebookIds = new SvelteSet(initiallySelectedIds);
+		originalAssociationIds = new SvelteSet(initiallySelectedIds); // original state for comparison
 	});
 
 	// Load lorebooks when dialog opens
@@ -104,7 +106,7 @@
 			selectedLorebookIds.add(lorebookId);
 		}
 		// Trigger reactivity
-		selectedLorebookIds = new Set(selectedLorebookIds);
+		selectedLorebookIds = new SvelteSet(selectedLorebookIds);
 	}
 
 	async function saveChanges() {
@@ -261,7 +263,7 @@
 			<div class="flex-1 overflow-y-auto rounded-md border">
 				{#if loading}
 					<div class="space-y-3 p-4">
-						{#each Array(3) as _}
+						{#each Array(3) as _, i (i)}
 							<div class="flex items-center space-x-3">
 								<Skeleton class="h-4 w-4" />
 								<div class="flex-1 space-y-2">

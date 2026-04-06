@@ -124,7 +124,7 @@
 
 	<div class="flex-1 space-y-2 overflow-y-auto p-2">
 		{#if isLoading}
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="flex items-center space-x-4 p-2">
 					<Skeleton class="h-12 w-12 rounded-full" />
 					<div class="flex-1 space-y-2">

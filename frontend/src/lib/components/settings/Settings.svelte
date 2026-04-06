@@ -289,7 +289,7 @@
 			<!-- Tabs -->
 			<div class="border-b">
 				<nav class="flex space-x-8">
-					{#each tabs as tab}
+					{#each tabs as tab, i (i)}
 						{@const Icon = tab.icon}
 						<button
 							onclick={() => (activeTab = tab.id)}
@@ -350,7 +350,7 @@
 									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
 									bind:value={settings.model_name}
 								>
-									{#each chatModels as model}
+									{#each chatModels as model, i (i)}
 										<option value={model.id}>{model.name}</option>
 									{/each}
 								</select>

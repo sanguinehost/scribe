@@ -331,7 +331,7 @@
 						<div class="rounded-lg border p-4">
 							<h3 class="mb-3 font-medium">Planned Searches</h3>
 							<div class="space-y-2">
-								{#each agentAnalysis.planned_searches as search, i}
+								{#each agentAnalysis.planned_searches as search, i (i)}
 									<div class="rounded border bg-background p-3">
 										<div class="mb-1 flex items-center justify-between">
 											<span class="text-sm font-medium">Search {i + 1}</span>
@@ -370,7 +370,7 @@
 							<h3 class="mb-3 font-medium">Execution Log</h3>
 							{#if (agentAnalysis.execution_log as ExecutionLog)?.steps && Array.isArray((agentAnalysis.execution_log as ExecutionLog).steps)}
 								<div class="space-y-3">
-									{#each (agentAnalysis.execution_log as ExecutionLog).steps as step}
+									{#each (agentAnalysis.execution_log as ExecutionLog).steps as step, i (i)}
 										{@const Icon = getActionIcon(step.action_type)}
 										<div class="rounded border bg-background p-4">
 											<div class="mb-2 flex items-center justify-between">
@@ -456,7 +456,7 @@
 										</span>
 									</summary>
 									<div class="space-y-1 border-t p-3">
-										{#each parsedContext.cognitiveContext as item}
+										{#each parsedContext.cognitiveContext as item, i (i)}
 											<div class="rounded bg-muted/30 p-2 text-sm">
 												<p class="whitespace-pre-wrap">{item}</p>
 											</div>
@@ -480,7 +480,7 @@
 										</span>
 									</summary>
 									<div class="space-y-1 border-t p-3">
-										{#each parsedContext.lorebookEntries as item}
+										{#each parsedContext.lorebookEntries as item, i (i)}
 											<div class="rounded bg-muted/30 p-2 text-sm">
 												<p class="whitespace-pre-wrap">{item}</p>
 											</div>
@@ -504,7 +504,7 @@
 										</span>
 									</summary>
 									<div class="space-y-1 border-t p-3">
-										{#each parsedContext.chronicleEvents as item}
+										{#each parsedContext.chronicleEvents as item, i (i)}
 											<div class="rounded bg-muted/30 p-2 text-sm">
 												<p class="whitespace-pre-wrap">{item}</p>
 											</div>
@@ -528,7 +528,7 @@
 										</span>
 									</summary>
 									<div class="space-y-1 border-t p-3">
-										{#each parsedContext.chatHistory as item}
+										{#each parsedContext.chatHistory as item, i (i)}
 											<div class="rounded bg-muted/30 p-2 text-sm">
 												<p class="whitespace-pre-wrap">{item}</p>
 											</div>

@@ -23,6 +23,7 @@
 	let { open = $bindable(), entries, onapprove, oncancel }: Props = $props();
 
 	// Create editable copies of entries with approval status
+	// eslint-disable-next-line svelte/prefer-writable-derived
 	let editableEntries = $state<Array<LorebookEntry & { approved: boolean }>>([]);
 
 	// Initialize editable entries when entries prop changes
@@ -121,7 +122,7 @@
 					<Alert.Description>No lorebook entries were generated.</Alert.Description>
 				</Alert.Root>
 			{:else}
-				{#each editableEntries as entry, index}
+				{#each editableEntries as entry, index (index)}
 					<Card.Root class={entry.approved ? '' : 'opacity-50'}>
 						<Card.Header>
 							<div class="flex items-start justify-between gap-2">
@@ -193,7 +194,7 @@
 									</Button>
 								</div>
 								<div class="flex flex-wrap gap-2">
-									{#each entry.keys as _keyword, keyIndex}
+									{#each entry.keys as _keyword, keyIndex (keyIndex)}
 										<div class="flex items-center gap-1">
 											<Input
 												bind:value={entry.keys[keyIndex]}

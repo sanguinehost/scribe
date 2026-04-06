@@ -90,11 +90,17 @@
 	}
 
 	function handleDelete(_event: CustomEvent<{ characterId: string }>) {
-		const deletedId = _event.detail.characterId;
+		const deletedId = String(_event.detail.characterId);
+		const currentSelected = selectedCharacterStore.characterId ? String(selectedCharacterStore.characterId) : null;
 
 		// If the deleted character was being viewed, clear the selection
-		if (selectedCharacterStore.characterId === deletedId) {
+		if (currentSelected === deletedId) {
 			selectedCharacterStore.clear();
+		}
+
+		// Clear local selection state
+		if (selectedCharacterId ? String(selectedCharacterId) === deletedId : false) {
+			selectedCharacterId = null;
 		}
 
 		// Refresh the character list after successful deletion
@@ -159,7 +165,7 @@
 	<div class="flex-1 space-y-2 overflow-y-auto p-2">
 		{#if isLoading}
 			<!-- Loading Skeletons -->
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="flex items-center space-x-4 p-2">
 					<Skeleton class="h-12 w-12 rounded-full" />
 					<div class="flex-1 space-y-2">

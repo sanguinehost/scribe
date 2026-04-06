@@ -1,3 +1,4 @@
+import { SvelteMap, SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { apiClient as _apiClient } from '$lib/api';
 import type {
@@ -34,7 +35,7 @@ export class ChatController {
 	chatInput = $state('');
 
 	// Cache
-	messageCache = new Map<string, ScribeChatMessage>();
+	messageCache = new SvelteMap<string, ScribeChatMessage>();
 	lastStreamingMessages: unknown[] = [];
 
 	// Regeneration
@@ -133,7 +134,7 @@ export class ChatController {
 
 			// Processing new messages array
 			const messages: ScribeChatMessage[] = [];
-			const newCache = new Map<string, ScribeChatMessage>();
+			const newCache = new SvelteMap<string, ScribeChatMessage>();
 
 			streamingMessages.forEach((msg) => {
 				const cached = this.messageCache.get(msg.id);
@@ -205,8 +206,8 @@ export class ChatController {
 
 			// Sort messages by timestamp (oldest first) for proper chronological display
 			messages.sort((a, b) => {
-				const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-				const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+				const aTime = a.created_at ? new SvelteDate(a.created_at).getTime() : 0;
+				const bTime = b.created_at ? new SvelteDate(b.created_at).getTime() : 0;
 				return aTime - bTime;
 			});
 
@@ -314,7 +315,7 @@ export class ChatController {
 						sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 						content: msg.content,
 						displayedContent: msg.content,
-						created_at: msg.created_at || new Date().toISOString(),
+						created_at: msg.created_at || new SvelteDate().toISOString(),
 						isAnimating: false,
 						shouldAnimate: msg.shouldAnimate ?? false,
 						error: msg.error || undefined,
@@ -336,8 +337,8 @@ export class ChatController {
 					})
 				);
 
-				const existingIds = new Set(this.activeStreamingService.messages.map((m) => m.id));
-				const existingBackendIds = new Set(
+				const existingIds = new SvelteSet(this.activeStreamingService.messages.map((m) => m.id));
+				const existingBackendIds = new SvelteSet(
 					this.activeStreamingService.messages
 						.map((m) => m.backend_id)
 						.filter((id): id is string => !!id)
@@ -474,7 +475,7 @@ export class ChatController {
 						sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 						content: msg.content,
 						displayedContent: msg.content,
-						created_at: msg.created_at || new Date().toISOString(),
+						created_at: msg.created_at || new SvelteDate().toISOString(),
 						isAnimating: false,
 						shouldAnimate: msg.shouldAnimate ?? false, // Carry over shouldAnimate flag (false for historical)
 						error: msg.error || undefined,

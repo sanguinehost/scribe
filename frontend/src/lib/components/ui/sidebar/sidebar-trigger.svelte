@@ -20,6 +20,7 @@
 
 <ButtonComponent
 	type="button"
+	bind:ref
 	onclick={(e) => {
 		onclick?.(e);
 		sidebar.toggle();

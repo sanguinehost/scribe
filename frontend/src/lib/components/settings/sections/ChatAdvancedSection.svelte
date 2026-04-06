@@ -16,8 +16,10 @@
 		typingSpeed = $bindable(),
 		saveTypingSpeed
 	}: {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		localSettings: any;
 		expanded: boolean;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		clearOverride: (field: any) => void;
 		compact: boolean;
 		typingSpeed: number;

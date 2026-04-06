@@ -221,7 +221,7 @@
 									<div class="space-y-2">
 										<h5 class="text-sm font-medium">Generated Entries:</h5>
 										<ul class="space-y-1">
-											{#each generateResult.entries as entry}
+											{#each generateResult.entries as entry, i (i)}
 												<li class="text-sm">
 													<span class="font-medium">{entry.entry_title}</span>
 													{#if entry.keys_text}
@@ -278,7 +278,7 @@
 									<div class="space-y-2">
 										<h5 class="text-sm font-medium">Missing Information</h5>
 										<ul class="list-inside list-disc space-y-1">
-											{#each analysisResult.gaps as gap}
+											{#each analysisResult.gaps as gap, i (i)}
 												<li class="text-sm text-muted-foreground">{gap}</li>
 											{/each}
 										</ul>
@@ -290,7 +290,7 @@
 									<div class="space-y-2">
 										<h5 class="text-sm font-medium">Consistency Issues</h5>
 										<ul class="list-inside list-disc space-y-1">
-											{#each analysisResult.consistency_issues as issue}
+											{#each analysisResult.consistency_issues as issue, i (i)}
 												<li class="text-sm text-muted-foreground">{issue}</li>
 											{/each}
 										</ul>
@@ -302,7 +302,7 @@
 									<div class="space-y-2">
 										<h5 class="text-sm font-medium">Improvement Suggestions</h5>
 										<ul class="list-inside list-disc space-y-1">
-											{#each analysisResult.improvement_suggestions as suggestion}
+											{#each analysisResult.improvement_suggestions as suggestion, i (i)}
 												<li class="text-sm text-muted-foreground">{suggestion}</li>
 											{/each}
 										</ul>
@@ -314,7 +314,7 @@
 									<div class="space-y-2">
 										<h5 class="text-sm font-medium">Recommended New Entry Themes</h5>
 										<ul class="list-inside list-disc space-y-1">
-											{#each analysisResult.recommended_themes as theme}
+											{#each analysisResult.recommended_themes as theme, i (i)}
 												<li class="text-sm text-muted-foreground">{theme}</li>
 											{/each}
 										</ul>

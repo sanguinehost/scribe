@@ -1,3 +1,4 @@
+import { SvelteDate } from 'svelte/reactivity';
 import { browser as _browser } from '$app/environment';
 import { apiClient as _apiClient } from '$lib/api';
 import { ENABLE_PAYMENTS } from '$lib/utils/features';
@@ -114,8 +115,8 @@ export const subscriptionStore = {
 
 		// For cancelled trials, use trial_end instead of current_period_end
 		if (subscriptionStore.isCancelledTrial && _subscription.trial_end) {
-			const trialEndDate = new Date(_subscription.trial_end);
-			const now = new Date();
+			const trialEndDate = new SvelteDate(_subscription.trial_end);
+			const now = new SvelteDate();
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
@@ -129,8 +130,8 @@ export const subscriptionStore = {
 
 		// For active trials, also use trial_end
 		if (subscriptionStore.isTrialing && _subscription.trial_end) {
-			const trialEndDate = new Date(_subscription.trial_end);
-			const now = new Date();
+			const trialEndDate = new SvelteDate(_subscription.trial_end);
+			const now = new SvelteDate();
 			const diffTime = trialEndDate.getTime() - now.getTime();
 			const daysUntilRenewal = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
@@ -150,8 +151,8 @@ export const subscriptionStore = {
 			);
 			return 0;
 		}
-		const renewalDate = new Date(_subscription.current_period_end);
-		const now = new Date();
+		const renewalDate = new SvelteDate(_subscription.current_period_end);
+		const now = new SvelteDate();
 		const diffTime = renewalDate.getTime() - now.getTime();
 		const daysUntilRenewal = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -172,8 +173,8 @@ export const subscriptionStore = {
 			return true;
 		}
 		if (_subscription.status === 'pending_cancellation' && _subscription.trial_end) {
-			const trialEnd = new Date(_subscription.trial_end);
-			const now = new Date();
+			const trialEnd = new SvelteDate(_subscription.trial_end);
+			const now = new SvelteDate();
 			return now < trialEnd;
 		}
 		return false;
@@ -186,8 +187,8 @@ export const subscriptionStore = {
 		) {
 			return 0;
 		}
-		const trialEnd = new Date(_subscription.trial_end);
-		const now = new Date();
+		const trialEnd = new SvelteDate(_subscription.trial_end);
+		const now = new SvelteDate();
 		const diffTime = trialEnd.getTime() - now.getTime();
 		const daysRemaining = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
@@ -206,13 +207,13 @@ export const subscriptionStore = {
 		const neverPaid = !_subscription.has_ever_paid;
 
 		if (_subscription.status === 'pending_cancellation' && _subscription.trial_end && neverPaid) {
-			const trialEnd = new Date(_subscription.trial_end);
-			const now = new Date();
+			const trialEnd = new SvelteDate(_subscription.trial_end);
+			const now = new SvelteDate();
 			return now < trialEnd;
 		}
 		if (_subscription.status === 'canceled' && _subscription.trial_end && neverPaid) {
-			const trialEnd = new Date(_subscription.trial_end);
-			const now = new Date();
+			const trialEnd = new SvelteDate(_subscription.trial_end);
+			const now = new SvelteDate();
 			return now < trialEnd;
 		}
 		return false;
@@ -229,8 +230,8 @@ export const subscriptionStore = {
 			_subscription.trial_end &&
 			!_subscription.has_ever_paid
 		) {
-			const trialEnd = new Date(_subscription.trial_end);
-			const now = new Date();
+			const trialEnd = new SvelteDate(_subscription.trial_end);
+			const now = new SvelteDate();
 			return now >= trialEnd; // Trial has ended
 		}
 		return false;
@@ -275,7 +276,7 @@ export const subscriptionStore = {
 			logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Using cached data:', {
 				cacheAge: `${Math.round(cacheAge / 1000)}s`,
 				cacheLimit: `${CACHE_DURATION / 1000}s`,
-				lastFetch: new Date(_lastFetch).toISOString()
+				lastFetch: new SvelteDate(_lastFetch).toISOString()
 			});
 			return;
 		}
@@ -383,7 +384,7 @@ export const subscriptionStore = {
 								subscriptionIdChanged: subscriptionIdChanged
 									? `${previousPaddleSubId} → ${_subscription?.paddle_subscription_id}`
 									: false,
-								timestamp: new Date().toISOString()
+								timestamp: new SvelteDate().toISOString()
 							}
 						);
 					}
@@ -393,7 +394,7 @@ export const subscriptionStore = {
 						status: _subscription.status,
 						plan_type: _subscription.plan_type,
 						paddle_subscription_id: _subscription.paddle_subscription_id,
-						timestamp: new Date().toISOString()
+						timestamp: new SvelteDate().toISOString()
 					});
 				}
 
@@ -465,7 +466,7 @@ export const subscriptionStore = {
 							planType: _subscription.plan_type,
 							paddleSubscriptionId: _subscription.paddle_subscription_id,
 							lastUpdated: _subscription.updated_at,
-							currentTimestamp: new Date().toISOString()
+							currentTimestamp: new SvelteDate().toISOString()
 						});
 					}
 				}
@@ -488,7 +489,7 @@ export const subscriptionStore = {
 			logger.debug('subscription-store', '[FRONTEND_SUBSCRIPTION] Refresh completed:', {
 				success: !_error,
 				error: _error,
-				timestamp: new Date().toISOString()
+				timestamp: new SvelteDate().toISOString()
 			});
 		}
 	},

@@ -44,7 +44,7 @@
 
 			if (avatarUrl) {
 				// Determine extension from URL or data URL
-				let ext = 'png'; // default
+				let ext: string; // default
 				if (avatarUrl.startsWith('data:image/')) {
 					const match = avatarUrl.match(/data:image\/(\w+);/);
 					ext = match ? match[1] : 'png';

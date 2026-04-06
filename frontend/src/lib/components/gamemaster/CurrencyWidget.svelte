@@ -97,7 +97,7 @@
 	{#if isEditing}
 		<!-- EDIT MODE -->
 		<div class="space-y-2">
-			{#each Object.entries(editCurrencies) as [name, _amount]}
+			{#each Object.entries(editCurrencies) as [name, _amount] (name)}
 				<div class="flex items-center gap-2 rounded-lg bg-muted/30 p-2">
 					<div class="flex-1">
 						<Input
@@ -142,7 +142,7 @@
 			<p class="py-2 text-center text-sm italic text-muted-foreground">No currencies tracked</p>
 		{:else}
 			<div class="flex flex-wrap gap-2">
-				{#each currencyEntries as [name, amount]}
+				{#each currencyEntries as [name, amount] (name)}
 					<div
 						class="flex items-center gap-1.5 rounded-md bg-muted/50 px-2.5 py-1.5 text-sm"
 						title={name}

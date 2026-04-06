@@ -37,7 +37,6 @@
 			size?: ButtonSize;
 		};
 </script>
-
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	// Disable custom elements to avoid props inference issues
@@ -63,7 +62,7 @@
 		<a
 			bind:this={ref}
 			class={_cn(buttonVariants({ variant, size }), className)}
-			{href}
+			{...{ href: href }}
 			{...restProps}
 		>
 			{@render children?.()}

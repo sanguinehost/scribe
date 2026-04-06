@@ -8,7 +8,7 @@
 	import { Separator as _SeparatorComponent } from '../ui/separator';
 	import { Skeleton } from '../ui/skeleton';
 	import { Badge as BadgeComponent } from '../ui/badge';
-	import { Checkbox as CheckboxComponent } from '../ui/checkbox';
+
 	import { toast } from 'svelte-sonner';
 	import type {
 		ScribeChatSession,
@@ -32,7 +32,6 @@
 		ResponseLength
 	} from '$lib/types';
 	import {
-		chatModels,
 		DEFAULT_CHAT_MODEL,
 		DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
 		DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
@@ -42,8 +41,6 @@
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { slide } from 'svelte/transition';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
-	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
-	import ContextConfiguratorCompact from '$lib/components/shared/ContextConfiguratorCompact.svelte';
 	import TemplateSelector from '$lib/components/shared/TemplateSelector.svelte';
 	import ChatGenerationSection from './sections/ChatGenerationSection.svelte';
 	import ChatAdvancedSection from './sections/ChatAdvancedSection.svelte';
@@ -884,7 +881,7 @@
 									onchange={(e) => changePersona((e.target as HTMLSelectElement).value || null)}
 								>
 									<option value="">No persona</option>
-									{#each availablePersonas as persona}
+									{#each availablePersonas as persona, i (i)}
 										<option value={persona.id}>{persona.name}</option>
 									{/each}
 								</select>
@@ -1106,7 +1103,7 @@
 												onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
 											>
 												<option value={null}>No chronicle (unlinked)</option>
-												{#each availableChronicles as chronicle}
+												{#each availableChronicles as chronicle, i (i)}
 													<option value={chronicle.id}>{chronicle.name}</option>
 												{/each}
 											</select>

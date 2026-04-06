@@ -1,8 +1,11 @@
 <script lang="ts">
+
+
 	import { toast } from 'svelte-sonner';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import { tick, untrack } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter, Message } from '$lib/types.ts';
 	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types';
@@ -641,7 +644,7 @@
 			// Processing new messages array
 
 			const messages: ScribeChatMessage[] = [];
-			const newCache = new Map<string, ScribeChatMessage>();
+			const newCache = new SvelteMap<string, ScribeChatMessage>();
 
 			streamingMessages.forEach((msg) => {
 				const cached = messageCache.get(msg.id);
@@ -726,7 +729,8 @@
 	});
 
 	// Removed attachments state as feature is disabled/not supported
-	let chatInput = $state(''); // Initialize with empty string
+	/* eslint-disable svelte/prefer-writable-derived */
+let chatInput = $state(''); // Initialize with empty string
 
 	$effect(() => {
 		chatInput = initialChatInputValue || '';

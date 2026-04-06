@@ -57,14 +57,14 @@
 	} = $props();
 
 	// Use controller.chat as single source of truth - controller has $state internally
-	const controller = new ChatController(
-		undefined,
-		undefined,
-		undefined,
-		[],
-		null,
-		''
-	);
+	const controller = untrack(() => new ChatController(
+		chatProp,
+		user,
+		character,
+		initialMessages || [],
+		initialCursor ?? null,
+		initialChatInputValue || ''
+	));
 
 	// Sync props to controller reactively
 	$effect(() => {
@@ -75,7 +75,10 @@
 		// but we can sync them if they change, or just set them once in an untracked block if preferred.
 		// For now, let's sync them to ensure the controller has the latest data.
 		if (initialMessages) controller.loadedMessagesBatches = [initialMessages];
-		if (initialCursor !== undefined) controller.nextCursor = initialCursor;
+		if (initialCursor !== undefined) {
+			controller.nextCursor = initialCursor;
+			controller.hasMoreMessages = initialCursor !== null;
+		}
 		if (initialChatInputValue !== undefined) controller.chatInput = initialChatInputValue;
 	});
 

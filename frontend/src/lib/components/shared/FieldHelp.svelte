@@ -51,7 +51,7 @@
 					<div class="space-y-1.5">
 						<p class="text-xs font-medium text-foreground">Examples:</p>
 						<ul class="space-y-1 text-xs text-muted-foreground">
-							{#each examples as example}
+							{#each examples as example, i (i)}
 								<li class="flex items-start gap-1.5">
 									<span class="mt-0.5 text-primary">•</span>
 									<span class="flex-1">{example}</span>

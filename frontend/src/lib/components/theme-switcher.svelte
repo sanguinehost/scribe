@@ -20,7 +20,7 @@
 		</DropdownMenu.Label>
 		<DropdownMenu.Separator class="bg-border/50" />
 
-		{#each THEMES as theme}
+		{#each THEMES as theme, i (i)}
 			<DropdownMenu.Item
 				class="flex items-center justify-between gap-0 p-0 cursor-pointer transition-colors duration-200 rounded-md hover:bg-accent"
 			>
