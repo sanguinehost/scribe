@@ -1067,19 +1067,22 @@ export class ChatController {
 		const targetMessage = (this.activeStreamingService.messages as StreamingMessage[])[
 			messageIndex
 		];
-		if (targetMessage.sender !== 'user') return;
 
-		const allMessages = [...(this.activeStreamingService.messages as StreamingMessage[])];
-		allMessages[messageIndex].content = newContent;
+		const backendId = targetMessage.backend_id || targetMessage.id;
+		if (!backendId) return;
 
-		const removedMessages = allMessages.slice(messageIndex + 1);
-		this.activeStreamingService.messages = allMessages.slice(0, messageIndex + 1);
-
-		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
-			_apiClient.deleteTrailingMessages(removedMessages[0].backend_id).catch(console.warn);
+		try {
+			const result = await _apiClient.updateMessageContent(backendId, newContent);
+			if (result.isOk()) {
+				const allMessages = [...(this.activeStreamingService.messages as StreamingMessage[])];
+				allMessages[messageIndex].content = result.value.content;
+				this.activeStreamingService.messages = allMessages;
+			} else {
+				console.error('Failed to update message content', result.error);
+			}
+		} catch (error) {
+			console.error('Error updating message content:', error);
 		}
-
-		this.generateAIResponse();
 	}
 
 	async handleDeleteMessage(messageId: string) {
@@ -1327,6 +1330,45 @@ export class ChatController {
 			console.warn('⚠️ Could not find message to update greeting variant');
 		}
 	}
+
+	async repairMessageFormat(backendId: string) {
+		try {
+			const targetMsg = this.activeStreamingService.messages.find(
+				(m: any) => m.backend_id === backendId || m.id === backendId
+			);
+
+			if (!targetMsg) {
+				toast.error('Message not found');
+				return;
+			}
+
+			// Optimistic UI state
+			targetMsg.isRegenerating = true;
+
+			const result = await _apiClient.repairMessageFormat(backendId);
+
+			if (result.isOk()) {
+				const updatedMessage = result.value;
+
+				targetMsg.content = updatedMessage.content;
+				targetMsg.displayedContent = updatedMessage.content;
+				targetMsg.contentVersion = (targetMsg.contentVersion || 0) + 1;
+				targetMsg.isRegenerating = false;
+				targetMsg.error = undefined;
+				(targetMsg as any)._variantChangedAt = Date.now();
+
+				toast.success('Widget rendering repaired');
+			} else {
+				targetMsg.isRegenerating = false;
+				toast.error('Failed to repair rendering format');
+				console.error('Repair format failed:', result.error);
+			}
+		} catch (error) {
+			console.error('Error repairing message format:', error);
+			toast.error('An unexpected error occurred during repair');
+		}
+	}
+
 	async loadAgentMode() {
 		if (!this.chat?.id) return;
 		try {

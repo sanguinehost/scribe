@@ -110,8 +110,8 @@
 		</div>
 	{/if}
 
-	<!-- Edit button for user messages -->
-	{#if message.message_type === 'User' && !readonly}
+	<!-- Edit button for user and AI messages -->
+	{#if !readonly && (message.message_type === 'User' || (message.message_type === 'Assistant' && !isFirstMessage(message)))}
 		<ButtonComponent
 			variant="ghost"
 			size="sm"

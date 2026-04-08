@@ -48,6 +48,7 @@
 		onDeleteMessage,
 		onPreviousVariant,
 		onNextVariant,
+		onRepairFormat,
 		onGreetingChanged,
 		onLoadMore,
 		isLoadingMore = false,
@@ -70,6 +71,7 @@
 		onDeleteMessage?: (messageId: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
+		onRepairFormat?: (messageId: string) => void;
 		// Variant data is now included in message objects
 		onGreetingChanged?: (detail: { index: number; content: string }) => void;
 		onLoadMore?: () => void;
@@ -543,6 +545,7 @@
 						{onDeleteMessage}
 						{onPreviousVariant}
 						{onNextVariant}
+						{onRepairFormat}
 						{substituteTemplateVariables}
 						{userPersonaName}
 					/>

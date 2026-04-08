@@ -772,11 +772,11 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
 
         // Parse Currency section
         if let Some(currency_text) = sections.get("currency") {
-            info!(currency_text = %currency_text, "Found currency section");
+            debug!(currency_text = %currency_text, "Found currency section");
             game_state.currencies = Self::parse_currency_section(currency_text);
-            info!(currencies_parsed = ?game_state.currencies, "Parsed currencies");
+            debug!(currencies_parsed = ?game_state.currencies, "Parsed currencies");
         } else {
-            info!("No currency section found in LLM response");
+            debug!("No currency section found in LLM response");
         }
 
         // Parse Inventory section
@@ -790,7 +790,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
 
         // Parse Main Quest section
         if let Some(main_quest_text) = sections.get("main quest") {
-            info!(main_quest_text = %main_quest_text, "Parsing main quest section");
+            debug!(main_quest_text = %main_quest_text, "Parsing main quest section");
             let mut main_quests = Self::parse_quests_section(main_quest_text);
             // Filter out "None" placeholders
             main_quests.retain(|q| !q.title.eq_ignore_ascii_case("none"));
@@ -802,7 +802,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
 
         // Parse Optional Quests section
         if let Some(opt_quests_text) = sections.get("optional quests") {
-            info!(opt_quests_text = %opt_quests_text, "Parsing optional quests section");
+            debug!(opt_quests_text = %opt_quests_text, "Parsing optional quests section");
             let mut optional_quests = Self::parse_quests_section(opt_quests_text);
             // Filter out "None" placeholders
             optional_quests.retain(|q| !q.title.eq_ignore_ascii_case("none"));
@@ -900,7 +900,7 @@ Output in ```game-state format, tracking {{{{user}}}}'s stats:"#,
             sections.insert(section_name, current_content.trim().to_string());
         }
 
-        info!(
+        debug!(
             sections_found = ?sections.keys().collect::<Vec<_>>(),
             "Parsed sections from response"
         );

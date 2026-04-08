@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { activeStreamingService as streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
 	import { Markdown } from '$lib/components/markdown';
+	import StatsWidget from '$lib/components/widgets/StatsWidget.svelte';
+	import { segmentMessageContent, type ContentSegment } from '$lib/utils/parsers/widget-parser';
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { untrack } from 'svelte';
 	import { fade } from 'svelte/transition';
@@ -9,11 +11,13 @@
 	let {
 		message = $bindable(),
 		cursorColor = 'orange',
-		className = ''
+		className = '',
+		onRepairFormat
 	}: {
 		message: StreamingMessage;
 		cursorColor?: string;
 		className?: string;
+		onRepairFormat?: (messageId: string) => void;
 	} = $props();
 
 	// Get settings store for typing speed
@@ -38,6 +42,9 @@
 
 	// Reactive typing speed from settings store
 	let typingSpeed = $derived(settingsStore?.typingSpeed ?? 30);
+
+	// Parse segments dynamically
+	const textSegments = $derived(segmentMessageContent(displayedContent));
 
 	// Derived state
 	let charCount = $derived(displayedContent.length);
@@ -267,7 +274,14 @@
 			</div>
 		{:else}
 			<div in:fade={{ duration: 400 }}>
-				<Markdown md={displayedContent} />
+				{#each textSegments as segment}
+					{#if segment.type === 'markdown'}
+						<Markdown md={segment.content} />
+					{:else if segment.type === 'widget' && segment.widgetType === 'stats'}
+						<StatsWidget rawData={segment.rawData} messageId={message.id} onRepair={onRepairFormat ? () => onRepairFormat(message.id) : undefined} />
+					{/if}
+				{/each}
+
 				{#if shouldShowTypewriter}
 					<span class="typing-indicator"></span>
 				{/if}

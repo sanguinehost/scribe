@@ -6,6 +6,8 @@
 	import { Markdown } from '../markdown';
 	import MessageActions from './message-actions.svelte';
 	import TypewriterMessage from '../TypewriterMessage.svelte';
+	import { segmentMessageContent, type ContentSegment } from '$lib/utils/parsers/widget-parser';
+	import StatsWidget from '../widgets/StatsWidget.svelte';
 	import { fly, fade, slide } from 'svelte/transition';
 	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
@@ -55,17 +57,20 @@
 		onDeleteMessage,
 		onPreviousVariant,
 		onNextVariant,
+		onRepairFormat,
 		hasVariants = false,
 		variantInfo = null,
 		substituteTemplateVariables = undefined,
 		userPersonaName: _userPersonaName = 'User'
 	}: {
 		message: ScribeChatMessage;
-		readonly: boolean;
-		loading: boolean;
-		user: User | undefined; // Define type for user
-		character: ScribeCharacter | null | undefined; // Define type for character
-		chat: ScribeChatSession | undefined;
+		readonly?: boolean;
+		loading?: boolean;
+		user?: User; // Add user prop
+		character?: ScribeCharacter | null; // Add character prop
+		chat?: ScribeChatSession;
+		hasVariants?: boolean;
+		variantInfo?: { current: number; total: number } | null;
 		onRetryMessage?: (messageId: string) => void;
 		onRetryFailedMessage?: (messageId: string) => void;
 		onEditMessage?: (messageId: string) => void;
@@ -73,8 +78,7 @@
 		onDeleteMessage?: (messageId: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
-		hasVariants?: boolean;
-		variantInfo?: { current: number; total: number } | null;
+		onRepairFormat?: (messageId: string) => void;
 		substituteTemplateVariables?: (text: string, characterName: string) => string;
 		userPersonaName?: string;
 	} = $props();
@@ -111,6 +115,11 @@
 			return substituteTemplateVariables(message.content, character.name);
 		}
 		return message.content;
+	});
+
+	// Parse custom widgets out of the content
+	const contentSegments = $derived.by(() => {
+		return segmentMessageContent(processedContent);
 	});
 
 	// Avatar lightbox state
@@ -284,13 +293,13 @@
 
 			<!-- Render message content directly -->
 			<div class="group relative">
-				{#if isEditing && message.message_type === 'User'}
-					<!-- Edit mode for user messages -->
+				{#if isEditing}
+					<!-- Edit mode for messages -->
 					<div class="space-y-3">
 						<TextareaComponent
 							bind:value={editedContent}
 							onkeydown={handleKeydown}
-							placeholder="Edit your message..."
+							placeholder="Edit message..."
 							class="min-h-[80px] resize-none focus:ring-2 focus:ring-primary"
 							autofocus
 						/>
@@ -303,7 +312,7 @@
 								onclick={saveEdit}
 								disabled={!editedContent.trim() || editedContent.trim() === message.content}
 							>
-								Save & Send
+								Save Edit
 							</ButtonComponent>
 						</div>
 					</div>
@@ -429,7 +438,13 @@
 								<div class="mt-3 border-t border-red-200 pt-3 dark:border-red-800">
 									<p class="mb-2 text-xs text-red-600 dark:text-red-400">Partial response:</p>
 									{#key `${message.id}-partial-${message.current_variant_index || 0}`}
-										<Markdown md={processedContent} />
+										{#each contentSegments as segment}
+											{#if segment.type === 'markdown'}
+												<Markdown md={segment.content} />
+											{:else if segment.type === 'widget' && segment.widgetType === 'stats'}
+												<StatsWidget rawData={segment.rawData} messageId={message.id} onRepair={onRepairFormat ? () => onRepairFormat(message.id) : undefined} />
+											{/if}
+										{/each}
 									{/key}
 								</div>
 							{/if}
@@ -440,6 +455,7 @@
 								<TypewriterMessage
 									message={toStreamingMessage(message)}
 									className="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
+									onRepairFormat={onRepairFormat}
 								/>
 							{:else}
 								<!-- All other messages (including User messages) use regular markdown -->
@@ -447,7 +463,13 @@
 									class="prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 w-full max-w-none break-words"
 								>
 									{#key `${message.id}-${message.current_variant_index || 0}`}
-										<Markdown md={processedContent} />
+										{#each contentSegments as segment}
+											{#if segment.type === 'markdown'}
+												<Markdown md={segment.content} />
+											{:else if segment.type === 'widget' && segment.widgetType === 'stats'}
+												<StatsWidget rawData={segment.rawData} messageId={message.id} />
+											{/if}
+										{/each}
 									{/key}
 								</div>
 							{/if}
@@ -533,11 +555,7 @@
 							{variantInfo}
 							onRetry={() => onRetryMessage?.(message.id)}
 							onEdit={() => {
-								if (message.message_type === 'User') {
-									startEditing();
-								} else {
-									onEditMessage?.(message.id);
-								}
+								startEditing();
 							}}
 							onDelete={() => onDeleteMessage?.(message.id)}
 							onPreviousVariant={() => onPreviousVariant?.(message.id)}

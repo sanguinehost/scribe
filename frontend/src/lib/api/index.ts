@@ -1190,6 +1190,19 @@ class ApiClient {
 		});
 	}
 
+	async updateMessageContent(id: string, content: string): Promise<_Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chats/messages/${id}/content`, {
+			method: 'PUT',
+			body: JSON.stringify({ content })
+		});
+	}
+
+	async repairMessageFormat(id: string): Promise<_Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chats/messages/${id}/repair-format`, {
+			method: 'POST'
+		});
+	}
+
 	async voteMessage(id: string, type: 'up' | 'down'): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/messages/${id}/vote`, {
 			method: 'POST',
