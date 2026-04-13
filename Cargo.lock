@@ -7172,8 +7172,6 @@ dependencies = [
 [[package]]
 name = "lance"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8c439decbc304e180748e34bb6d3df729069a222e83e74e2185c38f107136e9"
 dependencies = [
  "arrow",
  "arrow-arith",
@@ -7582,8 +7580,6 @@ dependencies = [
 [[package]]
 name = "lance-namespace-impls"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee713505576f6b1988a491f77c7ca8b0cf7090a393598e63c85079fa70a53ebf"
 dependencies = [
  "arrow",
  "arrow-ipc",

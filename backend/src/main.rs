@@ -1,4 +1,4 @@
-#![recursion_limit = "2048"]
+#![recursion_limit = "8192"]
 use axum::{
     extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Json, Router,
 };

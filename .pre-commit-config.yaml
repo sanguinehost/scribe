@@ -113,7 +113,7 @@ repos:
         entry: python .pre-commit-card-scan.py
         language: system
         types: [text]
-        exclude: ^(.pre-commit-card-scan.py|docs/PAYMENT_COMPLIANCE.md)$
+        exclude: ^(.pre-commit-card-scan.py|docs/PAYMENT_COMPLIANCE.md|backend/patches/.*)$
 
   # Secrets detection with Gitleaks
   - repo: https://github.com/gitleaks/gitleaks
