@@ -150,6 +150,6 @@ async fn test_geo_sql() {
     assert_eq!(batch.num_rows(), 1);
     approx::assert_relative_eq!(
         batch.column(0).as_primitive::<Float64Type>().value(0),
-        0.0015056772638228177
+        0.00150567726
     );
 }
