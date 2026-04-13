@@ -35,7 +35,11 @@ impl RecallPipeline {
         max_game_time_day: Option<i64>,     // Added for temporal filtering
         active_variant_id: Option<DbId>,    // Added for variant-aware retrieval
     ) -> Result<String, AppError> {
-        info!("Recalling cognitive context for query: {}", query);
+        info!(
+            "Recalling cognitive context for query (len: {})",
+            query.len()
+        );
+        debug!("Full recall query: {}", query);
 
         // 0. Hindsight Head: Search for Cognitive Facts via Vector DB
         let similar_facts = state

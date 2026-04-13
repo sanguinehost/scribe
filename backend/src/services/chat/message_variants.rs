@@ -578,13 +578,40 @@ pub async fn select_message_variant(
     .await?;
 
     // Validate variant_index bounds
+    let mut parent_message = parent_message;
     if variant_index < 0 || variant_index >= parent_message.variant_count {
-        return Err(AppError::BadRequest(format!(
-            "Variant index {} is out of bounds. Message has {} variants (0-{})",
-            variant_index,
-            parent_message.variant_count,     // Total number of variants
-            parent_message.variant_count - 1  // Highest valid index
-        )));
+        // Attempt lazy migration of greeting variants if we are requesting an out-of-bounds variant
+        // and this is an assistant message (like a greeting)
+        if variant_index >= parent_message.variant_count
+            && parent_message.role.as_deref() == Some("assistant")
+        {
+            tracing::info!(
+                "Variant index {} >= variant_count {}, attempting lazy migration of greeting variants",
+                variant_index,
+                parent_message.variant_count
+            );
+            parent_message = lazy_migrate_greeting_variants_if_needed(
+                state.clone(),
+                &parent_message,
+                user_id,
+                dek,
+            )
+            .await?;
+        }
+
+        // Re-validate post-migration
+        if variant_index < 0 || variant_index >= parent_message.variant_count {
+            return Err(AppError::BadRequest(format!(
+                "Variant index {} is out of bounds. Message has {} variants (0-{})",
+                variant_index,
+                parent_message.variant_count,
+                if parent_message.variant_count > 0 {
+                    parent_message.variant_count - 1
+                } else {
+                    0
+                }
+            )));
+        }
     }
 
     let (
@@ -784,4 +811,121 @@ pub async fn select_message_variant(
     };
 
     Ok(response)
+}
+
+/// Helper to lazily migrate alternate greetings into message variants for backwards compatibility.
+/// This addresses older chats where alternate greetings were not initially saved as variants.
+async fn lazy_migrate_greeting_variants_if_needed(
+    state: Arc<AppState>,
+    parent_message: &crate::models::chats::Message,
+    user_id: crate::db::DbId,
+    dek: &SecretBox<Vec<u8>>,
+) -> Result<crate::models::chats::Message, AppError> {
+    use crate::models::characters::Character;
+    use crate::schema::{characters, chat_messages, chat_sessions};
+    use diesel::prelude::*;
+
+    if parent_message.role != Some("assistant".to_string()) {
+        return Ok(parent_message.clone());
+    }
+
+    // 1. Fetch character ID from session
+    let session_character_opt = crate::db::with_conn(&state.pool, {
+        let session_id = parent_message.session_id;
+        move |conn| {
+            chat_sessions::table
+                .filter(chat_sessions::id.eq(session_id))
+                .select(chat_sessions::character_id)
+                .first::<Option<crate::db::DbId>>(conn)
+                .optional()
+                .map_err(|e| AppError::DatabaseQueryError(format!("Db error: {}", e)))
+        }
+    })
+    .await?
+    .flatten();
+
+    let char_id = match session_character_opt {
+        Some(id) => id,
+        None => return Ok(parent_message.clone()),
+    };
+
+    // 2. Fetch character details
+    let character = crate::db::with_conn(&state.pool, move |conn| {
+        characters::table
+            .filter(characters::id.eq(char_id))
+            .first::<Character>(conn)
+            .optional()
+            .map_err(|e| AppError::DatabaseQueryError(format!("Db error: {}", e)))
+    })
+    .await?;
+
+    // 3. Extract alternate greetings
+    let alternate_greetings = match character {
+        Some(c) => c
+            .alternate_greetings
+            .as_ref()
+            .map(|ag| ag.0.iter().flatten().cloned().collect::<Vec<String>>()),
+        None => None,
+    }
+    .unwrap_or_default();
+
+    if alternate_greetings.is_empty() {
+        return Ok(parent_message.clone()); // Nothing to migrate
+    }
+
+    tracing::info!(
+        "Lazy migrating {} alternate greetings to message variants for msg id {}",
+        alternate_greetings.len(),
+        parent_message.id
+    );
+
+    // 4. Create variants for each alternate greeting
+    for alt in alternate_greetings {
+        if alt.trim().is_empty() {
+            continue;
+        }
+
+        let new_dek = secrecy::SecretBox::new(Box::new(dek.expose_secret().clone()));
+
+        let _ = crate::services::chat::message_handling::save_message(
+            crate::services::chat::message_handling::SaveMessageParams {
+                state: state.clone(),
+                session_id: parent_message.session_id,
+                user_id,
+                message_type_enum: crate::models::chats::MessageRole::Assistant,
+                pre_processing_analysis_id: None,
+                content: &alt,
+                role_str: Some("assistant".to_string()),
+                parts: None,
+                attachments: None,
+                user_dek_secret_box: Some(Arc::new(new_dek)),
+                model_name: "migration".to_string(), // Marker
+                raw_prompt_debug: None,
+                status: crate::models::chats::MessageStatus::Completed,
+                error_message: None,
+                variant_of: Some(parent_message.id),
+                charge_credits: false,
+                credits_cost_override: None,
+                game_time: None,
+                reasoning_content: None,
+            },
+        )
+        .await?;
+    }
+
+    // 5. Reload the parent message to get the updated variant_count
+    let reloaded_msg = crate::db::with_conn(&state.pool, {
+        let msg_id = parent_message.id;
+        move |conn| {
+            chat_messages::table
+                .filter(chat_messages::id.eq(msg_id))
+                .first::<crate::models::chats::Message>(conn)
+                .map_err(|e| {
+                    AppError::DatabaseQueryError(format!("Failed to reload message: {}", e))
+                })
+        }
+    })
+    .await?;
+
+    Ok(reloaded_msg)
 }

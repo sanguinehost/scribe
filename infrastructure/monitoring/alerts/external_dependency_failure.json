@@ -1,14 +1,14 @@
 {
     "name": "external_dependency_failure",
-    "description": "Alerts on recurring database or vector database errors",
+    "description": "Alerts on recurring database, vector database (Qdrant/LanceDB), or health check errors",
     "stream_type": "logs",
     "stream_name": "default",
     "enabled": true,
     "query_condition": {
         "type": "sql",
-        "sql": "SELECT count(*) as total, event_type FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND event_type IN ('database_error', 'qdrant_error', 'health_check_failure') GROUP BY event_type HAVING count(*) > 10"
+        "sql": "SELECT count(*) as total, CASE WHEN str_match(body, 'Qdrant') OR str_match(error, 'VectorDbError') THEN 'qdrant_error' WHEN str_match(body, 'LanceDB') THEN 'lancedb_error' WHEN str_match(body, 'Gemini') OR str_match(body, 'AI API') THEN 'llm_api_error' ELSE COALESCE(event_type, 'unknown') END as error_category FROM \"default\" WHERE service_name IN ('scribe-backend', 'scribe_backend') AND (event_type IN ('database_error', 'qdrant_error', 'health_check_failure', 'ai_error', 'llm_error') OR (severity = 'ERROR' AND (str_match(body, 'Qdrant') OR str_match(error, 'VectorDbError') OR str_match(body, 'LanceDB') OR str_match(error, 'LanceDB') OR str_match(body, 'Gemini') OR str_match(body, 'AI API')))) GROUP BY error_category HAVING count(*) > 3"
     },
-    "row_template": "- {total} {event_type} failures detected",
+    "row_template": "- {total} {error_category} failures detected",
     "trigger_condition": {
         "period": 5,
         "operator": ">",

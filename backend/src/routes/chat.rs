@@ -60,7 +60,7 @@ use axum::{
 };
 use bigdecimal::ToPrimitive;
 use diesel::{prelude::*, ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper};
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use rig::message::Message as RigMessage;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -478,6 +478,7 @@ async fn generate_chat_response_sse(
                 session_id,
                 user_id: user_id_value,
                 message_type_enum: MessageRole::User,
+                pre_processing_analysis_id: None,
                 content: &current_user_content,
                 role_str: user_message_struct_to_save.role.clone(),
                 parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
@@ -538,7 +539,9 @@ async fn generate_chat_response_sse(
 
         yield Ok(Event::default().event("status").data("Retrieving secure cognitive memories..."));
 
-        // Cognitive Recall
+        // Cognitive Recall — wrapped in catch_unwind to prevent LanceDB/Arrow panics
+        // from killing the SSE async task. .ok() only catches Result::Err, not panics.
+        tracing::info!("[SSE-DIAG] Starting cognitive recall...");
         let cognitive_context = if let Some(chronicle_id) = player_chronicle_id {
             let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
             let mut recall_query_parts = Vec::new();
@@ -549,28 +552,66 @@ async fn generate_chat_response_sse(
             recall_query_parts.push(current_user_content.clone());
             let recall_query = recall_query_parts.join("\n");
 
-            state_arc.recall_pipeline.recall_context(
-                user_id_value, chronicle_id, &recall_query, &session_dek_ref, state_arc.clone(), None,
-                initial_game_state.as_ref().and_then(|gs| gs["game_time"]["day"].as_i64()), None
-            ).await.ok()
-        } else {
-            None
-        };
-
-        // Core Memory
-        let core_memory = if let Some(chronicle_id) = player_chronicle_id {
-            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone());
-            match chronicle_service.get_core_memory(user_id_value, chronicle_id).await {
-                Ok(Some(mem)) => {
-                    let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
-                    mem.decrypt(&session_dek_ref).ok()
+            tracing::info!("[SSE-DIAG] Calling recall_pipeline.recall_context (chronicle_id={})", chronicle_id);
+            let recall_result = std::panic::AssertUnwindSafe(
+                state_arc.recall_pipeline.recall_context(
+                    user_id_value, chronicle_id, &recall_query, &session_dek_ref, state_arc.clone(), None,
+                    initial_game_state.as_ref().and_then(|gs| gs["game_time"]["day"].as_i64()), None
+                )
+            );
+            match recall_result.catch_unwind().await {
+                Ok(Ok(ctx)) => {
+                    tracing::info!("[SSE-DIAG] Cognitive recall succeeded ({} chars)", ctx.len());
+                    Some(ctx)
                 }
-                _ => None
+                Ok(Err(e)) => {
+                    tracing::warn!("[SSE-DIAG] Cognitive recall returned error (non-fatal): {}", e);
+                    None
+                }
+                Err(_panic_info) => {
+                    tracing::error!("[SSE-DIAG] PANIC in cognitive recall (caught and swallowed!)");
+                    None
+                }
             }
         } else {
+            tracing::info!("[SSE-DIAG] No chronicle_id, skipping cognitive recall");
             None
         };
 
+        // Core Memory — also panic-safe
+        tracing::info!("[SSE-DIAG] Starting core memory retrieval...");
+        let core_memory = if let Some(chronicle_id) = player_chronicle_id {
+            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone());
+            tracing::info!("[SSE-DIAG] Calling get_core_memory (chronicle_id={})", chronicle_id);
+            let core_mem_result = std::panic::AssertUnwindSafe(
+                chronicle_service.get_core_memory(user_id_value, chronicle_id)
+            );
+            match core_mem_result.catch_unwind().await {
+                Ok(Ok(Some(mem))) => {
+                    let session_dek_ref = SessionDek::new(session_dek_arc.expose_secret().clone());
+                    let decrypted = mem.decrypt(&session_dek_ref).ok();
+                    tracing::info!("[SSE-DIAG] Core memory retrieved: has_data={}", decrypted.is_some());
+                    decrypted
+                }
+                Ok(Ok(None)) => {
+                    tracing::info!("[SSE-DIAG] No core memory found");
+                    None
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!("[SSE-DIAG] Core memory error (non-fatal): {}", e);
+                    None
+                }
+                Err(_panic_info) => {
+                    tracing::error!("[SSE-DIAG] PANIC in core memory retrieval (caught and swallowed!)");
+                    None
+                }
+            }
+        } else {
+            tracing::info!("[SSE-DIAG] No chronicle_id, skipping core memory");
+            None
+        };
+
+        tracing::info!("[SSE-DIAG] About to build final prompt...");
         yield Ok(Event::default().event("status").data("Finalizing prompt and starting generation..."));
 
         // Build Final LLM Prompt
@@ -581,6 +622,18 @@ async fn generate_chat_response_sse(
         let mut rig_recent_history: Vec<RigMessage> = Vec::new();
         for db_msg in managed_db_history {
             let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+            // VARIANT DEBUG: Log what content is being sent to the LLM
+            {
+                let preview: String = content_str.chars().take(80).collect();
+                tracing::info!(
+                    message_id = %db_msg.id,
+                    message_type = ?db_msg.message_type,
+                    current_variant_index = db_msg.current_variant_index,
+                    variant_count = db_msg.variant_count,
+                    content_preview = %preview,
+                    "🔀 VARIANT DEBUG: Converting managed_db_history to rig message"
+                );
+            }
             let rig_msg = match db_msg.message_type {
                 MessageRole::User => RigMessage::User { content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(content_str)) },
                 _ => RigMessage::Assistant { id: None, content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(content_str)) },
@@ -1227,7 +1280,18 @@ async fn generate_chat_response_json_inner(
     // Convert DbChatMessage history to RigMessage history
     let mut rig_recent_history: Vec<RigMessage> = Vec::new();
     for db_msg in managed_db_history {
-        let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+        // Use variant-aware content retrieval
+        let content_str = crate::services::chat::generation::get_message_content_with_variant(
+            &db_msg,
+            &state_arc.pool,
+            user_id_value,
+            session_dek_arc.as_ref(),
+        )
+        .await
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get variant content: {e}"))
+        })?;
+
         let rig_msg = match db_msg.message_type {
             MessageRole::User => RigMessage::User {
                 content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
@@ -1291,12 +1355,15 @@ async fn generate_chat_response_json_inner(
         // Instead, we need to find the existing user message that prompted the original response
         debug!(session_id = %session_id, variant_of = ?payload.variant_of, "Skipping user message save for variant creation - user message already exists");
 
-        // For now, we'll create a placeholder since the agent analysis expects a user message
-        // In the future, we might want to find the actual user message that prompted the variant
+        // The frontend sends the parent user message ID when creating a variant
+        let variant_parent_id = payload
+            .parent_message_id
+            .unwrap_or_else(|| crate::db::DbId::new());
+
         use crate::models::chats::MessageRole as DbMessageRole;
 
         crate::models::chats::ChatMessage::builder()
-            .id(crate::db::DbId::new_v4()) // Temporary ID
+            .id(variant_parent_id) // Use the real parent ID instead of a temporary ID
             .session_id(session_id)
             .user_id(user_id_value)
             .message_type(DbMessageRole::User)
@@ -1311,6 +1378,7 @@ async fn generate_chat_response_json_inner(
             session_id,
             user_id: user_id_value,
             message_type_enum: MessageRole::User,
+            pre_processing_analysis_id: None,
             content: &current_user_content,
             role_str: user_message_struct_to_save.role.clone(),
             parts: user_message_struct_to_save.parts.clone().map(|j| j.0),
@@ -1387,6 +1455,8 @@ async fn generate_chat_response_json_inner(
     let should_skip_analysis = payload.analysis_mode.as_deref() == Some("skip");
     let should_refresh_analysis = payload.analysis_mode.as_deref() == Some("refresh");
 
+    info!(%session_id, "DEBUG API REQUEST: analysis_mode={:?}, payload_agent_mode={:?}", payload.analysis_mode, payload.agent_mode);
+
     let (agent_context, pre_processing_analysis_id) = if should_skip_analysis {
         info!(%session_id, "Skipping agent analysis as requested (analysis_mode=skip)");
         (None, None)
@@ -1397,15 +1467,6 @@ async fn generate_chat_response_json_inner(
             // If refresh is requested, supersede existing analyses first
             if should_refresh_analysis {
                 info!(%session_id, "Refresh requested - superseding existing analyses");
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
                 #[cfg(feature = "postgres-backend")]
                 let conn = crate::db::get_conn(&state_arc.pool).await?;
                 #[cfg(feature = "sqlite-backend")]
@@ -1428,15 +1489,6 @@ async fn generate_chat_response_json_inner(
 
             // Check if we have an existing analysis (unless refresh was requested)
             let existing_analysis = if !should_refresh_analysis {
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
-                #[cfg(feature = "postgres-backend")]
-                let conn = crate::db::get_conn(&state_arc.pool).await?;
-                #[cfg(feature = "sqlite-backend")]
                 #[cfg(feature = "postgres-backend")]
                 let conn = crate::db::get_conn(&state_arc.pool).await?;
                 #[cfg(feature = "sqlite-backend")]
@@ -1927,18 +1979,13 @@ async fn generate_chat_response_json_inner(
                 game_master_mode_enabled: game_master_mode_enabled.unwrap_or(false),
                 initial_game_state,
                 parent_message_id: payload.parent_message_id,
-                pre_processing_analysis_id: None,
+                pre_processing_analysis_id,
             };
             match chat::generation::stream_ai_response_and_save_message_with_retry(stream_params)
                 .await
             {
                 Ok(service_stream) => {
                     debug!(%session_id, "Successfully obtained stream from chat_service::stream_ai_response_and_save_message");
-
-                    // Clone data needed for the stream
-                    let pre_processing_analysis_id_clone = pre_processing_analysis_id;
-                    let state_for_update = state_arc.clone();
-                    let session_id_for_update = session_id;
 
                     let final_stream = async_stream::stream! {
                         let mut content_produced = false;
@@ -1974,40 +2021,6 @@ async fn generate_chat_response_json_inner(
                                             // Capture the assistant message ID for post-processing
                                             if let Ok(msg_uuid) = DbId::parse_str(&message_id) {
                                                 _assistant_message_id = Some(msg_uuid);
-
-                                                // Update pre-processing analysis with assistant message ID if we have one
-                                                if let Some(analysis_id) = pre_processing_analysis_id_clone {
-                                                    debug!(session_id = %session_id_for_update, %analysis_id,
-                                                           assistant_message_id =%msg_uuid,
-                                                           "Updating pre-processing analysis with assistant message ID (streaming)");
-
-                                                    // Clone for the async task
-                                                    let state_clone = state_for_update.clone();
-                                                    let session_id_clone = session_id_for_update;
-
-                                                    // Spawn a task to update the analysis
-                                                    tokio::spawn(async move {
-                                                        let update_result = crate::db::with_conn(&state_clone.pool, move |conn| {
-                                                            AgentContextAnalysis::update_assistant_message_id(
-                                                                conn,
-                                                                analysis_id,
-                                                                msg_uuid,
-                                                            )
-                                                        })
-                                                        .await;
-
-                                                        match update_result {
-                                                            Ok(()) => {
-                                                                debug!(session_id = %session_id_clone,
-                                                                       "Successfully updated pre-processing analysis with assistant message ID");
-                                                            }
-                                                            Err(e) => {
-                                                                warn!(session_id = %session_id_clone, error = ?e,
-                                                                      "Failed to update analysis with assistant message ID");
-                                                            }
-                                                        }
-                                                    });
-                                                }
                                             }
                                             let message_data = serde_json::json!({
                                                 "message_id": message_id,
@@ -2491,6 +2504,7 @@ async fn generate_chat_response_json_inner(
                                 session_id,
                                 user_id: user_id_value,
                                 message_type_enum: MessageRole::Assistant,
+                                pre_processing_analysis_id: None,
                                 content: &response_content,
                                 role_str: Some("assistant".to_string()),
                                 parts: Some(json!([{"text": response_content.clone()}])),
@@ -4144,6 +4158,9 @@ pub async fn expand_text_handler(
                 MessageRole::System => "system".to_string(),
             },
             content: decrypted_content,
+            id: Some(db_message.id.to_string()),
+            current_variant_index: Some(db_message.current_variant_index),
+            variant_count: Some(db_message.variant_count),
         };
         chat_history.push(api_message);
     }
@@ -4155,6 +4172,9 @@ pub async fn expand_text_handler(
             "[EXPAND: Take this brief text and expand it into a more detailed, natural response while maintaining perfect consistency with the conversation's established tone, style, setting, and voice. Original text: '{}']",
             payload.original_text
         ),
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
     };
     chat_history.push(expansion_instruction);
 
@@ -4508,6 +4528,9 @@ pub async fn impersonate_handler(
                 MessageRole::System => "system".to_string(),
             },
             content: decrypted_content,
+            id: Some(db_message.id.to_string()),
+            current_variant_index: Some(db_message.current_variant_index),
+            variant_count: Some(db_message.variant_count),
         };
         chat_history.push(api_message);
     }
@@ -4516,6 +4539,9 @@ pub async fn impersonate_handler(
     let impersonation_instruction = crate::models::chats::ApiChatMessage {
         role: "user".to_string(),
         content: "[IMPERSONATE: You are now speaking as the user persona. Generate a natural response that the user would make in this conversation context. Respond only as the user, not as an assistant.]".to_string(),
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
     };
     chat_history.push(impersonation_instruction);
 
@@ -4527,8 +4553,9 @@ pub async fn impersonate_handler(
             "What should the user say in response to this conversation?".to_string(),
         ),
         analysis_mode: None, // Not applicable for suggested actions
-        guidance: None,      // No guidance for impersonation
-        variant_of: None,    // Impersonation doesn't create variants
+        agent_mode: None,
+        guidance: None,   // No guidance for impersonation
+        variant_of: None, // Impersonation doesn't create variants
         parent_message_id: None,
         game_master_mode_enabled: Some(false),
         thinking_level: None,

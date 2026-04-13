@@ -1679,7 +1679,6 @@ mod tests {
 
         // Serialize
         let json_string = serde_json::to_string(&metadata).expect("Serialization failed");
-        println!("Serialized JSON: {json_string}"); // Optional: print for debugging
 
         // Deserialize
         let deserialized_metadata: CharacterMetadata =

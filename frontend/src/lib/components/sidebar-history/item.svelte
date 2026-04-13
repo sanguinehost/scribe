@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { ScribeChatSession } from '$lib/types';
 	import {
 		DropdownMenu,
@@ -30,7 +31,7 @@
 			<button
 				{...props}
 				onclick={() => {
-					_goto(`/chat/${chat.id}`);
+					_goto(resolve(`/chat/${chat.id}`));
 					context.setOpenMobile(false);
 				}}
 			>

@@ -75,6 +75,14 @@ pub fn chat_routes() -> Router<crate::state::AppState> {
             get(get_message_by_id_handler).delete(delete_message_handler),
         )
         .route(
+            "/messages/{id}/content",
+            put(update_message_content_handler),
+        )
+        .route(
+            "/messages/{id}/repair-format",
+            post(repair_message_format_handler),
+        )
+        .route(
             "/messages/{id}/select-variant",
             post(select_message_variant_handler),
         )
@@ -1255,6 +1263,7 @@ pub async fn create_message_handler(
             session_id: chat_id,
             user_id,
             message_type_enum: message_role_enum,
+            pre_processing_analysis_id: None,
             content: &payload.content,
             role_str: Some(payload.role.clone()),
             parts: payload.parts.clone().map(|j| j.0),
@@ -1602,6 +1611,235 @@ pub async fn create_message_handler(
     };
 
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateMessageContentRequest {
+    #[validate(length(min = 1, message = "Content cannot be empty"))]
+    pub content: String,
+}
+
+/// Updates the encrypted content of a message.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Authentication fails
+/// - Message not found or access denied
+/// - Payload validation fails
+/// - Database operation fails
+pub async fn update_message_content_handler(
+    auth: UnifiedAuth,
+    State(state): State<AppState>,
+    dek: SessionDek,
+    Path(id): Path<crate::db::DbId>,
+    Json(payload): Json<UpdateMessageContentRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    payload.validate()?;
+
+    let trimmed_content = payload.content.trim();
+    if trimmed_content.is_empty() {
+        return Err(AppError::BadRequest("Content cannot be empty".to_string()));
+    }
+
+    let user = auth
+        .user()
+        .cloned()
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+    let pool = state.pool.clone();
+
+    // 1. Fetch message completely to check permissions and get nonce
+    let message_db: Message = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(id))
+            .first::<Message>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+    // 2. Authorize via parent chat session
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(message_db.session_id))
+            .select(Chat::as_select())
+            .first::<Chat>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::InternalServerErrorGeneric(e.to_string()))?;
+
+    if chat.user_id != user.id {
+        return Err(AppError::Forbidden("Access denied to message".to_string()));
+    }
+
+    // 3. Re-encrypt and update state
+    let mut updated_fields = message_db.clone();
+    updated_fields.encrypt_content_field(&dek.0, trimmed_content)?;
+
+    let updated_at_now = crate::DbTimestamp::now();
+
+    let pool_clone = pool.clone();
+    let updated_message =
+        crate::db::with_conn(&pool_clone, move |conn| -> Result<Message, AppError> {
+            diesel::update(chat_messages::table.filter(chat_messages::id.eq(id)))
+                .set((
+                    chat_messages::content.eq(updated_fields.content),
+                    chat_messages::content_nonce.eq(updated_fields.content_nonce),
+                    chat_messages::updated_at.eq(updated_at_now),
+                ))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            // Get the updated message
+            chat_messages::table
+                .filter(chat_messages::id.eq(id))
+                .first::<Message>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+    let client_message = updated_message.into_decrypted_for_client(Some(&dek.0))?;
+
+    Ok(Json(client_message))
+}
+
+/// Dispatches an AI job to automatically repair structural formatting of an AI message
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Authentication fails
+/// - Message not found or access denied
+/// - Message is not an assistant message
+/// - LLM generation fails
+/// - Database operation fails
+pub async fn repair_message_format_handler(
+    auth: UnifiedAuth,
+    State(state): State<AppState>,
+    dek: SessionDek,
+    Path(id): Path<crate::db::DbId>,
+) -> Result<impl IntoResponse, AppError> {
+    let user = auth
+        .user()
+        .cloned()
+        .ok_or_else(|| AppError::Unauthorized("Not logged in".to_string()))?;
+    let pool = state.pool.clone();
+
+    // 1. Fetch message and verify permissions
+    let message_db: Message = crate::db::with_conn(&pool, move |conn| {
+        chat_messages::table
+            .filter(chat_messages::id.eq(id))
+            .first::<Message>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+    // 2. Authorize via parent chat session
+    let chat = crate::db::with_conn(&pool, move |conn| {
+        chat_sessions::table
+            .filter(chat_sessions::id.eq(message_db.session_id))
+            .select(Chat::as_select())
+            .first::<Chat>(conn)
+            .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+    })
+    .await
+    .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+    if chat.user_id != user.id {
+        return Err(AppError::Forbidden("Access denied to message".to_string()));
+    }
+
+    // Only repair AI messages
+    if message_db.message_type != crate::models::chats::MessageRole::Assistant
+        && message_db.message_type != crate::models::chats::MessageRole::System
+    {
+        return Err(AppError::BadRequest(
+            "Only assistant messages can be repaired".to_string(),
+        ));
+    }
+
+    // Decrypt the content
+    let client_msg = message_db.clone().into_decrypted_for_client(Some(&dek.0))?;
+    let raw_content = client_msg.content;
+
+    let prefix = "You are an automated structural repair tool. Your single purpose is to fix formatting issues in the provided text.
+Specifically, if the text contains pseudo-XML tags (like <stats>, <inventory>, etc.) that are wrapped inside markdown formatting blocks (like ```xml ... ``` or ``` ... ```), you must remove those markdown block wrappers so the pseudo-XML tags are unescaped and naked. DO NOT change ANY of the textual content, dialogue, or meaning. Simply fix the formatting. Output ONLY the repaired text without any surrounding explanation or markdown wrappers.";
+
+    use crate::llm::rig_client::RigCompletionRequest;
+
+    let req = RigCompletionRequest {
+        model_name: "gemini-2.5-flash".to_string(), // Fast model for standard operations
+        provider: "gemini".to_string(),
+        prompt: raw_content.clone(),
+        preamble: Some(prefix.to_string()),
+        history: vec![],
+        temperature: Some(0.0), // Zero temp for determinism
+        top_p: None,
+        max_tokens: Some(raw_content.len() as i32 + 500),
+        reasoning_budget: None,
+        thinking_level: None,
+        capture_reasoning_content: false,
+        safety_settings: None,
+    };
+
+    let ai_start = std::time::Instant::now();
+    let ai_response = state.ai_client.completion(req).await.map_err(|e| {
+        tracing::error!("Failed to generate repair response: {}", e);
+        AppError::InternalServerErrorGeneric("Failed to repair message format".to_string())
+    })?;
+
+    tracing::info!(
+        "Format repair completed in {}ms",
+        ai_start.elapsed().as_millis()
+    );
+
+    // The response content. Sometimes Gemini returns things in a markdown block despite instructions
+    // We should pre-emptively trim formatting if it did
+    let mut repaired_content = ai_response.content.trim();
+    if repaired_content.starts_with("```xml") {
+        repaired_content = repaired_content.strip_prefix("```xml").unwrap().trim();
+    } else if repaired_content.starts_with("```") {
+        repaired_content = repaired_content.strip_prefix("```").unwrap().trim();
+    }
+    if repaired_content.ends_with("```") {
+        repaired_content = repaired_content.strip_suffix("```").unwrap().trim();
+    }
+
+    let repaired_content = repaired_content.trim();
+
+    // 3. Re-encrypt and update state
+    let mut updated_fields = message_db.clone();
+    updated_fields.encrypt_content_field(&dek.0, repaired_content)?;
+
+    let updated_at_now = crate::DbTimestamp::now();
+
+    let pool_clone = pool.clone();
+    let updated_message =
+        crate::db::with_conn(&pool_clone, move |conn| -> Result<Message, AppError> {
+            diesel::update(chat_messages::table.filter(chat_messages::id.eq(id)))
+                .set((
+                    chat_messages::content.eq(updated_fields.content),
+                    chat_messages::content_nonce.eq(updated_fields.content_nonce),
+                    chat_messages::updated_at.eq(updated_at_now),
+                ))
+                .execute(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
+
+            // Get the updated message
+            chat_messages::table
+                .filter(chat_messages::id.eq(id))
+                .first::<Message>(conn)
+                .map_err(|e| AppError::DatabaseQueryError(e.to_string()))
+        })
+        .await
+        .map_err(|e| AppError::DbInteractError(e.to_string()))?;
+
+    let client_message = updated_message.into_decrypted_for_client(Some(&dek.0))?;
+
+    Ok(Json(client_message))
 }
 
 // Get a message by ID

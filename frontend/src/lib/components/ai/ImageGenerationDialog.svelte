@@ -277,7 +277,7 @@
 								disabled={isExecuting}
 								class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
 							>
-								{#each assetTypes as assetType}
+								{#each assetTypes as assetType, i (i)}
 									<option value={assetType.value}>
 										{assetType.label} - {assetType.description}
 									</option>
@@ -294,7 +294,7 @@
 								disabled={isExecuting}
 								class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
 							>
-								{#each styles as style}
+								{#each styles as style, i (i)}
 									<option value={style.id}>
 										{style.name} - {style.description}
 									</option>

@@ -1,3 +1,4 @@
+import { SvelteMap, SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 import { apiClient as _apiClient } from '$lib/api';
 import type {
@@ -34,7 +35,7 @@ export class ChatController {
 	chatInput = $state('');
 
 	// Cache
-	messageCache = new Map<string, ScribeChatMessage>();
+	messageCache = new SvelteMap<string, ScribeChatMessage>();
 	lastStreamingMessages: unknown[] = [];
 
 	// Regeneration
@@ -133,7 +134,7 @@ export class ChatController {
 
 			// Processing new messages array
 			const messages: ScribeChatMessage[] = [];
-			const newCache = new Map<string, ScribeChatMessage>();
+			const newCache = new SvelteMap<string, ScribeChatMessage>();
 
 			streamingMessages.forEach((msg) => {
 				const cached = this.messageCache.get(msg.id);
@@ -205,8 +206,8 @@ export class ChatController {
 
 			// Sort messages by timestamp (oldest first) for proper chronological display
 			messages.sort((a, b) => {
-				const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-				const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+				const aTime = a.created_at ? new SvelteDate(a.created_at).getTime() : 0;
+				const bTime = b.created_at ? new SvelteDate(b.created_at).getTime() : 0;
 				return aTime - bTime;
 			});
 
@@ -314,7 +315,7 @@ export class ChatController {
 						sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 						content: msg.content,
 						displayedContent: msg.content,
-						created_at: msg.created_at || new Date().toISOString(),
+						created_at: msg.created_at || new SvelteDate().toISOString(),
 						isAnimating: false,
 						shouldAnimate: msg.shouldAnimate ?? false,
 						error: msg.error || undefined,
@@ -336,8 +337,8 @@ export class ChatController {
 					})
 				);
 
-				const existingIds = new Set(this.activeStreamingService.messages.map((m) => m.id));
-				const existingBackendIds = new Set(
+				const existingIds = new SvelteSet(this.activeStreamingService.messages.map((m) => m.id));
+				const existingBackendIds = new SvelteSet(
 					this.activeStreamingService.messages
 						.map((m) => m.backend_id)
 						.filter((id): id is string => !!id)
@@ -474,7 +475,7 @@ export class ChatController {
 						sender: msg.message_type === 'Assistant' ? 'assistant' : 'user',
 						content: msg.content,
 						displayedContent: msg.content,
-						created_at: msg.created_at || new Date().toISOString(),
+						created_at: msg.created_at || new SvelteDate().toISOString(),
 						isAnimating: false,
 						shouldAnimate: msg.shouldAnimate ?? false, // Carry over shouldAnimate flag (false for historical)
 						error: msg.error || undefined,
@@ -715,7 +716,10 @@ export class ChatController {
 			.filter((m) => !(m.isAnimating ?? false))
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.variants ? m.variants[m.current_variant_index || 0]?.content : m.content,
+				id: m.backend_id || m.id,
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variants?.length || m.variant_count || 0
 			}));
 
 		try {
@@ -828,12 +832,16 @@ export class ChatController {
 			return;
 		}
 
-		const historyToSend = (this.activeStreamingService.messages as StreamingMessage[])
-			.filter((m) => !(m.isAnimating ?? false))
-			.map((m) => ({
-				role: m.sender,
-				content: m.content
-			}));
+		const filteredMessages = (this.activeStreamingService.messages as StreamingMessage[]).filter(
+			(m) => !(m.isAnimating ?? false)
+		);
+
+		const historyToSend = filteredMessages.map((m) => ({
+			role: m.sender,
+			content: m.content,
+			id: m.backend_id || m.id,
+			current_variant_index: m.current_variant_index
+		}));
 
 		console.log('DEBUG: regenerateResponse historyToSend:', JSON.stringify(historyToSend));
 		console.log('DEBUG: regenerateResponse guidance:', guidance);
@@ -843,6 +851,9 @@ export class ChatController {
 			toast.error('No user message found to regenerate response.');
 			return;
 		}
+
+		const lastUserMsgFull = [...filteredMessages].reverse().find((m) => m.sender === 'user');
+		const parentMessageId = lastUserMsgFull?.backend_id || lastUserMsgFull?.id;
 
 		try {
 			const currentModel = await this.getCurrentChatModel();
@@ -879,7 +890,8 @@ export class ChatController {
 				guidance: guidance,
 				targetMessageId: targetMessageIdForVariant,
 				variantOf: originalMessageId,
-				thinking_level: this.chat.thinking_level || undefined
+				thinking_level: this.chat.thinking_level || undefined,
+				parentMessageId
 			});
 
 			// await this.refreshChatMetadata();
@@ -1060,19 +1072,22 @@ export class ChatController {
 		const targetMessage = (this.activeStreamingService.messages as StreamingMessage[])[
 			messageIndex
 		];
-		if (targetMessage.sender !== 'user') return;
 
-		const allMessages = [...(this.activeStreamingService.messages as StreamingMessage[])];
-		allMessages[messageIndex].content = newContent;
+		const backendId = targetMessage.backend_id || targetMessage.id;
+		if (!backendId) return;
 
-		const removedMessages = allMessages.slice(messageIndex + 1);
-		this.activeStreamingService.messages = allMessages.slice(0, messageIndex + 1);
-
-		if (removedMessages.length > 0 && removedMessages[0].backend_id) {
-			_apiClient.deleteTrailingMessages(removedMessages[0].backend_id).catch(console.warn);
+		try {
+			const result = await _apiClient.updateMessageContent(backendId, newContent);
+			if (result.isOk()) {
+				const allMessages = [...(this.activeStreamingService.messages as StreamingMessage[])];
+				allMessages[messageIndex].content = result.value.content;
+				this.activeStreamingService.messages = allMessages;
+			} else {
+				console.error('Failed to update message content', result.error);
+			}
+		} catch (error) {
+			console.error('Error updating message content:', error);
 		}
-
-		this.generateAIResponse();
 	}
 
 	async handleDeleteMessage(messageId: string) {
@@ -1262,7 +1277,7 @@ export class ChatController {
 		const { content, index, messageId } = detail;
 
 		if (typeof window !== 'undefined' && this.chat?.id) {
-			localStorage.setItem(`greeting - variant - ${this.chat.id} `, index.toString());
+			localStorage.setItem(`greeting-variant-${this.chat.id}`, index.toString());
 		}
 
 		// Find the message to update
@@ -1320,6 +1335,45 @@ export class ChatController {
 			console.warn('⚠️ Could not find message to update greeting variant');
 		}
 	}
+
+	async repairMessageFormat(backendId: string) {
+		try {
+			const targetMsg = this.activeStreamingService.messages.find(
+				(m: any) => m.backend_id === backendId || m.id === backendId
+			);
+
+			if (!targetMsg) {
+				toast.error('Message not found');
+				return;
+			}
+
+			// Optimistic UI state
+			targetMsg.isRegenerating = true;
+
+			const result = await _apiClient.repairMessageFormat(backendId);
+
+			if (result.isOk()) {
+				const updatedMessage = result.value;
+
+				targetMsg.content = updatedMessage.content;
+				targetMsg.displayedContent = updatedMessage.content;
+				targetMsg.contentVersion = (targetMsg.contentVersion || 0) + 1;
+				targetMsg.isRegenerating = false;
+				targetMsg.error = undefined;
+				(targetMsg as any)._variantChangedAt = Date.now();
+
+				toast.success('Widget rendering repaired');
+			} else {
+				targetMsg.isRegenerating = false;
+				toast.error('Failed to repair rendering format');
+				console.error('Repair format failed:', result.error);
+			}
+		} catch (error) {
+			console.error('Error repairing message format:', error);
+			toast.error('An unexpected error occurred during repair');
+		}
+	}
+
 	async loadAgentMode() {
 		if (!this.chat?.id) return;
 		try {

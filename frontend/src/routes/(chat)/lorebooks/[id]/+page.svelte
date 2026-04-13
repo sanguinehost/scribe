@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto as _goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -53,7 +54,7 @@
 	}
 
 	function handleBack() {
-		_goto('/lorebooks');
+		_goto(resolve('/lorebooks'));
 	}
 
 	async function handleUpdateLorebook(id: string, data: UpdateLorebookPayload): Promise<boolean> {
@@ -74,7 +75,7 @@
 		const success = await lorebookStore.deleteLorebook(id);
 		if (success) {
 			toast.success('Lorebook deleted successfully!');
-			_goto('/lorebooks');
+			_goto(resolve('/lorebooks'));
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to delete lorebook: ${lorebookStore.error}`);
 		}

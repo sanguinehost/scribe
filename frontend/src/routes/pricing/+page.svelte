@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto as _goto } from '$app/navigation';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
@@ -77,7 +78,7 @@
 	) {
 		// For free plan, just redirect to app
 		if (event.detail.planType === 'free') {
-			_goto('/');
+			_goto(resolve('/'));
 		}
 	}
 </script>

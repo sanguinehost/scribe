@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { cn as _cn } from '$lib/utils/shadcn';
 	import ChevronUp from './icons/chevron-up.svelte';
 	import {
@@ -24,7 +25,7 @@
 		// Use comprehensive logout that clears both state and cookies immediately
 		await performLogout('manual', false);
 		// Redirect to signin page - backend cleanup is now handled inside performLogout
-		_goto('/signin');
+		_goto(resolve('/signin'));
 	}
 
 	function openMembershipSettings() {

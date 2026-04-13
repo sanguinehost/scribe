@@ -40,7 +40,7 @@
 		<Sheet.Content
 			data-sidebar="sidebar"
 			data-mobile="true"
-			class="w-[var(--sidebar-width)] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+			class="w-[var(--sidebar-width)] bg-sidebar/90 backdrop-blur-xl border-r-border/50 p-0 text-sidebar-foreground [&>button]:hidden"
 			style="--sidebar-width: {SIDEBAR_WIDTH_MOBILE};"
 			{side}
 		>
@@ -112,7 +112,7 @@
 		>
 			<div
 				data-sidebar="sidebar"
-				class="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
+				class="flex h-full w-full flex-col bg-sidebar/80 backdrop-blur-xl border-r-border/50 group-data-[variant=floating]:rounded-xl group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border/50 group-data-[variant=floating]:shadow-lg"
 			>
 				{@render children?.()}
 			</div>

@@ -95,6 +95,15 @@ pub fn characters_router(state: AppState) -> Router<AppState> {
             "/{character_id}/assets/{asset_id}",
             get(get_character_asset_handler),
         )
+        .route("/{character_id}/banner", get(get_character_banner_handler))
+        .route(
+            "/{character_id}/banner",
+            post(upload_character_banner_handler),
+        )
+        .route(
+            "/{character_id}/banner",
+            delete(delete_character_banner_handler),
+        )
         // Apply LoginRequired middleware to all routes in this router
         // It checks auth_session.user and returns 401 if None.
         .with_state(state)
@@ -2037,6 +2046,276 @@ pub async fn get_character_asset_handler(
 
     debug!(character_id = %character_id, asset_id = %asset_id, content_type = %content_type, image_data_len = final_image_data.len(), "Character asset served successfully");
     Ok(response)
+}
+
+// Get character banner
+#[debug_handler]
+#[instrument(skip(state, auth), err)]
+pub async fn get_character_banner_handler(
+    Path(character_id): Path<crate::db::DbId>,
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+) -> Result<Response<Body>, AppError> {
+    let user = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    // Verify character ownership
+    let character = crate::db::with_conn(&state.pool, move |conn_block| {
+        characters
+            .find(character_id)
+            .filter(user_id.eq(local_user_id))
+            .select(Character::as_select())
+            .first(conn_block)
+            .optional()
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
+            })
+    })
+    .await?;
+
+    let _character = character
+        .ok_or_else(|| AppError::NotFound("Character not found or not accessible".to_string()))?;
+
+    // Load the banner asset from database
+    let asset = crate::db::with_conn(&state.pool, move |conn_asset_block| {
+        character_assets
+            .filter(crate::schema::character_assets::character_id.eq(character_id))
+            .filter(crate::schema::character_assets::asset_type.eq("banner"))
+            .first::<CharacterAsset>(conn_asset_block)
+            .optional()
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Asset lookup DB error: {e}"))
+            })
+    })
+    .await?;
+
+    let asset =
+        asset.ok_or_else(|| AppError::NotFound("Character banner not found".to_string()))?;
+
+    let image_data = asset
+        .data
+        .ok_or_else(|| AppError::NotFound("Character banner has no image data".to_string()))?;
+
+    let content_type = asset
+        .content_type
+        .unwrap_or_else(|| "image/png".to_string());
+
+    let image_data_len = image_data.len();
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", &content_type)
+        .header("Cache-Control", "public, max-age=3600")
+        .body(Body::from(image_data))
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to build response: {e}"))
+        })?;
+
+    debug!(character_id = %character_id, content_type = %content_type, image_data_len = image_data_len, "Character banner served successfully");
+    Ok(response)
+}
+
+// Upload character banner
+#[debug_handler]
+#[instrument(skip(state, auth, multipart), err)]
+pub async fn upload_character_banner_handler(
+    Path(character_id): Path<crate::db::DbId>,
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<crate::DbJson>), AppError> {
+    let user = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    // Verify character ownership
+    let character = crate::db::with_conn(&state.pool, move |conn_block| {
+        characters
+            .find(character_id)
+            .filter(user_id.eq(local_user_id))
+            .select(Character::as_select())
+            .first(conn_block)
+            .optional()
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
+            })
+    })
+    .await?;
+
+    let _character = character
+        .ok_or_else(|| AppError::NotFound("Character not found or not accessible".to_string()))?;
+
+    let mut image_data: Option<Bytes> = None;
+    let mut content_type: Option<String> = None;
+
+    while let Some(field) = multipart.next_field().await? {
+        let field_name = field.name().unwrap_or("").to_string();
+        if field_name == "banner" || field_name == "file" || field_name == "avatar" {
+            content_type = field.content_type().map(std::string::ToString::to_string);
+            let data = field.bytes().await?;
+            image_data = Some(data);
+            break;
+        }
+    }
+
+    let image_bytes = image_data
+        .ok_or_else(|| AppError::BadRequest("Missing 'banner' field in upload".to_string()))?;
+
+    // Validate size constraint (5MB)
+    if image_bytes.len() > 5 * 1024 * 1024 {
+        return Err(AppError::BadRequest(
+            "File exceeds 5MB size limit".to_string(),
+        ));
+    }
+
+    if let Some(ct) = &content_type {
+        if ct.starts_with("image/") {
+            let format = match ct.as_str() {
+                "image/png" => Some(image::ImageFormat::Png),
+                "image/jpeg" => Some(image::ImageFormat::Jpeg),
+                _ => None,
+            };
+
+            if let Some(fmt) = format {
+                match image::load_from_memory_with_format(&image_bytes, fmt) {
+                    Ok(_) => info!("Image data validated successfully as {}", ct),
+                    Err(e) => {
+                        error!("Failed to decode image data as {}: {}", ct, e);
+                        return Err(AppError::BadRequest(format!(
+                            "Invalid image file format/content: {}",
+                            e
+                        )));
+                    }
+                }
+            } else {
+                return Err(AppError::BadRequest(format!(
+                    "Unsupported image format: {}. Only PNG and JPEG are allowed.",
+                    ct
+                )));
+            }
+        } else {
+            return Err(AppError::BadRequest(
+                "Invalid MIME type. Must be an image.".to_string(),
+            ));
+        }
+    } else {
+        return Err(AppError::BadRequest(
+            "No content type provided for character banner upload.".to_string(),
+        ));
+    }
+
+    let new_asset = NewCharacterAsset::new_banner(
+        character_id,
+        &format!("{}_banner", character_id),
+        image_bytes.to_vec(),
+        content_type,
+    );
+
+    let asset_result = crate::db::with_conn(&state.pool, move |conn_block| {
+        // Delete existing banner first
+        diesel::delete(
+            character_assets
+                .filter(crate::schema::character_assets::character_id.eq(character_id))
+                .filter(crate::schema::character_assets::asset_type.eq("banner")),
+        )
+        .execute(conn_block)?;
+
+        #[cfg(feature = "postgres-backend")]
+        {
+            diesel::insert_into(character_assets)
+                .values(new_asset)
+                .returning(CharacterAsset::as_returning())
+                .get_result::<CharacterAsset>(conn_block)
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}"))
+                })
+        }
+
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        {
+            let new_asset_clone = new_asset.clone();
+            diesel::insert_into(character_assets)
+                .values(&new_asset_clone)
+                .execute(conn_block)
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset insert DB error: {e}"))
+                })?;
+
+            character_assets
+                .filter(crate::schema::character_assets::character_id.eq(character_id))
+                .filter(crate::schema::character_assets::asset_type.eq("banner"))
+                .first::<CharacterAsset>(conn_block)
+                .map_err(|e| {
+                    AppError::InternalServerErrorGeneric(format!("Asset query DB error: {e}"))
+                })
+        }
+    })
+    .await?;
+
+    info!(character_id = %character_id, asset_id = ?asset_result.id, "Character banner uploaded successfully");
+
+    Ok((
+        StatusCode::CREATED,
+        Json(crate::db::Json(serde_json::json!({
+            "message": "Character banner uploaded successfully",
+            "asset_id": asset_result.id,
+            "url": format!("/api/v1/characters/{}/banner", character_id)
+        }))),
+    ))
+}
+
+// Delete character banner
+#[debug_handler]
+#[instrument(skip(state, auth), err)]
+pub async fn delete_character_banner_handler(
+    Path(character_id): Path<crate::db::DbId>,
+    State(state): State<AppState>,
+    auth: UnifiedAuth,
+) -> Result<StatusCode, AppError> {
+    let user = auth
+        .user()
+        .ok_or_else(|| AppError::Unauthorized("Authentication required".to_string()))?;
+    let local_user_id = user.id;
+
+    // Verify character ownership
+    let character = crate::db::with_conn(&state.pool, move |conn_block| {
+        characters
+            .find(character_id)
+            .filter(user_id.eq(local_user_id))
+            .select(Character::as_select())
+            .first(conn_block)
+            .optional()
+            .map_err(|e| {
+                AppError::InternalServerErrorGeneric(format!("Character lookup DB error: {e}"))
+            })
+    })
+    .await?;
+
+    if character.is_none() {
+        return Err(AppError::NotFound(
+            "Character not found or not accessible".to_string(),
+        ));
+    }
+
+    let deleted_count = crate::db::with_conn(&state.pool, move |conn_block| {
+        diesel::delete(
+            character_assets
+                .filter(crate::schema::character_assets::character_id.eq(character_id))
+                .filter(crate::schema::character_assets::asset_type.eq("banner")),
+        )
+        .execute(conn_block)
+        .map_err(|e| AppError::InternalServerErrorGeneric(format!("Asset delete DB error: {e}")))
+    })
+    .await?;
+
+    if deleted_count == 0 {
+        return Err(AppError::NotFound("Character banner not found".to_string()));
+    }
+
+    info!(character_id = %character_id, "Character banner deleted successfully");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // --- Character Generation Endpoints ---

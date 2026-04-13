@@ -1,4 +1,5 @@
 <script module lang="ts">
+	import { resolve } from '$app/paths';
 	// Snippet is imported in the main script block below
 
 	export type FormSuccessData = {
@@ -71,7 +72,7 @@
 					await initializeAuth(true);
 
 					toast.success('Successfully signed in');
-					goto('/'); // Redirect to home/chat on success
+					goto(resolve('/')); // Redirect to home/chat on success
 				} else {
 					errorMessage = result.error.message;
 					toast.error(errorMessage);
@@ -95,7 +96,7 @@
 					});
 
 					// Redirect to signin with success message
-					goto('/signin?registration=success');
+					goto(resolve('/signin?registration=success'));
 				} else {
 					errorMessage = result.error.message;
 					toast.error(errorMessage);
@@ -118,13 +119,21 @@
 	);
 </script>
 
-<form onsubmit={handleSubmit} class="flex flex-col gap-4 px-4 sm:px-16" novalidate>
+<form onsubmit={handleSubmit} class="glass-panel mx-auto flex max-w-md flex-col gap-5 rounded-2xl px-8 py-10 shadow-2xl sm:px-12" novalidate>
+	<!-- Scribe Wordmark -->
+	<div class="mb-2 text-center">
+		<h1 class="text-gradient font-heading text-4xl font-black tracking-tight">Scribe</h1>
+		<p class="mt-1 text-sm text-muted-foreground">
+			{authType === 'login' ? 'Welcome back' : 'Create your account'}
+		</p>
+	</div>
+
 	<!-- Email/Identifier field: Hidden in desktop mode for registration -->
 	{#if !inDesktopMode || authType === 'login'}
 		<div class="flex flex-col gap-2">
 			<label
 				for={identifierName}
-				class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+				class="text-sm font-medium leading-none text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 				>{identifierLabel}</label
 			>
 
@@ -160,7 +169,7 @@
 		<div class="flex flex-col gap-2">
 			<label
 				for="username"
-				class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+				class="text-sm font-medium leading-none text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 				>Username</label
 			>
 			<Input
@@ -180,7 +189,7 @@
 	<div class="flex flex-col gap-2">
 		<label
 			for="password"
-			class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+			class="text-sm font-medium leading-none text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 			>Password</label
 		>
 
@@ -193,6 +202,20 @@
 			bind:value={password}
 		/>
 	</div>
+
+	{#if errorMessage}
+		<div
+			class="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+			role="alert"
+		>
+			<p class="font-semibold">{errorMessage}</p>
+			{#if errorMessage.toLowerCase().includes('pending email verification')}
+				<p class="mt-1 opacity-90">
+					Please check your inbox and spam folder for the verification link before trying to sign in.
+				</p>
+			{/if}
+		</div>
+	{/if}
 
 	{@render submitButton({ pending, success })}
 	{@render children()}

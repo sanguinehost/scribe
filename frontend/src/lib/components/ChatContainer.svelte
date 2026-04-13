@@ -33,7 +33,7 @@
 	import LorebookExtractionDialog from './LorebookExtractionDialog.svelte';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
 	import { ChatController } from '$lib/controllers/chat-controller.svelte';
-	import GameStateSidebar from './gamemaster/GameStateSidebar.svelte';
+	import GameStateHud from './gamemaster/GameStateHud.svelte';
 	import { LLMStore } from '$lib/stores/llm.svelte';
 	import { SelectedModel } from '$lib/hooks/selected-model.svelte';
 	import { getAllAvailableModels } from '$lib/ai/models';
@@ -57,14 +57,14 @@
 	} = $props();
 
 	// Use controller.chat as single source of truth - controller has $state internally
-	const controller = new ChatController(
-		undefined,
-		undefined,
-		undefined,
-		[],
-		null,
-		''
-	);
+	const controller = untrack(() => new ChatController(
+		chatProp,
+		user,
+		character,
+		initialMessages || [],
+		initialCursor ?? null,
+		initialChatInputValue || ''
+	));
 
 	// Sync props to controller reactively
 	$effect(() => {
@@ -75,7 +75,10 @@
 		// but we can sync them if they change, or just set them once in an untracked block if preferred.
 		// For now, let's sync them to ensure the controller has the latest data.
 		if (initialMessages) controller.loadedMessagesBatches = [initialMessages];
-		if (initialCursor !== undefined) controller.nextCursor = initialCursor;
+		if (initialCursor !== undefined) {
+			controller.nextCursor = initialCursor;
+			controller.hasMoreMessages = initialCursor !== null;
+		}
 		if (initialChatInputValue !== undefined) controller.chatInput = initialChatInputValue;
 	});
 
@@ -211,7 +214,7 @@
 						JSON.stringify(parsedGameState).substring(0, 200) + '...'
 					);
 				}
-			}, 1500); // 1.5s delay for game state processing
+			}, 5000); // 5.0s delay for game state processing (fallback if stream event drops)
 		}
 		previousStreamStatus = currentStatus;
 	});
@@ -409,9 +412,11 @@
 	<ChatHeader
 		{chat}
 		{readonly}
-		onOpenExtractDialog={handleOpenExtractDialog}
 		onToggleGameMasterPanel={handleToggleGameMasterPanel}
 	/>
+
+	<div class="relative flex flex-1 overflow-hidden">
+		<div class="flex flex-1 flex-col overflow-hidden">
 
 	<Messages
 		{readonly}
@@ -448,7 +453,7 @@
 					controller.fetchSuggestedActions();
 				}}
 				disabled={!canFetchSuggestions || controller.isLoadingSuggestions || controller.isLoading}
-				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-input bg-background px-4 py-2 text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+				class="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-border/40 bg-card/50 backdrop-blur-sm px-6 py-2 text-sm font-medium transition-all hover:bg-accent hover:text-accent-foreground hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
 			>
 				{#if controller.isLoadingSuggestions}
 					<svg
@@ -493,10 +498,10 @@
 		{#if controller.suggestionsError && !controller.isLoading && !controller.isLoadingSuggestions}
 			<div class="mx-auto w-full px-4 pb-2 md:max-w-3xl">
 				<div
-					class="rounded-md border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20"
+					class="rounded-xl border border-destructive/20 bg-destructive/5 backdrop-blur-sm p-4"
 				>
 					<div class="flex items-start gap-3">
-						<div class="mt-0.5 flex-shrink-0 text-red-500">
+						<div class="mt-0.5 flex-shrink-0 text-destructive">
 							<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
 								<path
 									fill-rule="evenodd"
@@ -506,10 +511,10 @@
 							</svg>
 						</div>
 						<div class="flex-1">
-							<p class="text-sm font-medium text-red-700 dark:text-red-300">
+							<p class="text-sm font-medium text-destructive">
 								Failed to load suggestions
 							</p>
-							<p class="mt-1 text-sm text-red-600 dark:text-red-400">
+							<p class="mt-1 text-sm text-destructive/80">
 								{controller.suggestionsError}
 							</p>
 							{#if controller.suggestionsRetryable}
@@ -521,7 +526,7 @@
 											controller.suggestionsRetryable = false;
 											controller.fetchSuggestedActions();
 										}}
-										class="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-100 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:border-red-700 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+										class="inline-flex items-center gap-1.5 rounded-full border border-destructive/20 bg-destructive/10 px-3 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20 focus:outline-none focus:ring-2 focus:ring-destructive/50 focus:ring-offset-1"
 									>
 										<svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path
@@ -539,7 +544,7 @@
 											controller.suggestionsError = null;
 											controller.suggestionsRetryable = false;
 										}}
-										class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-1 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+										class="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1"
 									>
 										Dismiss
 									</button>
@@ -646,6 +651,26 @@
 			</form>
 		</div>
 	{/if}
+		</div>
+
+		{#if chat && chat.game_master_mode_enabled}
+			<GameStateHud
+				bind:isOpen={isGameStatePanelOpen}
+				gameState={chat.game_state || null}
+				isLoading={false}
+				sessionId={chat.id}
+				onStateUpdate={(newState) => {
+					if (controller.chat) {
+						controller.chat = { ...controller.chat, game_state: newState };
+						controller.activeStreamingService.latestGameState = newState as unknown as Record<
+							string,
+							unknown
+						>;
+					}
+				}}
+			/>
+		{/if}
+	</div>
 </div>
 
 <!-- Chat Configuration Sidebar -->
@@ -703,25 +728,7 @@
 	/>
 {/if}
 
-<!-- Game Master Sidebar -->
-{#if chat && chat.game_master_mode_enabled}
-	<GameStateSidebar
-		bind:isOpen={isGameStatePanelOpen}
-		gameState={chat.game_state || null}
-		isLoading={false}
-		sessionId={chat.id}
-		onStateUpdate={(newState) => {
-			if (controller.chat) {
-				controller.chat = { ...controller.chat, game_state: newState };
-				// Sync the streaming service's latest state to prevent the sync effect from reverting this change
-				controller.activeStreamingService.latestGameState = newState as unknown as Record<
-					string,
-					unknown
-				>;
-			}
-		}}
-	/>
-{/if}
+
 
 <!-- Chat Setup Dialog (Chronicles & Game Master) -->
 <ChatSetupDialog

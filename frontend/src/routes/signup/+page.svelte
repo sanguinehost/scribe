@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { goto as _goto } from '$app/navigation';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { ApiResponseError, ApiNetworkError, ApiClientError } from '$lib/errors/api';
@@ -40,7 +41,7 @@
 
 				// Registration successful, redirect to signin page
 				toast.success('Registration successful! Please sign in.');
-				_goto('/signin');
+				_goto(resolve('/signin'));
 			} else {
 				// Handle registration error
 				console.error('Registration failed:', registerResult.error);
@@ -118,7 +119,7 @@
 			</form>
 		</Card.Content>
 		<Card.Footer class="text-center text-sm">
-			Already have an account? <a href="/signin" class="underline">Sign In</a>
+			Already have an account? <a href={resolve("/signin")} class="underline">Sign In</a>
 		</Card.Footer>
 	</Card.Root>
 </div>

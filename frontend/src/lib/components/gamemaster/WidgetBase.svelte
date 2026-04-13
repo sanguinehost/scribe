@@ -22,6 +22,7 @@
 		action
 	}: Props = $props();
 
+	// eslint-disable-next-line svelte/prefer-writable-derived
 	let collapsed = $state(false);
 
 	$effect(() => {

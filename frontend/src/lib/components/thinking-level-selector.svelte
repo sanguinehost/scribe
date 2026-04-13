@@ -122,7 +122,7 @@
 	<DropdownMenuContent align="end" class="w-56">
 		<DropdownMenuLabel>AI Thinking Level</DropdownMenuLabel>
 		<DropdownMenuSeparator />
-		{#each levels as level}
+		{#each levels as level, i (i)}
 			<DropdownMenuItem
 				onSelect={() => updateLevel(level.id)}
 				class="flex flex-col items-start gap-0.5 py-2"

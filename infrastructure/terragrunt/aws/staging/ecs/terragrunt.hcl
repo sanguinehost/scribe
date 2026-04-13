@@ -128,5 +128,9 @@ inputs = {
       name  = "RUST_LOG"
       value = "info"
     },
+    {
+      name  = "EMBEDDING_DIMENSION"
+      value = "768"
+    },
   ]
 }

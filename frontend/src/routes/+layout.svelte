@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import '../app.css';
 	import { ThemeProvider } from '@sejohnson/svelte-themes';
 	import { Toaster } from '$lib/components/ui/sonner';
@@ -26,9 +27,13 @@
 
 	let { children } = $props<{ data?: { user?: User | null }; children: unknown }>();
 
-	// Public routes that don't require authentication
+	// Public routes that don't require authentication, supporting trailing slashes
 	const publicRoutes = ['/welcome', '/signin', '/signup', '/pricing', '/verify-email'];
-	const isPublicRoute = $derived(publicRoutes.includes($page.url.pathname));
+	const isPublicRoute = $derived(
+		publicRoutes.some(route =>
+			$page.url.pathname === route || $page.url.pathname === `${route}/`
+		)
+	);
 
 	// Re-authentication modal state
 	let showReAuthModal = $state(false);
@@ -144,7 +149,6 @@
 					console.log('[STEP 5] Importing isDesktopMode...');
 					const { isDesktopMode } = await import('$lib/utils/features');
 					console.log('[STEP 6] isDesktopMode imported');
-
 					console.log('[STEP 7] Importing apiClient...');
 					const { apiClient } = await import('$lib/api');
 					console.log('[STEP 8] apiClient imported');
@@ -206,7 +210,7 @@
 								log('[STEP 15] Setup not complete, redirecting to /welcome');
 								isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 								hideLoadingOverlay();
-								_goto('/welcome');
+								_goto(resolve('/welcome'));
 								return;
 							}
 
@@ -342,14 +346,14 @@
 										// Token save or auth initialization failed - redirect to welcome to retry setup
 										isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 										hideLoadingOverlay();
-										_goto('/welcome');
+										_goto(resolve('/welcome'));
 									}
 								} else {
 									logError(`[STEP 32] ✗ Auto-login failed: ${autoLoginResult.error}`);
 									// Auto-login failed - redirect to welcome to retry setup
 									isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 									hideLoadingOverlay();
-									_goto('/welcome');
+									_goto(resolve('/welcome'));
 								}
 							} else {
 								// For non-Quick-Start modes, run normal auth init
@@ -386,7 +390,7 @@
 							// Config load failed - redirect to welcome
 							isAppReady = true; // CRITICAL: Set flag so /welcome page can render
 							hideLoadingOverlay();
-							_goto('/welcome');
+							_goto(resolve('/welcome'));
 						}
 					} else {
 						// Non-desktop mode (web/cloud) - run normal auth init
@@ -436,7 +440,7 @@
 			Promise.race([
 				initPromise,
 				new Promise((_, reject) =>
-					setTimeout(() => reject(new Error('Initialization IIFE timed out after 8 seconds')), 8000)
+					setTimeout(() => reject(new Error('Initialization IIFE timed out after 12 seconds')), 12000)
 				)
 			]).catch((error) => {
 				console.error('[TIMEOUT] Initialization IIFE did not complete:', error);
@@ -464,7 +468,7 @@
 				subscriptionStore.clearData();
 			}
 
-			_goto('/signin');
+			_goto(resolve('/signin'));
 		};
 
 		window.addEventListener('auth:invalidated', handleAuthInvalidated);
@@ -485,7 +489,7 @@
 			});
 			// Redirect to signin after a brief delay
 			setTimeout(() => {
-				_goto('/signin');
+				_goto(resolve('/signin'));
 			}, 1000);
 		};
 
@@ -591,7 +595,7 @@
 			});
 
 			// Redirect to login page
-			await _goto('/login');
+			await _goto(resolve('/login'));
 		};
 
 		window.addEventListener('auth:connection-error', handleConnectionError);
@@ -650,13 +654,13 @@
 		// Only redirect if auth initialization is complete and we're not on a public route
 		if (ready && !loading && !authenticated && !isPublic) {
 			console.warn(`[AuthRedirect] Unauthenticated access to private route ${path}, redirecting to /signin`);
-			_goto('/signin');
+			_goto(resolve('/signin'));
 		}
 
 		// Also handle the edge case where we are at / and not authenticated - usually / should redirect to /signin
 		if (ready && !loading && !authenticated && path === '/') {
 			console.warn(`[AuthRedirect] Root access while unauthenticated, redirecting to /signin`);
-			_goto('/signin');
+			_goto(resolve('/signin'));
 		}
 	});
 
@@ -704,7 +708,7 @@
 		{:else}
 			<div class="flex h-screen items-center justify-center">
 				<div class="loading-content">
-					<svg class="loading-logo" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+					<svg class="loading-logo" width="80" height="80" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
 						<circle
 							cx="50"
 							cy="50"

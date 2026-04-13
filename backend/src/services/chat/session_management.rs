@@ -486,7 +486,7 @@ fn insert_chat_session(
             .map_err(|e| AppError::DatabaseQueryError(e.to_string()))?;
     }
 
-    #[cfg(feature = "sqlite-backend")]
+    #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
     {
         use diesel::prelude::*;
         tracing::info!("Inserting new chat session with payment fields: total_credits_used=0, total_actual_cost=0.0, total_modified_cost=0.0, total_credit_cost=0, total_actual_charge=0.0");
@@ -964,6 +964,12 @@ fn create_session_in_transaction(
         })
         .unwrap_or((None, None, None));
 
+    tracing::info!(
+        session_id = %new_session_id,
+        "Extracted alternate_greetings: {:?}",
+        alternate_greetings
+    );
+
     Ok((
         fully_created_session,
         first_mes,
@@ -1007,6 +1013,7 @@ async fn process_first_message(
                                             session_id: created_session.id,
                                             user_id: created_session.user_id,
                                             message_type_enum: MessageRole::Assistant,
+                                            pre_processing_analysis_id: None,
                                             content: &decrypted_first_mes_str,
                                             role_str: Some("assistant".to_string()),
                                             parts: None,
@@ -1034,6 +1041,7 @@ async fn process_first_message(
                                                     session_id: created_session.id,
                                                     user_id: created_session.user_id,
                                                     message_type_enum: MessageRole::Assistant,
+                                                    pre_processing_analysis_id: None,
                                                     content: &alt,
                                                     role_str: Some("assistant".to_string()),
                                                     parts: None,

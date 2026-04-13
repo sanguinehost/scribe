@@ -36,6 +36,7 @@ fn test_message_response_has_variant_fields() {
         parent_message_id: None,
         variants: None,
         game_state: None,
+        reasoning_content: None,
     };
 
     // Verify variant metadata fields exist and have expected values
@@ -57,6 +58,7 @@ fn test_message_variant_response_structure() {
         completion_tokens: Some(scribe_backend::db::DbBigInt(150)),
         model_name: Some("gemini-1.5-pro".to_string()),
         game_state: None,
+        reasoning_content: None,
     };
 
     assert_eq!(variant_response.index, 1);
@@ -105,6 +107,7 @@ fn test_variant_json_serialization() {
         completion_tokens: Some(scribe_backend::db::DbBigInt(75)),
         model_name: Some("gemini-1.5-pro".to_string()),
         game_state: None,
+        reasoning_content: None,
     };
 
     // Test serialization
@@ -136,6 +139,7 @@ fn test_variant_index_logic() {
         completion_tokens: None,
         model_name: None,
         game_state: None,
+        reasoning_content: None,
     };
 
     // First regeneration should be index 1
@@ -147,6 +151,7 @@ fn test_variant_index_logic() {
         completion_tokens: None,
         model_name: None,
         game_state: None,
+        reasoning_content: None,
     };
 
     assert_eq!(original_variant.index, 0);

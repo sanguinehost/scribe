@@ -92,6 +92,35 @@ impl NewUserAsset {
             content_type,
         }
     }
+
+    /// Create a new persona banner asset
+    pub fn new_persona_banner(
+        user_id: DbId,
+        persona_id: DbId,
+        name: &str,
+        image_data: DbBlob,
+        content_type: Option<String>,
+    ) -> Self {
+        let ext = content_type.as_ref().map_or("png".to_string(), |ct| {
+            if ct.contains("png") {
+                "png".to_string()
+            } else if ct.contains("jpeg") || ct.contains("jpg") {
+                "jpeg".to_string()
+            } else {
+                "bin".to_string()
+            }
+        });
+        Self {
+            user_id,
+            persona_id: Some(persona_id),
+            asset_type: "banner".to_string(),
+            uri: None,
+            name: name.to_string(),
+            ext,
+            data: Some(image_data),
+            content_type,
+        }
+    }
 }
 
 impl UserAsset {
@@ -103,5 +132,10 @@ impl UserAsset {
     /// Check if this asset is a persona avatar
     pub fn is_persona_avatar(&self) -> bool {
         self.persona_id.is_some() && self.asset_type == "avatar"
+    }
+
+    /// Check if this asset is a persona banner
+    pub fn is_persona_banner(&self) -> bool {
+        self.persona_id.is_some() && self.asset_type == "banner"
     }
 }

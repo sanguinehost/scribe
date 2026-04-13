@@ -4,6 +4,7 @@
 [print_schema]
 file = "src/schema.rs"
 import_types = ["diesel::sql_types::*", "diesel_derive_enum::DbEnum"]
+custom_type_derives = ["diesel::query_builder::QueryId", "diesel::sql_types::SqlType"]
 
 [migrations_directory]
 dir = "migrations"

@@ -230,7 +230,7 @@
 					<div class="space-y-2">
 						<p class="text-xs font-medium text-muted-foreground">Tags</p>
 						<div class="flex flex-wrap gap-1">
-							{#each character.data.tags as tag}
+							{#each character.data.tags as tag, i (i)}
 								<Badge variant="outline" class="text-xs">{tag}</Badge>
 							{/each}
 						</div>
@@ -283,7 +283,7 @@
 						<Alert.Description>
 							{#if validationErrors.length > 0}
 								<ul class="mt-2 list-inside list-disc space-y-1 text-sm">
-									{#each validationErrors.slice(0, 3) as error}
+									{#each validationErrors.slice(0, 3) as error, i (i)}
 										<li class="truncate">{error.path}: {error.message}</li>
 									{/each}
 									{#if validationErrors.length > 3}
@@ -484,7 +484,7 @@
 						<div class="space-y-3">
 							<h4 class="text-lg font-semibold">Tags</h4>
 							<div class="flex flex-wrap gap-2">
-								{#each character.data.tags as tag}
+								{#each character.data.tags as tag, i (i)}
 									<Badge variant="outline">{tag}</Badge>
 								{/each}
 							</div>
@@ -537,7 +537,7 @@
 							<Alert.Description>
 								{#if validationErrors.length > 0}
 									<ul class="mt-2 list-inside list-disc space-y-1">
-										{#each validationErrors as error}
+										{#each validationErrors as error, i (i)}
 											<li>{error.path}: {error.message}</li>
 										{/each}
 									</ul>

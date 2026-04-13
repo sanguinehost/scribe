@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto as _goto } from '$app/navigation';
 	import { lorebookStore } from '$lib/stores/lorebook.svelte';
@@ -30,11 +31,11 @@
 	}
 
 	function handleSelectLorebook(_lorebook: Lorebook) {
-		_goto(`/lorebooks/${_lorebook.id}`);
+		_goto(resolve(`/lorebooks/${_lorebook.id}`));
 	}
 
 	function handleEditLorebook(_lorebook: Lorebook) {
-		_goto(`/lorebooks/${_lorebook.id}?edit=true`);
+		_goto(resolve(`/lorebooks/${_lorebook.id}?edit=true`));
 	}
 
 	function handleDeleteLorebook(_lorebook: Lorebook) {
@@ -78,7 +79,7 @@
 		if (result) {
 			showCreateDialog = false;
 			toast.success('Lorebook created successfully!');
-			_goto(`/lorebooks/${result.id}`);
+			_goto(resolve(`/lorebooks/${result.id}`));
 		} else if (lorebookStore.error) {
 			toast.error(`Failed to create lorebook: ${lorebookStore.error}`);
 		}

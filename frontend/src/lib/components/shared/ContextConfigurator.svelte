@@ -116,8 +116,8 @@
 	function calculatePresetBudgets(total: number) {
 		// Backend defaults suggest 75% for recent history, 20% for RAG, 5% buffer
 		// But we'll use more balanced allocations
-		let history_ratio = 0.75;
-		let rag_ratio = 0.2;
+		let history_ratio: number;
+		let rag_ratio: number;
 
 		// Adjust ratios based on context size
 		if (total <= 8000) {
@@ -203,7 +203,7 @@
 				<div class="flex items-center justify-between">
 					<Label for="total-context-limit">Total Context Window (tokens)</Label>
 					<div class="flex flex-wrap gap-1">
-						{#each presetButtons() as preset}
+						{#each presetButtons() as preset, i (i)}
 							<ButtonComponent
 								variant="ghost"
 								size="sm"

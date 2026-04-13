@@ -197,7 +197,7 @@
 						Here
 					</h4>
 					<div class="space-y-3">
-						{#each editNpcs.filter((n) => !currentLocationName || (n.location && n.location.includes(currentLocationName))) as npc}
+						{#each editNpcs.filter((n) => !currentLocationName || (n.location && n.location.includes(currentLocationName))) as npc, i (i)}
 							{@render editNpcCard(npc, editNpcs.indexOf(npc))}
 						{/each}
 						<Button variant="outline" size="sm" class="h-7 w-full text-xs" onclick={addNpc}>
@@ -213,7 +213,7 @@
 							Elsewhere
 						</h4>
 						<div class="space-y-3">
-							{#each editNpcs.filter((n) => currentLocationName && (!n.location || !n.location.includes(currentLocationName))) as npc}
+							{#each editNpcs.filter((n) => currentLocationName && (!n.location || !n.location.includes(currentLocationName))) as npc, i (i)}
 								{@render editNpcCard(npc, editNpcs.indexOf(npc))}
 							{/each}
 						</div>

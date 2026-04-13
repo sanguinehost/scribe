@@ -28,6 +28,13 @@ pub trait VectorServiceTrait: Send + Sync {
         limit: usize,
         filter: Option<::qdrant_client::qdrant::Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError>;
+    async fn search_values_in_collection(
+        &self,
+        collection_name: &str,
+        query: &str,
+        limit: usize,
+        filter: Option<::qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError>;
     async fn search_points_with_threshold(
         &self,
         vector: Vec<f32>,

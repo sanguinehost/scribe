@@ -113,6 +113,7 @@
 		const filteredLines = colorizedLines.filter((line) => line !== null);
 
 		// Replace the entire content, removing any existing whitespace
+		// eslint-disable-next-line svelte/no-dom-manipulating
 		element.innerHTML = filteredLines.join('\n');
 
 		// Remove the whitespace-pre-wrap class to prevent whitespace preservation

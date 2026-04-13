@@ -145,7 +145,7 @@
 					/>
 				</div>
 				<div class="grid grid-cols-5 gap-2">
-					{#each assetTypes as type}
+					{#each assetTypes as type, i (i)}
 						<Button
 							size="sm"
 							variant={assetType === type.value ? 'default' : 'outline'}
@@ -219,7 +219,7 @@
 		<div class="space-y-2">
 			<Label>Current Assets ({character.data.assets.length})</Label>
 			<div class="space-y-2">
-				{#each character.data.assets as asset, index}
+				{#each character.data.assets as asset, index (index)}
 					<Card.Root>
 						<Card.Content class="flex items-center gap-4 p-4">
 							{#if asset.uri.startsWith('data:') || asset.uri.startsWith('http://') || asset.uri.startsWith('https://') || asset.uri.startsWith('/')}

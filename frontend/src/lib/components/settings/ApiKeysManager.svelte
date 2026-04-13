@@ -1,15 +1,9 @@
 <script lang="ts">
-	import { Card, CardHeader, CardTitle, CardContent } from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button as ButtonComponent } from '$lib/components/ui/button';
-	import { AlertCircle, Lock, Key, Eye, EyeOff } from 'lucide-svelte';
-
-	// State for showing/hiding API keys
-	let showFirecrawlKey = $state(false);
+	import { AlertCircle, Lock } from 'lucide-svelte';
 
 	// Placeholder state (will be replaced with actual backend integration)
-	let firecrawlKey = $state('');
 	let isLoading = $state(false);
 
 	function handleSaveKeys() {
@@ -46,69 +40,7 @@
 		</CardContent>
 	</Card>
 
-	<!-- Firecrawl API Key -->
-	<Card>
-		<CardHeader>
-			<div class="flex items-center gap-2">
-				<Key class="h-5 w-5" />
-				<CardTitle class="text-lg">Firecrawl API Key</CardTitle>
-			</div>
-			<p class="text-sm text-muted-foreground">
-				For AI-powered web research and lorebook extraction
-			</p>
-		</CardHeader>
-		<CardContent class="space-y-4">
-			<div class="space-y-2">
-				<Label for="firecrawl-key">API Key</Label>
-				<div class="flex gap-2">
-					<div class="relative flex-1">
-						<Input
-							id="firecrawl-key"
-							type={showFirecrawlKey ? 'text' : 'password'}
-							placeholder="fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-							bind:value={firecrawlKey}
-							disabled={true}
-							class="pr-10"
-						/>
-						<button
-							type="button"
-							class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
-							onclick={() => (showFirecrawlKey = !showFirecrawlKey)}
-							disabled={true}
-						>
-							{#if showFirecrawlKey}
-								<EyeOff class="h-4 w-4" />
-							{:else}
-								<Eye class="h-4 w-4" />
-							{/if}
-						</button>
-					</div>
-				</div>
-				<p class="text-xs text-muted-foreground">
-					Get your API key from <a
-						href="https://www.firecrawl.dev"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="text-primary hover:underline">firecrawl.dev</a
-					>
-				</p>
-			</div>
 
-			<div class="rounded-lg bg-muted p-3 text-xs">
-				<div class="flex gap-2">
-					<Lock class="h-4 w-4 text-muted-foreground" />
-					<div class="space-y-1">
-						<p class="font-medium">Used for:</p>
-						<ul class="list-inside list-disc space-y-1 text-muted-foreground">
-							<li>Research Dialog: Deep research from URLs</li>
-							<li>Lorebook AI: Web content extraction</li>
-							<li>Character Creator: Import from character wikis</li>
-						</ul>
-					</div>
-				</div>
-			</div>
-		</CardContent>
-	</Card>
 
 	<!-- Save Button (disabled for now) -->
 	<div class="flex justify-end gap-4 border-t pt-6">

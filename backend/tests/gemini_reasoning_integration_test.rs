@@ -100,6 +100,7 @@ async fn test_gemini_reasoning_streaming_real_ai() {
         parent_message_id: None,
         game_master_mode_enabled: None,
         thinking_level: Some("high".to_string()), // Test with a high thinking level
+        agent_mode: None,
     };
 
     let request = Request::builder()

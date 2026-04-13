@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
@@ -116,7 +117,7 @@
 		toast.success('Welcome to Sanguine Scribe!', {
 			description: 'Quick Start setup complete. You can start chatting right away.'
 		});
-		goto('/');
+		goto(resolve('/'));
 
 		isLoading = false;
 	}
@@ -142,7 +143,7 @@
 			toast.success('Account created!', {
 				description: `Welcome, ${data.user.username}! Your account has been created.`
 			});
-			goto('/');
+			goto(resolve('/'));
 		} else {
 			toast.error('Setup failed', {
 				description: result.error.message || 'Failed to create account'

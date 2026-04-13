@@ -121,7 +121,7 @@ class ResearchAgent {
 		_context: Record<string, unknown>,
 		_onProgress: (progress: WorkflowProgress) => void
 	): Promise<WorkflowResult> {
-		throw new Error('Research not yet implemented. Coming soon with Firecrawl integration!');
+		throw new Error('Research not yet implemented.');
 	}
 }
 

@@ -243,7 +243,7 @@
 
 						<CardContent class="space-y-4">
 							<ul class="space-y-3">
-								{#each features as feature}
+								{#each features as feature, i (i)}
 									<li class="flex items-center gap-3">
 										<Check class="h-4 w-4 flex-shrink-0 text-green-500" />
 										<span class="text-sm">{feature}</span>

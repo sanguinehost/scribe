@@ -51,7 +51,7 @@
 	<!-- Loading state -->
 	{#if isLoading}
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-			{#each Array(6) as _}
+			{#each Array(6) as _, i (i)}
 				<div class="animate-pulse">
 					<div class="space-y-3 rounded-lg bg-muted p-6">
 						<div class="h-4 rounded bg-muted-foreground/20"></div>

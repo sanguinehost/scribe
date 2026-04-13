@@ -195,11 +195,24 @@ export interface LorebookReference {
 }
 
 /**
- * Extensions field with Scribe-specific lorebook references
+ * Scribe Visual Metadata (Stored in Character->extensions)
+ * Controls dossier rendering and aesthetic customization safely.
+ */
+export interface ScribeVisualMetadata {
+	theme?: string; // Predefined theme name (e.g. 'sanguine', 'obsidian', 'ocean')
+	primary_color?: string; // Custom primary CSS color (e.g. HSL or Hex)
+	banner_url?: string; // Hero banner image URL
+	card_style?: 'default' | 'dossier' | 'minimal' | 'terminal'; // Layout mode
+}
+
+/**
+ * Extensions field with Scribe-specific references
  */
 export interface ScribeCharacterExtensions {
 	/** Array of lorebook references */
 	scribe_lorebook_refs?: LorebookReference[];
+	/** Custom character-specific styling and visual configuration */
+	visual_metadata?: ScribeVisualMetadata;
 	/** Allow other extensions */
 	[key: string]: unknown;
 }

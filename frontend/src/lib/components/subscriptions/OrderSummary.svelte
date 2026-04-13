@@ -134,7 +134,7 @@
 
 				<!-- Line Items -->
 				<div class="space-y-3">
-					{#each displayOrder.line_items as item}
+					{#each displayOrder.line_items as item, i (i)}
 						<div class="flex items-center justify-between">
 							<div class="flex-1">
 								<p class="text-sm font-medium">{item.description}</p>

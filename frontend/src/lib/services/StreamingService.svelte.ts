@@ -216,9 +216,10 @@ class StreamingService implements IStreamingService {
 	private shouldCloseConnection(): boolean {
 		const state = this.connectionCloseState;
 
-		// We can close if we've received DONE and token_usage (message_saved is optional)
-		// OR if we've received DONE and it's been a while (fallback timeout)
-		return state.doneReceived && (state.tokenUsageReceived || state.shouldClose);
+		// We can close if we've received DONE and it's been a while (fallback timeout)
+		// We DO NOT close immediately on tokenUsage or done because the server may send game_state asynchronously.
+		// The server will drop the connection when fully finished, or the fallback timeout will catch it.
+		return state.shouldClose;
 	}
 
 	/**
@@ -481,7 +482,12 @@ class StreamingService implements IStreamingService {
 	public async connect(params: {
 		chatId: string;
 		userMessage: string;
-		history: Array<{ role: 'user' | 'assistant'; content: string }>;
+		history: Array<{
+			role: 'user' | 'assistant';
+			content: string;
+			id?: string;
+			current_variant_index?: number;
+		}>;
 		model?: string;
 		agentMode?: string;
 		analysisMode?: 'existing' | 'refresh' | 'skip'; // For variant regeneration
@@ -490,6 +496,7 @@ class StreamingService implements IStreamingService {
 		targetMessageId?: string; // If provided, update this message instead of creating new
 		variantOf?: string; // If provided, create this response as a variant of the specified message ID
 		thinking_level?: string; // Centralized thinking level
+		parentMessageId?: string; // ID of the parent user message from history
 	}): Promise<void> {
 		// Connect to streaming service
 		console.log('🌐 [WebStreamingService] Connecting to chat', params.chatId);
@@ -649,7 +656,12 @@ class StreamingService implements IStreamingService {
 		params: {
 			chatId: string;
 			userMessage: string;
-			history: Array<{ role: 'user' | 'assistant'; content: string }>;
+			history: Array<{
+				role: 'user' | 'assistant';
+				content: string;
+				id?: string;
+				current_variant_index?: number;
+			}>;
 			model?: string;
 			agentMode?: string;
 			analysisMode?: 'existing' | 'refresh' | 'skip';
@@ -657,6 +669,7 @@ class StreamingService implements IStreamingService {
 			variantOf?: string;
 			isRegeneration?: boolean;
 			thinking_level?: string;
+			parentMessageId?: string;
 		},
 		assistantMessageId: string
 	): Promise<void> {
@@ -700,7 +713,8 @@ class StreamingService implements IStreamingService {
 			analysis_mode: params.analysisMode, // Pass analysis mode for regeneration
 			guidance: params.guidance, // Pass optional guidance for regeneration steering
 			variant_of: params.variantOf, // Pass variant_of for creating variants
-			thinking_level: params.thinking_level // Pass centralized thinking level
+			thinking_level: params.thinking_level, // Pass centralized thinking level
+			parent_message_id: params.parentMessageId // Pass parent message ID for associating variants
 		};
 
 		console.log('🌐 [WebSSE] Starting connection', { url: apiUrl, chatId: params.chatId });
@@ -989,12 +1003,12 @@ class StreamingService implements IStreamingService {
 						logger.debug('streaming-service', 'DONE signal received');
 
 						// Set a fallback timeout to close connection if other events don't arrive
-						// Increased to 5 seconds to allow for database operations and latency
+						// Increased to 15 seconds to allow for narrative intelligence database ops and lengthy GameMaster JSON LLM delays
 						this.connectionCloseState.closeTimeoutId = setTimeout(() => {
 							logger.warn('streaming-service', 'Connection close timeout reached, forcing close');
 							this.connectionCloseState.shouldClose = true;
 							this.tryCloseConnection();
-						}, 5000);
+						}, 15000);
 
 						// Try to close if we have everything
 						this.tryCloseConnection();

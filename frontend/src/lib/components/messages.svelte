@@ -14,6 +14,7 @@
 	import { onMount } from 'svelte';
 	import Message from './messages/message.svelte';
 	import FirstMessage from './messages/first-message.svelte';
+	import GameStateEventCard from './gamemaster/GameStateEventCard.svelte';
 	import type { ScribeChatMessage, ScribeCharacter, ScribeChatSession, User } from '$lib/types';
 	import { getLock } from '$lib/hooks/lock';
 	import { SelectedPersonaStore } from '$lib/stores/selected-persona.svelte';
@@ -47,6 +48,7 @@
 		onDeleteMessage,
 		onPreviousVariant,
 		onNextVariant,
+		onRepairFormat,
 		onGreetingChanged,
 		onLoadMore,
 		isLoadingMore = false,
@@ -69,6 +71,7 @@
 		onDeleteMessage?: (messageId: string) => void;
 		onPreviousVariant?: (messageId: string) => void;
 		onNextVariant?: (messageId: string) => void;
+		onRepairFormat?: (messageId: string) => void;
 		// Variant data is now included in message objects
 		onGreetingChanged?: (detail: { index: number; content: string }) => void;
 		onLoadMore?: () => void;
@@ -516,6 +519,8 @@
 						_user={user}
 						{substituteTemplateVariables}
 					/>
+				{:else if chat?.game_master_mode_enabled && message.message_type === 'System'}
+					<GameStateEventCard {message} />
 				{:else}
 					{@const currentIndex = message.current_variant_index ?? 0}
 					{@const variantCount = message.variant_count ?? 0}
@@ -540,6 +545,7 @@
 						{onDeleteMessage}
 						{onPreviousVariant}
 						{onNextVariant}
+						{onRepairFormat}
 						{substituteTemplateVariables}
 						{userPersonaName}
 					/>

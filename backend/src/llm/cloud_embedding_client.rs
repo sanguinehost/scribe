@@ -4,9 +4,8 @@ use crate::config::Config;
 use crate::errors::AppError;
 use crate::llm::EmbeddingClient;
 use async_trait::async_trait;
-use reqwest::Client as ReqwestClient;
-// use serde::ser::SerializeStruct; // Not needed with skip_serializing_if
 use rand::Rng; // Added for jitter
+use reqwest::Client as ReqwestClient;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration; // Removed Instant as it's only used in tests
@@ -22,6 +21,11 @@ struct EmbeddingRequest<'a> {
     #[serde(rename = "taskType")]
     task_type: &'a str,
     model: &'a str,
+    #[serde(
+        rename = "output_dimensionality",
+        skip_serializing_if = "Option::is_none"
+    )]
+    output_dimensionality: Option<i32>,
 }
 
 // Content structure for embedding requests
@@ -63,6 +67,11 @@ struct SingleBatchRequestInternal<'a> {
     #[serde(rename = "taskType")]
     task_type: &'a str,
     model: &'a str,
+    #[serde(
+        rename = "output_dimensionality",
+        skip_serializing_if = "Option::is_none"
+    )]
+    output_dimensionality: Option<i32>,
 }
 
 /// Internal container for the batchEmbedContents API payload.
@@ -90,12 +99,8 @@ struct GeminiApiError {
     // status: String, // Commented out: unused field
 }
 
-// --- Client Implementation (To be added below) ---
-const DEFAULT_EMBEDDING_MODEL: &str = "models/gemini-embedding-001"; // Use this as the sole model
-                                                                     // const DEFAULT_EMBEDDING_MODEL: &str = "models/text-embedding-004"; // Fallback model with higher rate limits - REMOVED
+const DEFAULT_EMBEDDING_MODEL: &str = "models/gemini-embedding-001"; // Revert to stable model
 const MAX_RETRIES: u32 = 2; // Max retries for the single model
-                            // const MAX_PRIMARY_MODEL_RETRIES_BEFORE_FALLBACK: u32 = 1; // REMOVED
-                            // const MAX_FALLBACK_MODEL_RETRIES: u32 = 5; // REMOVED
 const INITIAL_BACKOFF_MS: u64 = 1000; // 1 second
 const MAX_BACKOFF_MS: u64 = 5000; // 5 seconds
 
@@ -179,6 +184,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
             },
             task_type,
             model: &self.model_name,
+            output_dimensionality: Some(self.config.embedding_dimension as i32),
         };
 
         let mut retries = 0;
@@ -319,6 +325,7 @@ impl EmbeddingClient for CloudEmbeddingClient {
                 },
                 task_type: req.task_type,
                 model: &self.model_name,
+                output_dimensionality: Some(self.config.embedding_dimension as i32),
             })
             .collect();
 
@@ -435,7 +442,7 @@ impl rig::embeddings::EmbeddingModel for CloudEmbeddingClient {
     }
 
     fn ndims(&self) -> usize {
-        768 // Default for text-embedding-004
+        self.config.embedding_dimension as usize
     }
 
     #[allow(refining_impl_trait)]
@@ -562,7 +569,8 @@ mod tests {
                     "content": {
                         "parts": [{ "text": "Test text" }]
                     },
-                    "taskType": "RETRIEVAL_QUERY"
+                    "taskType": "RETRIEVAL_QUERY",
+                    "output_dimensionality": 768
                 }));
 
             then.status(200)
@@ -612,9 +620,9 @@ mod tests {
                     "model": "models/test-model",
                     "content": {
                         "parts": [{ "text": "Text with title" }]
-                        // Note: title field removed as it's not supported by Gemini API
                     },
-                    "taskType": "RETRIEVAL_DOCUMENT"
+                    "taskType": "RETRIEVAL_DOCUMENT",
+                    "output_dimensionality": 768
                 }));
             then.status(200)
                 .header("content-type", "application/json")
@@ -1040,7 +1048,8 @@ mod tests {
                     "content": {
                         "parts": [{ "text": "Test text" }]
                     },
-                    "taskType": task_type // Verify this task type is sent
+                    "taskType": task_type, // Verify this task type is sent
+                    "output_dimensionality": 768
                 }));
             then.status(200)
                 .header("content-type", "application/json")
@@ -1080,7 +1089,8 @@ mod tests {
                     "content": {
                         "parts": [{ "text": "" }] // Empty text
                     },
-                    "taskType": "RETRIEVAL_QUERY"
+                    "taskType": "RETRIEVAL_QUERY",
+                    "output_dimensionality": 768
                 }));
             then.status(400)
                 .header("content-type", "application/json")

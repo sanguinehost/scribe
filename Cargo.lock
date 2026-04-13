@@ -7172,8 +7172,6 @@ dependencies = [
 [[package]]
 name = "lance"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8c439decbc304e180748e34bb6d3df729069a222e83e74e2185c38f107136e9"
 dependencies = [
  "arrow",
  "arrow-arith",
@@ -7582,8 +7580,6 @@ dependencies = [
 [[package]]
 name = "lance-namespace-impls"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ee713505576f6b1988a491f77c7ca8b0cf7090a393598e63c85079fa70a53ebf"
 dependencies = [
  "arrow",
  "arrow-ipc",
@@ -14362,9 +14358,9 @@ checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-context"
-version = "0.5.4"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d94db16dc1c321805ce55f286c4023fa58a2c9c742568f95c5cfe2e95d250d7"
+checksum = "d06694b7c4c2306101e4bcd025be1076f37e6f8206d1baf925f68e3a69c99e4e"
 dependencies = [
  "futures",
  "test-context-macros",
@@ -14372,9 +14368,9 @@ dependencies = [
 
 [[package]]
 name = "test-context-macros"
-version = "0.5.4"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aabcca9d2cad192cfe258cd3562b7584516191a5c9b6a0002a6bb8b75ee7d21d"
+checksum = "2aa907f7fbdf63b6a9776e8647c50012e43f9bb817179f26fda81b38e6e1e3f7"
 dependencies = [
  "proc-macro2",
  "quote",

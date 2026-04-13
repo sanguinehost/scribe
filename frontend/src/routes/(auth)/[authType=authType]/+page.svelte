@@ -6,6 +6,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { isDesktopMode } from '$lib/utils/features';
+	import { resolve } from '$app/paths';
 
 	// Desktop mode: form data from server actions is not available with ssr:false
 	let { form }: { form?: unknown } = $props();
@@ -69,44 +70,9 @@
 </script>
 
 <div
-	class="flex h-dvh w-screen items-start justify-center bg-background pt-12 md:items-center md:pt-0"
+	class="bg-ambient flex min-h-dvh w-screen items-start justify-center pt-12 md:items-center md:pt-0"
 >
-	<div class="flex w-full max-w-md flex-col gap-12 overflow-hidden rounded-2xl">
-		<div class="flex flex-col items-center justify-center gap-4 px-4 text-center sm:px-16">
-			<div class="flex flex-col items-center gap-3">
-				<div class="h-12 w-12 overflow-hidden rounded-xl">
-					<img
-						src="/logo_mini.png"
-						alt="Sanguine Scribe Logo"
-						class="h-full w-full object-contain"
-					/>
-				</div>
-				<h1
-					class="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-2xl font-bold text-transparent dark:text-zinc-50"
-				>
-					Sanguine Scribe
-				</h1>
-			</div>
-			<div class="flex flex-col gap-2">
-				<h3 class="text-xl font-semibold dark:text-zinc-50">{signInSignUp}</h3>
-				<p class="text-sm text-gray-500 dark:text-zinc-400">
-					{#if authType === 'register'}
-						{inDesktopMode
-							? 'Choose a username and password for your local account'
-							: 'Create your account to start writing with AI'}
-					{:else}
-						{inDesktopMode
-							? 'Sign in with your username and password'
-							: 'Welcome back! Sign in to continue your creative journey'}
-					{/if}
-				</p>
-				{#if inDesktopMode && authType === 'register'}
-					<p class="text-xs text-gray-400 dark:text-zinc-500">
-						No email required - your data stays on your device
-					</p>
-				{/if}
-			</div>
-		</div>
+	<div class="flex w-full max-w-lg flex-col gap-8 p-4">
 		<!-- Pass authType prop and the explicitly cast form data -->
 		<AuthForm {authType} form={authFormProp}>
 			{#snippet submitButton({ pending, success })}
@@ -129,6 +95,12 @@
 				})}
 			{/if}
 		</AuthForm>
+
+		{#if inDesktopMode && authType === 'register'}
+			<p class="text-center text-xs text-muted-foreground/60">
+				No email required — your data stays on your device
+			</p>
+		{/if}
 	</div>
 </div>
 
@@ -143,9 +115,9 @@
 	cta: string;
 	postscript: string;
 })}
-	<p class="mt-4 text-center text-sm text-gray-600 dark:text-zinc-400">
+	<p class="mt-4 text-center text-sm text-muted-foreground">
 		{question}
-		<a {href} class="font-semibold text-gray-800 hover:underline dark:text-zinc-200">
+		<a href={resolve(href as unknown as "/")} class="font-semibold text-foreground/80 hover:text-foreground hover:underline">
 			{cta}
 		</a>
 		{postscript}

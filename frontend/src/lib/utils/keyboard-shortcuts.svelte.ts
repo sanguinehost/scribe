@@ -1,3 +1,4 @@
+import { SvelteMap } from 'svelte/reactivity';
 /**
  * Keyboard Shortcuts System
  *
@@ -35,7 +36,7 @@ export interface ShortcutDefinition {
  * Keyboard Shortcuts Manager
  */
 export class KeyboardShortcuts {
-	private shortcuts = $state<Map<string, ShortcutDefinition>>(new Map());
+	private shortcuts = $state<Map<string, ShortcutDefinition>>(new SvelteMap());
 
 	/**
 	 * Register a new keyboard shortcut

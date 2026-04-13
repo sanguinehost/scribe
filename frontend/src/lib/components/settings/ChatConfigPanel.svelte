@@ -8,7 +8,7 @@
 	import { Separator as _SeparatorComponent } from '../ui/separator';
 	import { Skeleton } from '../ui/skeleton';
 	import { Badge as BadgeComponent } from '../ui/badge';
-	import { Checkbox as CheckboxComponent } from '../ui/checkbox';
+
 	import { toast } from 'svelte-sonner';
 	import type {
 		ScribeChatSession,
@@ -32,19 +32,19 @@
 		ResponseLength
 	} from '$lib/types';
 	import {
-		chatModels,
 		DEFAULT_CHAT_MODEL,
 		DEFAULT_CONTEXT_TOTAL_TOKEN_LIMIT,
 		DEFAULT_CONTEXT_RECENT_HISTORY_BUDGET,
 		DEFAULT_CONTEXT_RAG_BUDGET
 	} from '$lib/ai/models';
 	import { SettingsStore as _SettingsStore } from '$lib/stores/settings.svelte';
-	import ChevronDown from '../icons/chevron-down.svelte';
-	import ChevronUp from '../icons/chevron-up.svelte';
+	import { ChevronDown, ChevronUp } from 'lucide-svelte';
+	import { slide } from 'svelte/transition';
 	import LorebookSelectionDialog from '$lib/components/shared/LorebookSelectionDialog.svelte';
-	import ContextConfigurator from '$lib/components/shared/ContextConfigurator.svelte';
-	import ContextConfiguratorCompact from '$lib/components/shared/ContextConfiguratorCompact.svelte';
 	import TemplateSelector from '$lib/components/shared/TemplateSelector.svelte';
+	import ChatGenerationSection from './sections/ChatGenerationSection.svelte';
+	import ChatAdvancedSection from './sections/ChatAdvancedSection.svelte';
+	import ChatGameMasterSection from './sections/ChatGameMasterSection.svelte';
 
 	let {
 		chat,
@@ -872,7 +872,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.persona}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							<div class="space-y-2">
 								<select
 									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -880,13 +881,14 @@
 									onchange={(e) => changePersona((e.target as HTMLSelectElement).value || null)}
 								>
 									<option value="">No persona</option>
-									{#each availablePersonas as persona}
+									{#each availablePersonas as persona, i (i)}
 										<option value={persona.id}>{persona.name}</option>
 									{/each}
 								</select>
 								<p class="text-xs text-muted-foreground">Override the user persona for this chat</p>
 							</div>
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -906,7 +908,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.templates}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							<TemplateSelector
 								bind:selectedTemplateId={localSettings.prompt_template_id}
 								onTemplateChange={handleTemplateChange}
@@ -916,6 +919,7 @@
 								hideLabel={true}
 							/>
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -940,7 +944,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.sessionStyle}
-						<CardContent class="space-y-4">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-4">
 							{#if isLoadingSessionStyle}
 								<div class="space-y-2">
 									<Skeleton class="h-8 w-full" />
@@ -1044,6 +1049,7 @@
 								{/if}
 							{/if}
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -1068,7 +1074,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.chronicles}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							{#if isLoadingChronicles}
 								<div class="space-y-2">
 									<Skeleton class="h-8 w-full" />
@@ -1096,7 +1103,7 @@
 												onchange={(e) => updateChronicleAssociation(e.currentTarget.value || null)}
 											>
 												<option value={null}>No chronicle (unlinked)</option>
-												{#each availableChronicles as chronicle}
+												{#each availableChronicles as chronicle, i (i)}
 													<option value={chronicle.id}>{chronicle.name}</option>
 												{/each}
 											</select>
@@ -1170,6 +1177,7 @@
 								</div>
 							{/if}
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
@@ -1191,7 +1199,8 @@
 						</div>
 					</CardHeader>
 					{#if expandedSections.lorebooks}
-						<CardContent class="space-y-3">
+						<div transition:slide={{ duration: 200 }}>
+							<CardContent class="space-y-3">
 							{#if isLoadingLorebooks}
 								<div class="space-y-2">
 									<Skeleton class="h-8 w-full" />
@@ -1274,438 +1283,34 @@
 								Manage Lorebooks
 							</ButtonComponent>
 						</CardContent>
+						</div>
 					{/if}
 				</Card>
 
 				<!-- Generation Settings -->
-				<Card>
-					<CardHeader
-						onclick={() => (expandedSections.generation = !expandedSections.generation)}
-						class="cursor-pointer {expandedSections.generation ? '' : 'pb-6'}"
-					>
-						<div class="flex items-center justify-between">
-							<CardTitle class="text-base">Generation Settings</CardTitle>
-							{#if expandedSections.generation}
-								<ChevronUp />
-							{:else}
-								<ChevronDown />
-							{/if}
-						</div>
-					</CardHeader>
-					{#if expandedSections.generation}
-						<CardContent class="space-y-4">
-							<div class="space-y-2">
-								<Label for="model">Model Override</Label>
-								<select
-									id="model"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-									bind:value={localSettings.model_name}
-								>
-									<option value="">
-										Use global default ({chatModels.find((m) => m.id === DEFAULT_CHAT_MODEL)
-											?.name || DEFAULT_CHAT_MODEL})
-									</option>
-									{#each chatModels as model}
-										<option value={model.id}>{model.name}</option>
-									{/each}
-								</select>
-								<p class="text-xs text-muted-foreground">
-									Override the global model setting for this specific chat
-								</p>
-							</div>
-
-							<div class="space-y-2">
-								<Label for="agent-mode">Context Enhancement Agent</Label>
-								<select
-									id="agent-mode"
-									class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-									bind:value={localSettings.agent_mode}
-								>
-									<option value="disabled">Disabled</option>
-									<option value="pre_processing">Pre-process (before AI response)</option>
-									<option value="post_processing">Post-process (after AI response)</option>
-								</select>
-								<p class="text-xs text-muted-foreground">
-									{#if localSettings.agent_mode === 'pre_processing'}
-										Agent searches for context before generating response (slight delay)
-									{:else if localSettings.agent_mode === 'post_processing'}
-										Agent enriches context after response (no delay)
-									{:else}
-										No automatic context enrichment
-									{/if}
-								</p>
-							</div>
-
-							<div class="grid grid-cols-2 gap-3">
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="temperature">Temperature</Label>
-										{#if localSettings.temperature !== 1.0}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('temperature')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="temperature"
-										type="number"
-										min="0"
-										max="2"
-										step="0.1"
-										bind:value={localSettings.temperature}
-									/>
-								</div>
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="max-tokens">Max Tokens</Label>
-										{#if localSettings.max_output_tokens !== 1000}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('max_output_tokens')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="max-tokens"
-										type="number"
-										min="1"
-										max="8192"
-										bind:value={localSettings.max_output_tokens}
-									/>
-								</div>
-							</div>
-
-							<div class="grid grid-cols-2 gap-3">
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="top-p">Top P</Label>
-										{#if localSettings.top_p !== 0.95}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('top_p')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="top-p"
-										type="number"
-										min="0"
-										max="1"
-										step="0.05"
-										bind:value={localSettings.top_p}
-									/>
-								</div>
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="top-k">Top K</Label>
-										{#if localSettings.top_k !== 40}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('top_k')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="top-k"
-										type="number"
-										min="0"
-										max="100"
-										step="1"
-										bind:value={localSettings.top_k}
-									/>
-								</div>
-							</div>
-
-							<div class="grid grid-cols-2 gap-3">
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="freq-penalty">Frequency Penalty</Label>
-										{#if localSettings.frequency_penalty !== 0.0}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('frequency_penalty')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="freq-penalty"
-										type="number"
-										min="-2"
-										max="2"
-										step="0.1"
-										bind:value={localSettings.frequency_penalty}
-									/>
-								</div>
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="presence-penalty">Presence Penalty</Label>
-										{#if localSettings.presence_penalty !== 0.0}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('presence_penalty')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="presence-penalty"
-										type="number"
-										min="-2"
-										max="2"
-										step="0.1"
-										bind:value={localSettings.presence_penalty}
-									/>
-								</div>
-							</div>
-
-							<div class="space-y-2">
-								<div class="flex items-center justify-between">
-									<Label for="seed">Seed (optional)</Label>
-									{#if localSettings.seed !== null}
-										<ButtonComponent
-											variant="ghost"
-											size="sm"
-											onclick={() => clearOverride('seed')}
-										>
-											Clear
-										</ButtonComponent>
-									{/if}
-								</div>
-								<Input
-									id="seed"
-									type="number"
-									placeholder="Leave empty for random"
-									bind:value={localSettings.seed}
-								/>
-							</div>
-						</CardContent>
-					{/if}
-				</Card>
+				<ChatGenerationSection
+					bind:localSettings
+					bind:expanded={expandedSections.generation}
+					{clearOverride}
+				/>
 
 				<!-- Model & History -->
-				<Card>
-					<CardHeader
-						onclick={() => (expandedSections.advanced = !expandedSections.advanced)}
-						class="cursor-pointer {expandedSections.advanced ? '' : 'pb-6'}"
-					>
-						<div class="flex items-center justify-between">
-							<CardTitle class="text-base">Advanced Settings</CardTitle>
-							{#if expandedSections.advanced}
-								<ChevronUp />
-							{:else}
-								<ChevronDown />
-							{/if}
-						</div>
-					</CardHeader>
-					{#if expandedSections.advanced}
-						<CardContent class="space-y-4">
-							<!-- Context Configuration Override -->
-							{#if compact}
-								<ContextConfiguratorCompact
-									bind:total_token_limit={localSettings.context_total_token_limit}
-									bind:recent_history_budget={localSettings.context_recent_history_budget}
-									bind:rag_budget={localSettings.context_rag_budget}
-									bind:rag_chronicles_limit={localSettings.rag_chronicles_limit}
-									bind:rag_lorebooks_limit={localSettings.rag_lorebooks_limit}
-									bind:rag_older_chat_limit={localSettings.rag_older_chat_limit}
-									title="Context Override"
-									description="Override default context allocation for this chat."
-								/>
-							{:else}
-								<ContextConfigurator
-									bind:total_token_limit={localSettings.context_total_token_limit}
-									bind:recent_history_budget={localSettings.context_recent_history_budget}
-									bind:rag_budget={localSettings.context_rag_budget}
-									bind:rag_chronicles_limit={localSettings.rag_chronicles_limit}
-									bind:rag_lorebooks_limit={localSettings.rag_lorebooks_limit}
-									bind:rag_older_chat_limit={localSettings.rag_older_chat_limit}
-									title="Context Override"
-									description="Override default context allocation for this chat."
-								/>
-							{/if}
-
-							<!-- Gemini-specific Options -->
-							<div class="grid grid-cols-2 gap-3">
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="thinking-budget">Thinking Budget</Label>
-										{#if localSettings.thinking_budget !== null}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('thinking_budget')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<Input
-										id="thinking-budget"
-										type="number"
-										min="0"
-										placeholder="Default"
-										bind:value={localSettings.thinking_budget}
-									/>
-								</div>
-								<div class="space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="thinking-level">Thinking Level</Label>
-										{#if localSettings.thinking_level !== null}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('thinking_level')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<select
-										id="thinking-level"
-										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={localSettings.thinking_level}
-									>
-										<option value={null}>Default</option>
-										<option value="Low">Low</option>
-										<option value="Medium">Medium</option>
-										<option value="High">High</option>
-									</select>
-								</div>
-								<div class="col-span-2 space-y-2">
-									<div class="flex items-center justify-between">
-										<Label for="code-execution">Code Execution</Label>
-										{#if localSettings.enable_code_execution !== false}
-											<ButtonComponent
-												variant="ghost"
-												size="sm"
-												onclick={() => clearOverride('enable_code_execution')}
-											>
-												Clear
-											</ButtonComponent>
-										{/if}
-									</div>
-									<select
-										id="code-execution"
-										class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-										bind:value={localSettings.enable_code_execution}
-									>
-										<option value={false}>Disabled</option>
-										<option value={true}>Enabled</option>
-									</select>
-								</div>
-							</div>
-
-							<!-- Streaming Animation Speed -->
-							<div class="space-y-2">
-								<div class="flex items-center justify-between">
-									<Label for="typing-speed">Typing Animation Speed</Label>
-									<span class="text-xs text-muted-foreground">{typingSpeed}ms</span>
-								</div>
-								<input
-									id="typing-speed"
-									type="range"
-									min="1"
-									max="100"
-									step="1"
-									bind:value={typingSpeed}
-									onchange={() => saveTypingSpeed()}
-									class="h-2 w-full cursor-pointer appearance-none rounded-lg bg-muted accent-primary"
-								/>
-								<p class="text-xs text-muted-foreground">
-									Lower = faster (1ms), Higher = slower (100ms). Default: 30ms
-								</p>
-							</div>
-						</CardContent>
-					{/if}
-				</Card>
+				<ChatAdvancedSection
+					bind:localSettings
+					bind:expanded={expandedSections.advanced}
+					{clearOverride}
+					{compact}
+					bind:typingSpeed
+					saveTypingSpeed={() => saveTypingSpeed()}
+				/>
 
 				<!-- Game Master Mode (Expandable) -->
-				<Card>
-					<CardHeader
-						onclick={() => (expandedSections.gamemaster = !expandedSections.gamemaster)}
-						class="cursor-pointer {expandedSections.gamemaster ? '' : 'pb-6'}"
-					>
-						<div class="flex items-center justify-between">
-							<div class="flex items-center gap-2">
-								<CardTitle class="text-lg">Game Master Mode</CardTitle>
-								{#if localSettings.game_master_mode_enabled}
-									<BadgeComponent variant="default" class="bg-purple-600 hover:bg-purple-700"
-										>Active</BadgeComponent
-									>
-								{/if}
-							</div>
-							<ButtonComponent variant="ghost" size="sm" class="pointer-events-none">
-								{#if expandedSections.gamemaster}
-									<ChevronUp />
-								{:else}
-									<ChevronDown />
-								{/if}
-							</ButtonComponent>
-						</div>
-					</CardHeader>
-					{#if expandedSections.gamemaster}
-						<CardContent class="space-y-4">
-							<div class="flex items-center justify-between space-x-2">
-								<div class="space-y-0.5">
-									<Label for="gm-mode">Enable Game Master</Label>
-									<p class="text-xs text-muted-foreground">Tracks inventory, quests, and vitals.</p>
-								</div>
-								<div class="flex items-center gap-2">
-									{#if localSettings.game_master_mode_enabled !== false}
-										<ButtonComponent
-											variant="ghost"
-											size="icon"
-											class="h-6 w-6 text-muted-foreground hover:text-foreground"
-											onclick={() => clearOverride('game_master_mode_enabled')}
-											title="Reset to default"
-										>
-											<span class="sr-only">Reset</span>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												width="12"
-												height="12"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												stroke-width="2"
-												stroke-linecap="round"
-												stroke-linejoin="round"
-											>
-												<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74-2.74L3 12" />
-											</svg>
-										</ButtonComponent>
-									{/if}
-									<CheckboxComponent
-										id="gm-mode"
-										checked={localSettings.game_master_mode_enabled}
-										on:change={(e) => {
-											localSettings.game_master_mode_enabled = e.detail;
-											saveSettings();
-										}}
-									/>
-								</div>
-							</div>
-						</CardContent>
-					{/if}
-				</Card>
+				<ChatGameMasterSection
+					bind:localSettings
+					bind:expanded={expandedSections.gamemaster}
+					{clearOverride}
+					saveSettings={() => saveSettings()}
+				/>
 			{/if}
 		</div>
 	</div>

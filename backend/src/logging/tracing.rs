@@ -150,7 +150,9 @@ where
         .unwrap_or_else(|_| "http://localhost:4317".to_string());
 
     // Build OTLP exporter or Stdout exporter for testing
-    let is_stdout = env::var("OTEL_STDOUT").is_ok();
+    // In desktop mode, OTLP is disabled by default unless explicitly configured
+    let is_stdout = env::var("OTEL_STDOUT").is_ok()
+        || (cfg!(feature = "desktop") && env::var("OTEL_EXPORTER_OTLP_ENDPOINT").is_err());
 
     // Create the tracer provider with masking
     let (tracer_provider, logger_provider) = if is_stdout {

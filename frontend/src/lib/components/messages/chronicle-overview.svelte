@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import { goto as _goto } from '$app/navigation';
 	import { apiClient as _apiClient } from '$lib/api';
@@ -301,7 +302,7 @@
 
 				// Navigate back to chronicles list by showing the list view
 				selectedChronicleStore.showList();
-				_goto('/');
+				_goto(resolve('/'));
 			} else {
 				toast.error('Failed to delete chronicle', {
 					description: result.error.message
@@ -451,7 +452,7 @@
 								onchange={() => loadEvents()}
 							>
 								<option value="">All types</option>
-								{#each uniqueEventTypes as type}
+								{#each uniqueEventTypes as type, i (i)}
 									<option value={type}>{type}</option>
 								{/each}
 							</select>
@@ -477,7 +478,7 @@
 				<div class="min-h-0 flex-1 overflow-y-auto">
 					{#if isLoadingEvents}
 						<div class="space-y-4">
-							{#each Array(3) as _}
+							{#each Array(3) as _, i (i)}
 								<Card>
 									<CardHeader>
 										<Skeleton class="h-6 w-1/4" />
@@ -527,7 +528,7 @@
 												<CardDescription class="mt-2">{event.summary}</CardDescription>
 												{#if event.keywords && event.keywords.length > 0}
 													<div class="mt-2 flex flex-wrap gap-1">
-														{#each event.keywords as keyword}
+														{#each event.keywords as keyword, i (i)}
 															<BadgeComponent variant="secondary" class="text-xs"
 																>{keyword}</BadgeComponent
 															>

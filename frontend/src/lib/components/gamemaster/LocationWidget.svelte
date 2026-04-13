@@ -281,7 +281,7 @@
 							</Button>
 						</div>
 						<div class="mt-1 space-y-1">
-							{#each editEnv.hazards || [] as _hazard, i}
+							{#each editEnv.hazards || [] as _hazard, i (i)}
 								<div class="flex gap-1">
 									<Input bind:value={editEnv.hazards![i]} class="h-6 text-xs" />
 									<Button
@@ -312,7 +312,7 @@
 					{/if}
 					{#if location.tags && location.tags.length > 0}
 						<div class="mt-2 flex flex-wrap gap-1">
-							{#each location.tags as tag}
+							{#each location.tags as tag, i (i)}
 								<span class="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">
 									{tag}
 								</span>
@@ -387,7 +387,7 @@
 						<span class="font-medium">Hazards</span>
 					</div>
 					<div class="mt-1.5 flex flex-wrap gap-1">
-						{#each env.hazards as hazard}
+						{#each env.hazards as hazard, i (i)}
 							<span class="rounded bg-destructive/20 px-1.5 py-0.5 text-[10px] text-destructive"
 								>{hazard}</span
 							>

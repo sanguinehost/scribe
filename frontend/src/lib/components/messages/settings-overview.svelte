@@ -5,6 +5,7 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { MembershipSettings } from '$lib/components/membership';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
+	import { Settings, Sliders, AlignLeft, AlignRight } from 'lucide-svelte';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -21,29 +22,42 @@
 	<div class="mx-auto flex max-w-xl flex-col gap-8 rounded-xl p-6 text-center leading-relaxed">
 		<p class="flex flex-row items-center justify-center gap-4">
 			<!-- Settings icon -->
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="32"
-				height="32"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				class="lucide lucide-settings"
-			>
-				<path
-					d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-				/>
-				<circle cx="12" cy="12" r="3" />
-			</svg>
+			<Settings class="h-8 w-8" />
 		</p>
 		<h1 class="text-2xl font-bold">Settings</h1>
 		<p>
 			Configure your default preferences for <strong>Scribe</strong>. These settings will apply to
 			new chats and can be overridden per-chat.
 		</p>
+
+		<!-- Message Alignment Setting -->
+		<div class="flex flex-col gap-3 rounded-xl border border-border/40 bg-card/60 p-4 text-left backdrop-blur-sm">
+			<div class="flex items-center gap-2">
+				<AlignLeft class="h-4 w-4 text-muted-foreground" />
+				<span class="text-sm font-medium">Message Alignment</span>
+			</div>
+			<p class="text-xs text-muted-foreground">Choose how your messages appear in the chat.</p>
+			<div class="flex gap-2">
+				<button
+					class="flex flex-1 flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all {settingsStore.messageAlignment === 'left'
+						? 'border-primary bg-primary/10 text-foreground'
+						: 'border-border/40 text-muted-foreground hover:border-border hover:bg-muted/30'}"
+					onclick={() => settingsStore.setMessageAlignment('left')}
+				>
+					<AlignLeft class="h-4 w-4" />
+					Symmetric
+				</button>
+				<button
+					class="flex flex-1 flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all {settingsStore.messageAlignment === 'right'
+						? 'border-primary bg-primary/10 text-foreground'
+						: 'border-border/40 text-muted-foreground hover:border-border hover:bg-muted/30'}"
+					onclick={() => settingsStore.setMessageAlignment('right')}
+				>
+					<AlignRight class="h-4 w-4" />
+					Right-aligned
+				</button>
+			</div>
+		</div>
 
 		<!-- Membership Settings Card - Make it prominent -->
 		{#if ENABLE_PAYMENTS}
@@ -52,56 +66,14 @@
 			</div>
 			<div class="mt-4">
 				<ButtonComponent onclick={showConsolidatedSettings} class="w-full" variant="outline">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						class="lucide lucide-sliders mr-2"
-					>
-						<line x1="4" x2="4" y1="21" y2="14" />
-						<line x1="4" x2="4" y1="10" y2="3" />
-						<line x1="12" x2="12" y1="21" y2="12" />
-						<line x1="12" x2="12" y1="8" y2="3" />
-						<line x1="20" x2="20" y1="21" y2="16" />
-						<line x1="20" x2="20" y1="12" y2="3" />
-						<line x1="1" x2="7" y1="14" y2="14" />
-						<line x1="9" x2="15" y1="8" y2="8" />
-						<line x1="17" x2="23" y1="16" y2="16" />
-					</svg>
+					<Sliders class="mr-2 h-4 w-4" />
 					Advanced Settings
 				</ButtonComponent>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4">
 				<ButtonComponent onclick={showConsolidatedSettings} class="w-full">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						class="lucide lucide-sliders mr-2"
-					>
-						<line x1="4" x2="4" y1="21" y2="14" />
-						<line x1="4" x2="4" y1="10" y2="3" />
-						<line x1="12" x2="12" y1="21" y2="12" />
-						<line x1="12" x2="12" y1="8" y2="3" />
-						<line x1="20" x2="20" y1="21" y2="16" />
-						<line x1="20" x2="20" y1="12" y2="3" />
-						<line x1="1" x2="7" y1="14" y2="14" />
-						<line x1="9" x2="15" y1="8" y2="8" />
-						<line x1="17" x2="23" y1="16" y2="16" />
-					</svg>
+					<Sliders class="mr-2 h-4 w-4" />
 					Configure Settings
 				</ButtonComponent>
 			</div>

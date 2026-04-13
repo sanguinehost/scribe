@@ -1,8 +1,11 @@
 <script lang="ts">
+
+
 	import { toast } from 'svelte-sonner';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { ChatHistory } from '$lib/hooks/chat-history.svelte';
 	import { tick, untrack } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import ChatHeader from './chat-header.svelte';
 	import type { User, ScribeCharacter, Message } from '$lib/types.ts';
 	import type { ScribeChatSession, ScribeChatMessage, ChatMode as _ChatMode } from '$lib/types';
@@ -641,7 +644,7 @@
 			// Processing new messages array
 
 			const messages: ScribeChatMessage[] = [];
-			const newCache = new Map<string, ScribeChatMessage>();
+			const newCache = new SvelteMap<string, ScribeChatMessage>();
 
 			streamingMessages.forEach((msg) => {
 				const cached = messageCache.get(msg.id);
@@ -726,7 +729,8 @@
 	});
 
 	// Removed attachments state as feature is disabled/not supported
-	let chatInput = $state(''); // Initialize with empty string
+	/* eslint-disable svelte/prefer-writable-derived */
+let chatInput = $state(''); // Initialize with empty string
 
 	$effect(() => {
 		chatInput = initialChatInputValue || '';
@@ -1494,7 +1498,10 @@
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content // Use full content for API, not displayedContent
+				content: m.content, // Use full content for API, not displayedContent
+				id: m.backend_id || m.id, // Use backend database ID if available
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variant_count || 0
 			}));
 
 		// DEBUG: Log the first assistant message content to verify variant is applied
@@ -1578,7 +1585,10 @@
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.variants ? m.variants[m.current_variant_index || 0]?.content : m.content,
+				id: m.backend_id || m.id,
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variants?.length || m.variant_count || 0
 			}));
 
 		try {
@@ -1664,7 +1674,10 @@
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.variants ? m.variants[m.current_variant_index || 0]?.content : m.content,
+				id: m.backend_id || m.id,
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variants?.length || m.variant_count || 0
 			}));
 
 		console.log('DEBUG: regenerateResponse guidance:', guidance);
@@ -1782,13 +1795,21 @@
 		}
 
 		// Update the first message content in the messages array with variant metadata
-		const firstMessageId = `first-message-${chat?.id ?? 'initial'}`;
-		const firstMessage = activeStreamingService.messages.find((msg) => msg.id === firstMessageId);
+		// Use the actual first message to ensure it works for both initial and DB-loaded chats
+		const firstMessageIndex = 0;
+		const firstMessageInfo = (activeStreamingService.messages as StreamingMessage[])[firstMessageIndex];
+
+		if (!firstMessageInfo) {
+			console.warn('⚠️ No message found to update greeting variant');
+			return;
+		}
+
+		const targetMessageId = firstMessageInfo.id;
 
 		// Optimistically update the UI
 		activeStreamingService.messages = (activeStreamingService.messages as StreamingMessage[]).map(
 			(msg) =>
-				msg.id === firstMessageId
+				msg.id === targetMessageId
 					? {
 							...msg,
 							content,
@@ -1801,14 +1822,14 @@
 		);
 
 		// If this is a real backend message (has backend_id), persist the variant selection
-		if (firstMessage?.backend_id) {
+		if (firstMessageInfo?.backend_id) {
 			try {
 				console.log('🔄 Persisting first message variant selection to backend:', {
-					messageId: firstMessage.backend_id,
+					messageId: firstMessageInfo.backend_id,
 					variantIndex: index
 				});
 
-				const result = await _apiClient.selectMessageVariant(firstMessage.backend_id, {
+				const result = await _apiClient.selectMessageVariant(firstMessageInfo.backend_id, {
 					variant_index: index
 				});
 
@@ -1869,15 +1890,6 @@
 	}
 
 	async function handleSaveEditedMessage(messageId: string, newContent: string) {
-		// DEBUG: Add stack trace to identify unwanted calls
-		console.log(
-			'🚨 handleSaveEditedMessage called for:',
-			messageId,
-			'content:',
-			newContent.slice(0, 50) + '...'
-		);
-		console.log('🚨 handleSaveEditedMessage STACK TRACE:', new Error().stack);
-
 		console.log('Save edited message:', messageId, 'New content:', newContent);
 
 		if (!chat?.id || isLoading) return;
@@ -1889,6 +1901,33 @@
 		if (messageIndex === -1) return;
 
 		const targetMessage = (activeStreamingService.messages as StreamingMessage[])[messageIndex];
+
+		if (targetMessage.sender === 'assistant') {
+			// Editing an AI message: update it directly without generating a new response or clearing history
+			const allMessages = [...(activeStreamingService.messages as StreamingMessage[])];
+			allMessages[messageIndex].content = newContent;
+			allMessages[messageIndex].displayedContent = newContent;
+			// Increment content version to force UI update
+			allMessages[messageIndex].contentVersion = (allMessages[messageIndex].contentVersion || 0) + 1;
+			activeStreamingService.messages = allMessages;
+
+			// Update in backend if possible
+			const backendMessageId = targetMessage.backend_id || String(targetMessage.id);
+			try {
+				const result = await _apiClient.updateMessageContent(backendMessageId, newContent);
+				if (result.isOk()) {
+					toast.success('AI message updated');
+				} else {
+					console.warn('Failed to save AI message edit to backend:', result.error);
+					toast.error('Failed to save edit to server. Changes are local only.');
+				}
+			} catch (err) {
+				console.error('Error saving AI message edit to backend:', err);
+				toast.error('An error occurred while saving.');
+			}
+			return;
+		}
+
 		if (targetMessage.sender !== 'user') return;
 
 		// Update the message content
@@ -2188,6 +2227,60 @@
 		}
 	}
 
+	async function handleRepairFormat(messageId: string) {
+		if (!chat?.id || isLoading) return;
+		console.log('Repair format for message:', messageId);
+
+		const messageIndex = (activeStreamingService.messages as StreamingMessage[]).findIndex(
+			(msg) => msg.id === messageId || msg.backend_id === messageId
+		);
+		if (messageIndex === -1) return;
+
+		const targetMessage = (activeStreamingService.messages as StreamingMessage[])[messageIndex];
+		const backendMessageId = targetMessage.backend_id || String(targetMessage.id);
+
+		// Optimistic UI state
+		targetMessage.isRegenerating = true;
+		activeStreamingService.messages = [...activeStreamingService.messages];
+
+		try {
+			const result = await _apiClient.repairMessageFormat(backendMessageId);
+			if (result.isOk()) {
+				const updatedMessage = result.value;
+
+				activeStreamingService.messages = (activeStreamingService.messages as StreamingMessage[]).map(msg =>
+					(msg.id === targetMessage.id) ? {
+						...msg,
+						content: updatedMessage.content,
+						displayedContent: updatedMessage.content,
+						contentVersion: (msg.contentVersion || 0) + 1,
+						isRegenerating: false,
+						error: undefined,
+						_variantChangedAt: Date.now()
+					} : msg
+				);
+
+				toast.success('Widget formatting repaired');
+			} else {
+				// Revert loading state
+				activeStreamingService.messages = (activeStreamingService.messages as StreamingMessage[]).map(msg =>
+					(msg.id === targetMessage.id) ? { ...msg, isRegenerating: false } : msg
+				);
+
+				toast.error('Failed to repair rendering format');
+				console.error('Repair format failed:', result.error);
+			}
+		} catch (error) {
+			// Revert loading state
+			activeStreamingService.messages = (activeStreamingService.messages as StreamingMessage[]).map(msg =>
+				(msg.id === targetMessage.id) ? { ...msg, isRegenerating: false } : msg
+			);
+
+			console.error('Error repairing message format:', error);
+			toast.error('An unexpected error occurred during repair');
+		}
+	}
+
 	// Handler to open extraction dialog
 	function handleOpenExtractDialog() {
 		if (!chat?.id) return;
@@ -2210,7 +2303,7 @@
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
-	<ChatHeader {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
+	<ChatHeader {chat} {readonly} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}

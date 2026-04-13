@@ -81,43 +81,32 @@
 </script>
 
 <div class="flex h-full flex-col overflow-hidden bg-background text-foreground">
-	<!-- Header -->
-	<div class="border-b border-border p-4">
+	<!-- Minimalist Control Bar -->
+	<div class="flex items-center justify-between px-1 pb-3 pt-1">
 		<div class="flex items-center gap-2">
-			<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20">
-				<Globe class="h-4 w-4 text-primary" />
-			</div>
-			<div>
-				<h2 class="text-lg font-semibold text-primary">Game Master</h2>
-				{#if gameState?.game_time}
-					<div class="text-xs text-muted-foreground">
-						Day {gameState.game_time.day}, {gameState.game_time.hour}:{String(
-							gameState.game_time.minute ?? 0
-						).padStart(2, '0')} ({gameState.game_time.period})
-						{#if gameState.game_time.date}
-							<span class="ml-1 border-l border-border pl-1">{gameState.game_time.date}</span>
-						{/if}
-					</div>
-				{/if}
-			</div>
+			{#if gameState?.game_time}
+				<div class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+					<Globe class="h-3.5 w-3.5 text-purple-500/70" />
+					<span>Day {gameState.game_time.day}, {gameState.game_time.hour}:{String(gameState.game_time.minute ?? 0).padStart(2, '0')}</span>
+				</div>
+			{/if}
 		</div>
-		<div class="mt-2 flex justify-end gap-2">
+		<div class="flex justify-end gap-1.5">
 			{#if isEditing}
-				<Button variant="outline" size="sm" onclick={cancelEditing} disabled={isSaving}>
+				<Button variant="outline" size="sm" class="h-7 px-2 text-xs" onclick={cancelEditing} disabled={isSaving}>
 					<X class="mr-1 h-3 w-3" /> Cancel
 				</Button>
-				<Button variant="default" size="sm" onclick={saveChanges} disabled={isSaving}>
-					<Save class="mr-1 h-3 w-3" />
-					{isSaving ? 'Saving...' : 'Save'}
+				<Button variant="default" size="sm" class="h-7 px-2 text-xs" onclick={saveChanges} disabled={isSaving}>
+					<Save class="mr-1 h-3 w-3" /> {isSaving ? 'Saving...' : 'Save'}
 				</Button>
 			{:else if gameState}
 				<Button
 					variant="ghost"
 					size="sm"
+					class="h-7 px-2 text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground"
 					onclick={startEditing}
-					class="text-xs text-muted-foreground hover:text-primary"
 				>
-					<Edit2 class="mr-1 h-3 w-3" /> JSON Override
+					<Edit2 class="mr-1.5 h-3 w-3" /> JSON View
 				</Button>
 			{/if}
 		</div>

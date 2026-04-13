@@ -19,9 +19,7 @@
 		onStateUpdate?: (newState: GameState) => void;
 	} = $props();
 
-	$inspect(gameState).with((type, value) => {
-		console.log(`🔍 GameStateSidebar received ${type}:`, value);
-	});
+
 
 	const dispatch = createEventDispatcher();
 

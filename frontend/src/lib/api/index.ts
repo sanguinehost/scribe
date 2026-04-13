@@ -951,6 +951,53 @@ class ApiClient {
 		});
 	}
 
+	async uploadCharacterBanner(
+		characterId: string,
+		file: File,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<{ message: string }, ApiError>> {
+		const formData = new FormData();
+		formData.append('banner', file);
+
+		// Web mode uses standard multipart upload
+		if (!isDesktopMode()) {
+			return this.fetch<{ message: string }>(
+				`/api/characters/${characterId}/banner`,
+				{
+					method: 'POST',
+					body: formData
+				},
+				fetchFn
+			);
+		}
+
+		// Desktop mode (Tauri has issues with FormData multipart boundaries sometimes)
+		// But let's try standard FormData first, fallback if it fails later.
+		// For characters upload, wait, characters upload has a base64 fallback.
+		// If I encounter issues I'll add base64 later.
+		return this.fetch<{ message: string }>(
+			`/api/characters/${characterId}/banner`,
+			{
+				method: 'POST',
+				body: formData
+			},
+			fetchFn
+		);
+	}
+
+	async deleteCharacterBanner(
+		characterId: string,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<{ message: string }, ApiError>> {
+		return this.fetch<{ message: string }>(
+			`/api/characters/${characterId}/banner`,
+			{
+				method: 'DELETE'
+			},
+			fetchFn
+		);
+	}
+
 	async uploadCharacter(file: File): Promise<_Result<Character, ApiError>> {
 		logger.debug('api-client', 'Uploading character file', { filename: file.name });
 
@@ -1143,6 +1190,19 @@ class ApiClient {
 		});
 	}
 
+	async updateMessageContent(id: string, content: string): Promise<_Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chats/messages/${id}/content`, {
+			method: 'PUT',
+			body: JSON.stringify({ content })
+		});
+	}
+
+	async repairMessageFormat(id: string): Promise<_Result<Message, ApiError>> {
+		return this.fetch<Message>(`/api/chats/messages/${id}/repair-format`, {
+			method: 'POST'
+		});
+	}
+
 	async voteMessage(id: string, type: 'up' | 'down'): Promise<_Result<void, ApiError>> {
 		return this.fetch<void>(`/api/chats/messages/${id}/vote`, {
 			method: 'POST',
@@ -1298,6 +1358,56 @@ class ApiClient {
 		return this.fetch<void>(`/api/personas/${id}`, {
 			method: 'DELETE'
 		});
+	}
+
+	async uploadPersonaAvatar(
+		personaId: string,
+		file: File,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<{ message: string }, ApiError>> {
+		const formData = new FormData();
+		// The backend expects the file to be uploaded in the 'avatar' field, just like banner expects 'banner' or 'file'
+		formData.append('avatar', file);
+
+		return this.fetch<{ message: string }>(
+			`/api/personas/${personaId}/avatar`,
+			{
+				method: 'POST',
+				body: formData
+			},
+			fetchFn
+		);
+	}
+
+	async uploadPersonaBanner(
+		personaId: string,
+		file: File,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<{ message: string }, ApiError>> {
+		const formData = new FormData();
+		formData.append('banner', file);
+
+		return this.fetch<{ message: string }>(
+			`/api/personas/${personaId}/banner`,
+			{
+				method: 'POST',
+				body: formData
+			},
+			fetchFn
+		);
+	}
+
+	async deletePersonaBanner(
+		personaId: string,
+		fetchFn: typeof fetch = globalThis.fetch
+	): Promise<_Result<{ message: string }, ApiError>> {
+		return this.fetch<{ message: string }>(
+			`/api/personas/${personaId}/banner`,
+			{
+				method: 'DELETE'
+			},
+			fetchFn
+		);
 	}
 
 	async setDefaultPersona(personaId: string): Promise<_Result<void, ApiError>> {

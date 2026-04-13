@@ -50,7 +50,7 @@
 	let processedParts = $derived(processText(text));
 </script>
 
-{#each processedParts as part}
+{#each processedParts as part, i (i)}
 	{#if part.isQuote}
 		<span class="dialogue-text" data-highlighted="true">{part.text}</span>
 	{:else}

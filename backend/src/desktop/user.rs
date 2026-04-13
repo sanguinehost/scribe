@@ -131,7 +131,7 @@ pub async fn ensure_default_user_exists(conn: &mut crate::db::DbConn) -> Result<
 
     // Set account status to Active for desktop mode (skip email verification)
     diesel::update(users::table.find(user.id))
-        .set(users::account_status.eq("active"))
+        .set(users::account_status.eq(crate::models::users::AccountStatus::Active))
         .execute(conn)
         .map_err(|e| {
             tracing::error!(?e, "Failed to activate default user account");

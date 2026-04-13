@@ -107,7 +107,7 @@
 
 		{#if quest.objectives && quest.objectives.length > 0}
 			<div class="space-y-1.5">
-				{#each quest.objectives as objective}
+				{#each quest.objectives as objective, i (i)}
 					<div class="flex items-start gap-2 text-xs">
 						{#if objective.completed}
 							<CheckCircle2 class="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
@@ -164,7 +164,7 @@
 			</div>
 			{#if quest.objectives}
 				<div class="space-y-1">
-					{#each quest.objectives as objective, objIndex}
+					{#each quest.objectives as objective, objIndex (objIndex)}
 						<div class="flex items-center gap-2">
 							<input
 								type="checkbox"
@@ -241,13 +241,13 @@
 		{#if isEditing}
 			<!-- EDIT MODE -->
 			{#if activeTab === 'active'}
-				{#each editQuests as quest, i}
+				{#each editQuests as quest, i (i)}
 					{#if quest.status === 'active'}
 						{@render editQuestCard(quest, i)}
 					{/if}
 				{/each}
 			{:else}
-				{#each editQuests as quest, i}
+				{#each editQuests as quest, i (i)}
 					{#if quest.status !== 'active'}
 						{@render editQuestCard(quest, i)}
 					{/if}

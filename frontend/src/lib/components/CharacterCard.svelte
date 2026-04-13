@@ -95,12 +95,28 @@
 		const apiBaseUrl = (env.PUBLIC_API_URL || '').trim();
 		return `${apiBaseUrl}${character.avatar}?width=56&height=56`;
 	});
+
+	// Extract character primary color for accent strip (if extensions data exists)
+	const charPrimaryColor = $derived.by(() => {
+		try {
+			const ext = (character as unknown as Record<string, unknown>)?.extensions;
+			if (ext && typeof ext === 'object') {
+				const visual = (ext as Record<string, unknown>)?.visual_metadata;
+				if (visual && typeof visual === 'object') {
+					return (visual as Record<string, string>)?.primary_color || undefined;
+				}
+			}
+		} catch {
+			// Extensions may not exist in this character card format
+		}
+		return undefined;
+	});
 </script>
 
 <Card
-	class="group/card relative cursor-pointer rounded-lg border-border/40 transition-all hover:border-primary hover:shadow-lg {isSelected
-		? 'border-primary ring-1 ring-primary'
-		: 'hover:bg-muted/50'}"
+	class="group/card relative cursor-pointer overflow-hidden rounded-xl border border-border/40 bg-card/60 backdrop-blur-sm transition-all duration-300 hover:scale-[1.01] hover:border-primary/50 hover:bg-card/80 hover:shadow-lg {isSelected
+		? 'border-primary shadow-md ring-1 ring-primary'
+		: 'hover:bg-muted/40'}"
 	onclick={handleClick}
 	onkeydown={(e) => e.key === 'Enter' && handleClick()}
 	tabindex={0}
@@ -108,40 +124,55 @@
 	aria-pressed={isSelected}
 	aria-label={`Select character ${character.name}`}
 >
-	<CardHeader class="flex flex-row items-center gap-2 p-3">
-		<Avatar class="h-14 w-14">
+	<!-- Left accent strip -->
+	{#if charPrimaryColor}
+		<div
+			class="absolute left-0 top-0 bottom-0 w-0.5 rounded-l-xl transition-all duration-300 group-hover/card:w-1"
+			style="background-color: {charPrimaryColor};"
+		></div>
+	{/if}
+
+	<CardHeader class="flex flex-row items-center gap-3 p-3">
+		<Avatar class="h-12 w-12 rounded-xl">
 			{#if avatarSrc}
-				<AvatarImage src={avatarSrc} alt={character.name} />
+				<AvatarImage src={avatarSrc} alt={character.name} class="rounded-xl" />
 			{/if}
-			<AvatarFallback>{getInitials(character.name)}</AvatarFallback>
+			<AvatarFallback class="rounded-xl">{getInitials(character.name)}</AvatarFallback>
 		</Avatar>
 		<div class="flex-1 overflow-hidden">
 			<CardTitle class="pt-1 text-base font-semibold">{character.name}</CardTitle>
 			<CardDescription class="truncate text-sm text-muted-foreground">
 				{getDescriptionSnippet(character.description ?? null, character.greeting ?? null)}
 			</CardDescription>
+			{#if character.tags && character.tags.length > 0}
+				<div class="mt-1 flex gap-1">
+					{#each character.tags.slice(0, 2) as tag, i (i)}
+						<span class="rounded-full bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{tag}</span>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	</CardHeader>
 	<div
-		class="absolute right-0.5 top-0.5 flex gap-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100"
+		class="absolute right-1 top-1 flex gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100"
 	>
 		<ButtonComponent
 			variant="ghost"
 			size="icon"
-			class="h-5 w-5"
+			class="h-6 w-6"
 			onclick={handleEdit}
 			aria-label={`Edit character ${character.name}`}
 		>
-			<PencilEdit class="h-2.5 w-2.5" />
+			<PencilEdit class="h-3.5 w-3.5" />
 		</ButtonComponent>
 		<ButtonComponent
 			variant="ghost"
 			size="icon"
-			class="h-5 w-5 text-destructive hover:text-destructive"
+			class="h-6 w-6 text-destructive hover:text-destructive"
 			onclick={handleDeleteClick}
 			aria-label={`Delete character ${character.name}`}
 		>
-			<TrashIcon class="h-2.5 w-2.5" />
+			<TrashIcon class="h-3.5 w-3.5" />
 		</ButtonComponent>
 	</div>
 </Card>

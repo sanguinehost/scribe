@@ -92,7 +92,7 @@ export function isDesktopMode(): boolean {
 	const usesCustomProtocol = PUBLIC_API_URL?.startsWith('scribe://');
 
 	// Fallback checks for additional validation
-	const hasTauriApi = typeof window.__TAURI__ !== 'undefined';
+	const hasTauriApi = '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
 
 	// Check for scribe:// custom protocol in window location
 	const hasCustomProtocolInLocation =

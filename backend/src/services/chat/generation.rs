@@ -630,20 +630,22 @@ pub async fn get_session_data_for_generation(
                             10000 // Increased default from 1000 to 10000 to support large context windows
                         })
                         .select((
-                            chat_messages::id,
-                            chat_messages::session_id,
-                            chat_messages::message_type,
-                            chat_messages::content,
-                            chat_messages::content_nonce,
-                            chat_messages::created_at,
-                            chat_messages::user_id,
-                            chat_messages::prompt_tokens,
-                            chat_messages::completion_tokens,
-                            chat_messages::model_name,
-                            chat_messages::status,
-                            chat_messages::game_time,
-                            chat_messages::reasoning_content,
-                            chat_messages::reasoning_content_nonce,
+                            chat_messages::id,                      // 0
+                            chat_messages::session_id,              // 1
+                            chat_messages::message_type,            // 2
+                            chat_messages::content,                 // 3
+                            chat_messages::content_nonce,           // 4
+                            chat_messages::created_at,              // 5
+                            chat_messages::user_id,                 // 6
+                            chat_messages::prompt_tokens,           // 7
+                            chat_messages::completion_tokens,       // 8
+                            chat_messages::model_name,              // 9
+                            chat_messages::status,                  // 10
+                            chat_messages::game_time,               // 11
+                            chat_messages::reasoning_content,       // 12
+                            chat_messages::reasoning_content_nonce, // 13
+                            chat_messages::variant_count,           // 14
+                            chat_messages::current_variant_index,   // 15
                         ));
 
                     #[cfg(feature = "postgres-backend")]
@@ -663,6 +665,8 @@ pub async fn get_session_data_for_generation(
                             Option<crate::DbJson>,
                             Option<Vec<u8>>,
                             Option<Vec<u8>>,
+                            i32,
+                            i32,
                         )>(conn_interaction)
                     }
 
@@ -680,9 +684,11 @@ pub async fn get_session_data_for_generation(
                             Option<i64>,
                             String,
                             String,
-                            Option<crate::DbJson>,
+                            Option<crate::DbJson>, // Adjusted for game_time
                             Option<Vec<u8>>,
                             Option<Vec<u8>>,
+                            i32,
+                            i32,
                         )>(conn_interaction)
                     }
                 }
@@ -696,115 +702,79 @@ pub async fn get_session_data_for_generation(
                 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 let query_result = query_result
                     .into_iter()
-                    .map(
-                        |(
-                            id,
-                            session_id,
-                            message_type,
-                            content,
-                            content_nonce,
-                            created_at,
-                            user_id,
-                            prompt_tokens,
-                            completion_tokens,
-                            model_name,
-                            status,
-                            game_time,
-                            reasoning_content,
-                            reasoning_content_nonce,
-                        )| {
-                            DbChatMessage {
-                                id,
-                                session_id,
-                                message_type,
-                                content,
-                                rag_embedding_id: None,
-                                content_nonce,
-                                created_at,
-                                updated_at: chrono::Utc::now().into(),
-                                user_id,
-                                role: None,
-                                parts: None,
-                                attachments: None,
-                                prompt_tokens: prompt_tokens.map(crate::db::DbBigInt::from),
-                                completion_tokens: completion_tokens.map(crate::db::DbBigInt::from),
-                                model_name,
-                                status,
-                                raw_prompt_ciphertext: None,
-                                raw_prompt_nonce: None,
-                                error_message: None,
-                                superseded_at: None,
-                                variant_count: 0,
-                                current_variant_index: 0,
-                                credits_charged: 0,
-                                credits_cost: crate::db::DbDecimal::from(0),
-                                actual_cost: crate::db::DbDecimal::from(0),
-                                modified_cost: crate::db::DbDecimal::from(0),
-                                credit_cost: 0,
-                                actual_charge: crate::db::DbDecimal::from(0),
-                                game_time,
-                                reasoning_content,
-                                reasoning_content_nonce,
-                            }
-                        },
-                    )
+                    .map(|t| {
+                        DbChatMessage {
+                            id: t.0,
+                            session_id: t.1,
+                            message_type: t.2,
+                            content: t.3,
+                            rag_embedding_id: None,
+                            content_nonce: t.4,
+                            created_at: t.5,
+                            updated_at: t.5, // Default to created_at
+                            user_id: t.6,
+                            role: None,
+                            parts: None,
+                            attachments: None,
+                            prompt_tokens: t.7.map(crate::db::DbBigInt::from),
+                            completion_tokens: t.8.map(crate::db::DbBigInt::from),
+                            model_name: t.9,
+                            status: t.10,
+                            raw_prompt_ciphertext: None,
+                            raw_prompt_nonce: None,
+                            error_message: None,
+                            superseded_at: None,
+                            variant_count: t.14,
+                            current_variant_index: t.15,
+                            credits_charged: 0,
+                            credits_cost: crate::db::DbDecimal::from(0),
+                            actual_cost: crate::db::DbDecimal::from(0),
+                            modified_cost: crate::db::DbDecimal::from(0),
+                            credit_cost: 0,
+                            actual_charge: crate::db::DbDecimal::from(0),
+                            game_time: t.11,
+                            reasoning_content: t.12,
+                            reasoning_content_nonce: t.13,
+                        }
+                    })
                     .collect();
 
                 #[cfg(feature = "postgres-backend")]
                 let query_result = query_result
                     .into_iter()
-                    .map(
-                        |(
-                            id,
-                            session_id,
-                            message_type,
-                            content,
-                            content_nonce,
-                            created_at,
-                            user_id,
-                            prompt_tokens,
-                            completion_tokens,
-                            model_name,
-                            status,
-                            game_time,
-                            reasoning_content,
-                            reasoning_content_nonce,
-                        )| {
-                            DbChatMessage {
-                                id,
-                                session_id,
-                                message_type,
-                                content,
-                                content_nonce,
-                                created_at,
-                                updated_at: created_at,
-                                user_id,
-                                role: None,
-                                parts: None,
-                                attachments: None,
-                                rag_embedding_id: None,
-                                prompt_tokens: prompt_tokens.map(crate::db::DbBigInt::from),
-                                completion_tokens: completion_tokens.map(crate::db::DbBigInt::from),
-                                raw_prompt_ciphertext: None,
-                                raw_prompt_nonce: None,
-                                model_name,
-                                status,
-                                error_message: None,
-                                superseded_at: None,
-                                variant_count: 0,
-                                current_variant_index: 0,
-                                credits_charged: 0,
-                                credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                                actual_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                                modified_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                                credit_cost: 0,
-                                actual_charge: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
-                                game_time,
-                                reasoning_content,
-                                reasoning_content_nonce,
-                            }
-                        },
-                    )
+                    .map(|t| DbChatMessage {
+                        id: t.0,
+                        session_id: t.1,
+                        message_type: t.2,
+                        content: t.3,
+                        content_nonce: t.4,
+                        created_at: t.5,
+                        updated_at: t.5,
+                        user_id: t.6,
+                        role: None,
+                        parts: None,
+                        attachments: None,
+                        rag_embedding_id: None,
+                        prompt_tokens: t.7.map(crate::db::DbBigInt::from),
+                        completion_tokens: t.8.map(crate::db::DbBigInt::from),
+                        raw_prompt_ciphertext: None,
+                        raw_prompt_nonce: None,
+                        model_name: t.9,
+                        status: t.10,
+                        error_message: None,
+                        superseded_at: None,
+                        variant_count: t.14,
+                        current_variant_index: t.15,
+                        credits_charged: 0,
+                        credits_cost: crate::db::DbDecimal::from(0),
+                        actual_cost: crate::db::DbDecimal::from(0),
+                        modified_cost: crate::db::DbDecimal::from(0),
+                        credit_cost: 0,
+                        actual_charge: crate::db::DbDecimal::from(0),
+                        game_time: t.11,
+                        reasoning_content: t.12,
+                        reasoning_content_nonce: t.13,
+                    })
                     .collect();
 
                 query_result
@@ -1015,7 +985,12 @@ pub async fn get_session_data_for_generation(
     let final_messages_for_processing: Vec<DbChatMessage> = if let Some(ref api_messages) =
         frontend_history
     {
-        debug!(%session_id, "Using frontend-provided history ({} messages) instead of database query", api_messages.len());
+        info!(%session_id, frontend_history_count = api_messages.len(), "🔀 VARIANT DEBUG: Using FRONTEND-provided history instead of database query");
+        // Log first few messages' content preview for debugging
+        for (i, api_msg) in api_messages.iter().take(3).enumerate() {
+            let preview: String = api_msg.content.chars().take(80).collect();
+            info!(%session_id, index = i, role = %api_msg.role, content_preview = %preview, "🔀 VARIANT DEBUG: Frontend history message");
+        }
 
         // Convert ApiChatMessage to DbChatMessage format
         // Note: We exclude the last message as it's the current user message being processed
@@ -1038,7 +1013,12 @@ pub async fn get_session_data_for_generation(
 
                 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
                 let msg = DbChatMessage {
-                    id: DbId::new().into(), // Generate temporary ID for frontend messages
+                    id: api_msg
+                        .id
+                        .as_ref()
+                        .and_then(|id_str| id_str.parse::<crate::db::DbId>().ok())
+                        .unwrap_or_else(|| DbId::new())
+                        .into(), // Use frontend ID if available
                     session_id,
                     user_id,
                     message_type: message_role,
@@ -1060,8 +1040,27 @@ pub async fn get_session_data_for_generation(
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
                     superseded_at: None,
-                    variant_count: 0,
-                    current_variant_index: 0,
+                    variant_count: {
+                        let count = api_msg.variant_count.unwrap_or(0);
+                        let index = api_msg.current_variant_index.unwrap_or(0);
+                        // If we have an index > 0, we must have at least that many variants + 1
+                        if index > 0 && count <= index {
+                            index + 1
+                        } else {
+                            count
+                        }
+                    },
+                    current_variant_index: {
+                        let v = api_msg.current_variant_index.unwrap_or(0);
+                        info!(
+                            target: "chat_service_variant_debug",
+                            index,
+                            msg_id = %api_msg.id.as_ref().unwrap_or(&"none".to_string()),
+                            variant_index = v,
+                            "🔀 VARIANT DEBUG: (Default) Processing frontend message"
+                        );
+                        v
+                    },
                     credits_charged: 0,
                     credits_cost: crate::db::DbDecimal::from(0),
                     actual_cost: crate::db::DbDecimal::from(0),
@@ -1075,7 +1074,11 @@ pub async fn get_session_data_for_generation(
 
                 #[cfg(feature = "postgres-backend")]
                 let msg = DbChatMessage {
-                    id: DbId::new(), // Generate temporary ID for frontend messages
+                    id: api_msg
+                        .id
+                        .as_ref()
+                        .and_then(|id_str| id_str.parse::<crate::db::DbId>().ok())
+                        .unwrap_or_else(|| DbId::new()), // Use frontend ID if available
                     session_id,
                     user_id,
                     message_type: message_role,
@@ -1097,8 +1100,27 @@ pub async fn get_session_data_for_generation(
                     status: "completed".to_string(), // Frontend-provided history is considered completed
                     error_message: None,
                     superseded_at: None,
-                    variant_count: 0,
-                    current_variant_index: 0,
+                    variant_count: {
+                        let count = api_msg.variant_count.unwrap_or(0);
+                        let index = api_msg.current_variant_index.unwrap_or(0);
+                        // If we have an index > 0, we must have at least that many variants + 1
+                        if index > 0 && count <= index {
+                            index + 1
+                        } else {
+                            count
+                        }
+                    },
+                    current_variant_index: {
+                        let v = api_msg.current_variant_index.unwrap_or(0);
+                        info!(
+                            target: "chat_service_variant_debug",
+                            index,
+                            msg_id = %api_msg.id.as_ref().unwrap_or(&"none".to_string()),
+                            variant_index = v,
+                            "🔀 VARIANT DEBUG: (Postgres) Processing frontend message"
+                        );
+                        v
+                    },
                     credits_charged: 0,
                     credits_cost: crate::db::DbDecimal::from(0), // PostgreSQL: DbDecimal
                     actual_cost: crate::db::DbDecimal::from(0),  // PostgreSQL: DbDecimal
@@ -1114,7 +1136,11 @@ pub async fn get_session_data_for_generation(
             })
             .collect()
     } else {
-        debug!(%session_id, "Using database-queried history ({} messages)", existing_messages_db_raw.len());
+        info!(%session_id, db_history_count = existing_messages_db_raw.len(), "🔀 VARIANT DEBUG: Using DATABASE-queried history");
+        // Log variant info for each database message
+        for db_msg in existing_messages_db_raw.iter().take(5) {
+            info!(%session_id, message_id = %db_msg.id, variant_count = db_msg.variant_count, current_variant_index = db_msg.current_variant_index, message_type = ?db_msg.message_type, "🔀 VARIANT DEBUG: DB message variant info");
+        }
 
         // Check if the last message in DB history matches the current user message being processed
         // If so, exclude it to prevent duplication (the current user message is passed separately to the prompt builder)
@@ -1268,8 +1294,9 @@ pub async fn get_session_data_for_generation(
     let mut actual_recent_history_tokens: usize = 0; // CHANGED to usize
 
     // Iterate newest to oldest (reverse of DB query order)
-    for db_msg_raw in final_messages_for_processing.iter().rev() {
-        debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Processing message for recent history.");
+    for (idx, db_msg_raw) in final_messages_for_processing.iter().enumerate().rev() {
+        let is_first_msg = idx == 0;
+        debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, %idx, "Processing message for recent history.");
         // Use variant-aware content retrieval - respects current_variant_index
         let decrypted_content_str = if let Some(dek_arc) = &user_dek_secret_box {
             get_message_content_with_variant(db_msg_raw, &state.pool, user_id, dek_arc.as_ref())
@@ -1317,13 +1344,28 @@ pub async fn get_session_data_for_generation(
         let message_tokens = token_estimate.total;
         debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, %message_tokens, current_actual_tokens = %actual_recent_history_tokens, %recent_history_token_budget, "Message tokens calculated. Checking budget.");
 
-        if actual_recent_history_tokens.saturating_add(message_tokens)
-            <= recent_history_token_budget
+        // Greeting Anchoring Logic: Always include the first message if it's an Assistant message (the greeting)
+        // This ensures the AI always has the original context of the conversation start.
+        let is_anchored_greeting =
+            is_first_msg && db_msg_raw.message_type == MessageRole::Assistant;
+
+        if (actual_recent_history_tokens.saturating_add(message_tokens)
+            <= recent_history_token_budget)
+            || (is_anchored_greeting
+                && actual_recent_history_tokens.saturating_add(message_tokens)
+                    <= context_total_token_limit)
         {
+            if is_anchored_greeting
+                && actual_recent_history_tokens.saturating_add(message_tokens)
+                    > recent_history_token_budget
+            {
+                info!(%session_id, message_id = %db_msg_raw.id, %message_tokens, "🔀 ANCHOR: Character greeting preserved despite budget overflow.");
+            }
+
             // Compare usize with usize
             actual_recent_history_tokens =
                 actual_recent_history_tokens.saturating_add(message_tokens);
-            debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Message FITS budget. Adding to managed_recent_history. New actual_recent_history_tokens: {}", actual_recent_history_tokens);
+            debug!(target: "test_debug", %session_id, message_id = %db_msg_raw.id, "Message FITS budget or is anchored. Adding to managed_recent_history. New actual_recent_history_tokens: {}", actual_recent_history_tokens);
             // Create a new DbChatMessage with decrypted content before adding
             let mut updated_msg = db_msg_raw.clone();
             updated_msg.content = decrypted_content_str.into_bytes();
@@ -2442,7 +2484,7 @@ pub async fn stream_ai_response_and_save_message(
         game_master_mode_enabled,
         initial_game_state,
         parent_message_id,
-        pre_processing_analysis_id: _,
+        pre_processing_analysis_id,
     } = params;
 
     // Prune future messages if this is a rewind operation (parent_message_id provided)
@@ -2605,6 +2647,7 @@ pub async fn stream_ai_response_and_save_message(
         let user_dek_for_task = user_dek.clone();
         let service_model_name_for_task = service_model_name.clone();
         let variant_of_for_task = variant_of;
+        let pre_processing_analysis_id_for_task = pre_processing_analysis_id;
         let charge_credits_for_task = charge_credits;
         let game_master_mode_enabled_for_task = game_master_mode_enabled;
         let initial_game_state_for_task = initial_game_state.clone();
@@ -2690,6 +2733,7 @@ pub async fn stream_ai_response_and_save_message(
                                 status: crate::models::chats::MessageStatus::Partial,
                                 error_message: Some(format!("Stream error: {client_error_message}")),
                                 variant_of: variant_of_for_task,
+                                pre_processing_analysis_id: pre_processing_analysis_id_for_task,
                                 charge_credits: charge_credits_for_task,
                                 credits_cost_override: None,
                                 game_time: game_time_to_save_for_task.clone(),
@@ -2719,6 +2763,7 @@ pub async fn stream_ai_response_and_save_message(
                             reasoning_content: if !accumulated_reasoning.is_empty() { Some(&accumulated_reasoning) } else { None },
                             error_message: None,
                             variant_of: variant_of_for_task,
+                            pre_processing_analysis_id: pre_processing_analysis_id_for_task,
                             charge_credits: charge_credits_for_task,
                             credits_cost_override: None,
                             game_time: game_time_to_save_for_task.clone(),
@@ -2823,12 +2868,18 @@ pub async fn stream_ai_response_and_save_message(
 
 /// Helper function to get message content respecting variant selection
 /// Returns the selected variant content if current_variant_index > 0, otherwise original content
-async fn get_message_content_with_variant(
+pub async fn get_message_content_with_variant(
     message: &DbChatMessage,
     pool: &crate::db::DbPool,
     user_id: crate::db::DbId,
     dek: &secrecy::SecretBox<Vec<u8>>,
 ) -> Result<String, AppError> {
+    tracing::info!(
+        message_id = %message.id,
+        current_variant_index = message.current_variant_index,
+        variant_count = message.variant_count,
+        "🔀 VARIANT DEBUG: get_message_content_with_variant called"
+    );
     if message.current_variant_index == 0 {
         // Index 0 means original message content - decrypt from message
         match message.content_nonce.as_ref() {
@@ -2875,7 +2926,12 @@ async fn get_message_content_with_variant(
 
         if let Some(variant) = variant_opt {
             // Decrypt variant content
-            variant.decrypt_content(dek)
+            let content = variant.decrypt_content(dek);
+            if let Ok(ref c) = content {
+                let preview: String = c.chars().take(80).collect();
+                tracing::info!(message_id = %message.id, variant_index = message.current_variant_index, content_preview = %preview, "🔀 VARIANT DEBUG: Using VARIANT content");
+            }
+            content
         } else {
             // Fallback to original message content if variant not found
             tracing::warn!(

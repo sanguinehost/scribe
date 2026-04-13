@@ -479,6 +479,17 @@ impl VectorServiceTrait for RigLanceDbService {
         filter: Option<Filter>,
     ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
         let name = self.config.qdrant_collection_name.clone();
+        self.search_values_in_collection(&name, query, limit, filter)
+            .await
+    }
+
+    async fn search_values_in_collection(
+        &self,
+        collection_name: &str,
+        query: &str,
+        limit: usize,
+        filter: Option<Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
         let query_embedding = self
             .model
             .embed_texts(vec![query.to_string()])
@@ -492,7 +503,7 @@ impl VectorServiceTrait for RigLanceDbService {
 
         let results = self
             .search_points_with_threshold_internal(
-                &name,
+                collection_name,
                 query_embedding.vec.into_iter().map(|v| v as f32).collect(),
                 limit as u64,
                 filter,

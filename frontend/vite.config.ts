@@ -49,13 +49,11 @@ export default defineConfig({
 		)
 	},
 	server: {
-		hmr: {
-			// Allow HMR over the network (Tailscale)
-			// The host must match where the browser accesses the app
-			host: 'localhost',
-			protocol: certsExist ? 'wss' : 'ws',
-			clientPort: certsExist ? 5174 : 5173
-		},
+		hmr: certsExist
+			? {
+					protocol: 'wss'
+				}
+			: true,
 		host: true, // Listen on all network interfaces
 		...(certsExist && {
 			https: {
@@ -65,7 +63,7 @@ export default defineConfig({
 		}),
 		proxy: {
 			'/api': {
-				target: process.env.VITE_BACKEND_TARGET || 'https://localhost:8081',
+				target: process.env.VITE_BACKEND_TARGET || 'https://127.0.0.1:8080',
 				changeOrigin: true,
 				secure: false,
 				cookieDomainRewrite: 'localhost',

@@ -65,8 +65,8 @@ async fn create_test_user_with_dek(
 
     let (encrypted_dek, dek_nonce) = crypto::encrypt_gcm(dek.expose_secret(), &kek)?;
 
-    // Convert salt to string format expected by NewUser
-    let kek_salt_str = BASE64.encode(&kek_salt);
+    // kek_salt is already a URL-safe Base64 encoded string from generate_salt
+    let kek_salt_str = kek_salt.clone();
 
     let new_user = NewUser {
         created_at: scribe_backend::db::DbTimestamp::now(),

@@ -2552,6 +2552,9 @@ pub struct ApiChatMessage {
     pub role: String,
     #[validate(length(min = 1))]
     pub content: String,
+    pub id: Option<String>,
+    pub current_variant_index: Option<i32>,
+    pub variant_count: Option<i32>,
 }
 
 impl std::fmt::Debug for ApiChatMessage {
@@ -2572,6 +2575,7 @@ pub struct GenerateChatRequest {
     pub model: Option<String>,
     pub query_text_for_rag: Option<String>,
     pub analysis_mode: Option<String>, // "existing", "refresh", or "skip" for agent analysis control
+    pub agent_mode: Option<String>,    // "disabled", "pre_processing", or "post_processing"
     pub guidance: Option<String>,      // Optional guidance text for regeneration steering
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
     pub parent_message_id: Option<crate::db::DbId>, // Optional parent message ID for rewind/pruning
@@ -4400,7 +4404,7 @@ pub struct MessageVariantDto {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
-    pub content: String, // Decrypted content
+    pub content: String,
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,

@@ -112,7 +112,7 @@
 		{#if isEditing}
 			<!-- EDIT MODE -->
 			<div class="space-y-3">
-				{#each Object.entries(editVitals) as [key, vital]}
+				{#each Object.entries(editVitals) as [key, vital] (key)}
 					<div class="space-y-2 rounded-lg bg-muted/30 p-2">
 						<div class="flex items-center justify-between">
 							<div class="flex flex-1 items-center gap-2">
@@ -160,7 +160,7 @@
 			{#if !vitals || Object.keys(vitals).length === 0}
 				<p class="text-center text-sm italic text-muted-foreground">No vitals tracked</p>
 			{:else}
-				{#each Object.entries(vitals) as [key, vital]}
+				{#each Object.entries(vitals) as [key, vital] (key)}
 					{@const percent = vital.max > 0 ? (vital.current / vital.max) * 100 : 0}
 					<div class="space-y-1">
 						<!-- Label row -->
@@ -188,7 +188,7 @@
 						<!-- Modifiers (if any) -->
 						{#if vital.modifiers && vital.modifiers.length > 0}
 							<div class="flex flex-wrap gap-1">
-								{#each vital.modifiers as modifier}
+								{#each vital.modifiers as modifier, i (i)}
 									<span class="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">
 										{modifier}
 									</span>

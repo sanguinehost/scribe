@@ -4,7 +4,7 @@
 	import ModelSelector from './model-selector.svelte';
 	import { Badge as BadgeComponent } from './ui/badge';
 	import { Button as _ButtonComponent } from './ui/button';
-	import { ScrollText, BookMarked, Crown } from 'lucide-svelte';
+	import { ScrollText, Crown } from 'lucide-svelte';
 	import { chronicleStore } from '$lib/stores/chronicle.svelte';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { toast } from 'svelte-sonner';
@@ -17,12 +17,10 @@
 	let {
 		chat,
 		readonly,
-		onOpenExtractDialog,
 		onToggleGameMasterPanel
 	}: {
 		chat: ScribeChatSession | undefined; // Use Scribe type
 		readonly: boolean;
-		onOpenExtractDialog?: () => void;
 		onToggleGameMasterPanel?: () => void;
 	} = $props();
 
@@ -141,7 +139,7 @@
 	}
 </script>
 
-<header class="sticky top-0 flex items-center gap-2 bg-background p-2">
+<header class="sticky top-0 z-40 flex items-center gap-2 border-b border-border/40 bg-background/80 px-4 py-3 backdrop-blur-xl">
 	<SidebarToggle />
 
 	{#if isLoadingSettings}
@@ -180,19 +178,15 @@
 			{/if}
 			{#if gameMasterModeEnabled}
 				<Button
-					variant="outline"
+					variant="ghost"
 					size="sm"
 					onclick={() => onToggleGameMasterPanel?.()}
-					class="gap-1.5 border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 hover:text-purple-800 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-300 dark:hover:bg-purple-950/50"
+					class="gap-1.5 rounded-full border border-primary/20 bg-primary/5 text-primary transition-all duration-300 hover:bg-primary/15 hover:shadow-[0_0_12px_2px] hover:shadow-primary/20"
 				>
 					<Crown class="h-4 w-4" />
 					GM
 				</Button>
 			{/if}
-			<Button variant="outline" size="sm" onclick={() => onOpenExtractDialog?.()} class="gap-1.5">
-				<BookMarked class="h-4 w-4" />
-				Extract
-			</Button>
 			<ModelSelector {chat} class="" />
 		</div>
 	{/if}

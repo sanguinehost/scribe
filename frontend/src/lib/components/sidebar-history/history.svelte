@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import ChatItem from './item.svelte';
 	import type {
 		ScribeChatSession,
@@ -152,7 +153,7 @@
 		alertDialogOpen = false;
 
 		if (chatIdToDelete === page.params.chatId) {
-			await _goto('/');
+			await _goto(resolve('/'));
 		}
 	}
 

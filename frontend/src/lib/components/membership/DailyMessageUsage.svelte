@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { SvelteDate } from 'svelte/reactivity';
+
 	import { MessageCircle, AlertTriangle, CheckCircle } from 'lucide-svelte';
 	import type { PlanType } from '$lib/types';
 
@@ -35,12 +37,12 @@
 	$: isNearLimit = usagePercentage >= 80;
 	$: isAtLimit = usagePercentage >= 100;
 	$: isOverLimit = currentLimit ? messageCount > currentLimit.limit : false;
-	$: statusColor = getStatusColor();
-	$: containerClass = getContainerClass();
-	$: statusText = getStatusText();
-	$: statusIcon = getStatusIcon();
+	$: statusColor = getStatusColor(currentLimit, isOverLimit, isAtLimit, isNearLimit);
+	$: containerClass = getContainerClass(_size);
+	$: statusText = getStatusText(currentLimit, isAtLimit, isThrottled, throttleDelay, isOverLimit, isNearLimit, messageCount);
+	$: statusIcon = getStatusIcon(currentLimit, isAtLimit, isThrottled, isOverLimit);
 
-	function getStatusColor(): string {
+	function getStatusColor(currentLimit: { limit: number; type: string } | null | undefined, isOverLimit: boolean, isAtLimit: boolean, isNearLimit: boolean): string {
 		if (!currentLimit) return 'bg-gray-500';
 		if (isOverLimit && currentLimit.type === 'hard') return 'bg-red-500';
 		if (isOverLimit) return 'bg-orange-500';
@@ -49,8 +51,8 @@
 		return 'bg-green-500';
 	}
 
-	function getContainerClass(): string {
-		const heights = {
+	function getContainerClass(_size: string): string {
+		const heights: Record<string, string> = {
 			sm: 'h-1.5',
 			md: 'h-2',
 			lg: 'h-3'
@@ -58,7 +60,7 @@
 		return `w-full ${heights[_size]}`;
 	}
 
-	function getStatusText(): string {
+	function getStatusText(currentLimit: { limit: number; type: string } | null | undefined, isAtLimit: boolean, isThrottled: boolean, throttleDelay: number, isOverLimit: boolean, isNearLimit: boolean, messageCount: number): string {
 		if (!currentLimit) {
 			return 'Loading limits...';
 		}
@@ -77,7 +79,7 @@
 		return `${messageCount} / ${currentLimit.limit} messages today`;
 	}
 
-	function getStatusIcon(): 'check' | 'warning' | 'error' {
+	function getStatusIcon(currentLimit: { limit: number; type: string } | null | undefined, isAtLimit: boolean, isThrottled: boolean, isOverLimit: boolean): 'check' | 'warning' | 'error' {
 		if (!currentLimit) return 'check';
 		if (currentLimit.type === 'hard' && isAtLimit) return 'error';
 		if (isThrottled || isOverLimit) return 'warning';
@@ -85,8 +87,8 @@
 	}
 
 	function formatTime(): string {
-		const now = new Date();
-		const midnight = new Date();
+		const now = new SvelteDate();
+		const midnight = new SvelteDate();
 		midnight.setHours(24, 0, 0, 0);
 		const msUntilMidnight = midnight.getTime() - now.getTime();
 		const hoursUntilReset = Math.floor(msUntilMidnight / (1000 * 60 * 60));

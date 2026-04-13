@@ -74,7 +74,7 @@
 					<Card.Description class="mt-2">
 						<span class="text-xs font-medium">Keywords:</span>
 						<div class="mt-1 flex flex-wrap gap-1">
-							{#each entry.keys.slice(0, 5) as keyword}
+							{#each entry.keys.slice(0, 5) as keyword, i (i)}
 								<Badge variant="outline" class="text-xs">{keyword}</Badge>
 							{/each}
 							{#if entry.keys.length > 5}

@@ -57,7 +57,7 @@
 	<!-- Loading state -->
 	{#if lorebookStore.isLoading}
 		<div class="space-y-2 p-4">
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="animate-pulse">
 					<div class="h-10 rounded border border-primary/10 bg-primary/5"></div>
 				</div>
@@ -66,17 +66,22 @@
 	{:else if lorebookStore.lorebooks.length === 0}
 		<!-- Empty state -->
 		<div class="flex flex-1 items-center justify-center p-4">
-			<div class="text-center">
-				<BookOpen class="mx-auto mb-2 h-8 w-8 text-primary/50" />
-				<p class="mb-2 text-sm text-muted-foreground">No lorebooks yet</p>
+			<div class="flex flex-col items-center gap-4 text-center">
+				<div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+					<BookOpen class="h-7 w-7" />
+				</div>
+				<div class="space-y-1">
+					<p class="text-sm font-medium text-foreground">No lorebooks yet</p>
+					<p class="text-xs text-muted-foreground">Build your world's lore — places, factions, and history.</p>
+				</div>
 				<ButtonComponent
 					variant="outline"
 					size="sm"
 					onclick={handleViewAll}
-					class="border-primary/20 hover:border-primary/30 hover:bg-primary/10"
+					class="rounded-full"
 				>
-					<Plus class="mr-1 h-4 w-4" />
-					Create First
+					<Plus class="mr-1 h-3.5 w-3.5" />
+					Create Lorebook
 				</ButtonComponent>
 			</div>
 		</div>

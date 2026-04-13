@@ -98,17 +98,22 @@
 	{:else if chronicleStore.chronicles.length === 0}
 		<!-- Empty state -->
 		<div class="flex flex-1 items-center justify-center p-4">
-			<div class="text-center">
-				<ScrollText class="mx-auto mb-2 h-8 w-8 text-primary/50" />
-				<p class="mb-2 text-sm text-muted-foreground">No chronicles yet</p>
+			<div class="flex flex-col items-center gap-4 text-center">
+				<div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+					<ScrollText class="h-7 w-7" />
+				</div>
+				<div class="space-y-1">
+					<p class="text-sm font-medium text-foreground">No chronicles yet</p>
+					<p class="text-xs text-muted-foreground">Chronicles track your story's narrative arc and timeline.</p>
+				</div>
 				<ButtonComponent
 					variant="outline"
 					size="sm"
 					onclick={handleCreateChronicle}
-					class="border-primary/20 hover:border-primary/30 hover:bg-primary/10"
+					class="rounded-full"
 				>
-					<Plus class="mr-1 h-4 w-4" />
-					Create First
+					<Plus class="mr-1 h-3.5 w-3.5" />
+					Create Chronicle
 				</ButtonComponent>
 			</div>
 		</div>

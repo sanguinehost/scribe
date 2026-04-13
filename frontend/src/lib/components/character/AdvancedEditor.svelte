@@ -111,7 +111,7 @@
 				<div class="space-y-1">
 					<span class="text-sm text-muted-foreground">Sources:</span>
 					<div class="flex flex-wrap gap-1">
-						{#each character.data.source as source}
+						{#each character.data.source as source, i (i)}
 							<Badge variant="outline">{source}</Badge>
 						{/each}
 					</div>

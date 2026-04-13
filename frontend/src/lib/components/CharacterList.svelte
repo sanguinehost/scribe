@@ -3,6 +3,7 @@
 	import { apiClient as _apiClient } from '$lib/api';
 	import type { ScribeCharacter as Character } from '$lib/types';
 	import { getIsAuthenticated, getIsAuthReady } from '$lib/auth.svelte';
+	import { SelectedCharacterStore } from '$lib/stores/selected-character.svelte';
 	import CharacterCard from './CharacterCard.svelte';
 	import CharacterEditor from './CharacterEditor.svelte';
 	import CharacterCreator from './CharacterCreator.svelte';
@@ -20,6 +21,7 @@
 	let showCreator = $state(false);
 
 	const dispatch = createEventDispatcher();
+	const selectedCharacterStore = SelectedCharacterStore.fromContext();
 
 	// Function to fetch characters, reusable for initial load and refresh
 	async function fetchCharacters() {
@@ -88,6 +90,19 @@
 	}
 
 	function handleDelete(_event: CustomEvent<{ characterId: string }>) {
+		const deletedId = String(_event.detail.characterId);
+		const currentSelected = selectedCharacterStore.characterId ? String(selectedCharacterStore.characterId) : null;
+
+		// If the deleted character was being viewed, clear the selection
+		if (currentSelected === deletedId) {
+			selectedCharacterStore.clear();
+		}
+
+		// Clear local selection state
+		if (selectedCharacterId ? String(selectedCharacterId) === deletedId : false) {
+			selectedCharacterId = null;
+		}
+
 		// Refresh the character list after successful deletion
 		fetchCharacters();
 	}
@@ -116,8 +131,8 @@
 </script>
 
 <div class="flex h-full flex-col">
-	<div class="flex items-center justify-between border-b p-2">
-		<h2 class="px-2 text-lg font-semibold">Characters</h2>
+	<div class="flex items-center justify-between border-b border-border/40 bg-muted/10 p-2 pb-2">
+		<h2 class="px-2 text-lg font-semibold tracking-tight">Characters</h2>
 		<div class="flex gap-1">
 			<ButtonComponent
 				variant="ghost"
@@ -150,7 +165,7 @@
 	<div class="flex-1 space-y-2 overflow-y-auto p-2">
 		{#if isLoading}
 			<!-- Loading Skeletons -->
-			{#each Array(3) as _}
+			{#each Array(3) as _, i (i)}
 				<div class="flex items-center space-x-4 p-2">
 					<Skeleton class="h-12 w-12 rounded-full" />
 					<div class="flex-1 space-y-2">

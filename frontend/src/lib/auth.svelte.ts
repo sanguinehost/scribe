@@ -1,3 +1,4 @@
+import { resolve } from '$app/paths';
 import type { User } from '$lib/types';
 import { logger } from '$lib/utils/logger';
 
@@ -201,7 +202,7 @@ export async function performLogout(
 				setTimeout(() => {
 					import('$app/navigation').then(({ goto }) => {
 						logger.debug('auth', 'Fallback redirect to /signin');
-						goto('/signin');
+						goto(resolve('/signin'));
 					});
 				}, 2000); // 2 second fallback redirect
 

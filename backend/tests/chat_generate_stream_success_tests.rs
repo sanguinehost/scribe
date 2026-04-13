@@ -573,7 +573,7 @@ async fn test_first_mes_included_in_history() {
         "First message role should be Assistant"
     );
     assert_eq!(
-        String::from_utf8_lossy(&first_msg.content).as_ref(),
+        &*String::from_utf8_lossy(&first_msg.content),
         first_mes_content_plain,
         "First message content should match character's first_mes"
     );

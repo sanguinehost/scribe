@@ -215,6 +215,7 @@ pub struct SaveMessageParams<'a> {
     pub status: crate::models::chats::MessageStatus, // Status of the message (streaming, completed, failed, partial)
     pub error_message: Option<String>,               // Error message if status is failed
     pub variant_of: Option<crate::db::DbId>, // If provided, create a variant of this message instead of new message
+    pub pre_processing_analysis_id: Option<crate::db::DbId>, // ADDED: Agent analysis ID
     pub charge_credits: bool, // Whether to charge credits for this message (false for free tier Flash within limits)
     pub credits_cost_override: Option<crate::db::DbDecimal>, // Optional override for credits_cost calculation (from pre-calculated actual_credit_cost)
     pub game_time: Option<Value>, // ADDED: The in-game time when the message was sent
@@ -249,6 +250,7 @@ pub async fn save_message(
         status,
         error_message,
         variant_of,
+        pre_processing_analysis_id,
         #[cfg(feature = "payment")]
         charge_credits,
         #[cfg(not(feature = "payment"))]
@@ -735,6 +737,33 @@ pub async fn save_message(
     .await?;
 
     debug!(message_id = %saved_message_db.id, %session_id, "Message saved to DB successfully.");
+
+    // Atomically link pre-processing analysis if provided and this is an assistant message
+    if message_type_enum == MessageRole::Assistant {
+        if let Some(analysis_id) = pre_processing_analysis_id {
+            // Re-use connection pool for update
+            let update_pool = state.pool.clone();
+            let assistant_msg_id = saved_message_db.id;
+            // Execute database update
+            let result = crate::db::with_conn(&update_pool, move |conn| {
+                crate::models::agent_context_analysis::AgentContextAnalysis::update_assistant_message_id(
+                    conn,
+                    analysis_id,
+                    assistant_msg_id,
+                )
+            })
+            .await;
+
+            match result {
+                Ok(_) => {
+                    debug!(%session_id, %analysis_id, assistant_message_id = %assistant_msg_id, "Successfully linked analysis to assistant message")
+                }
+                Err(e) => {
+                    error!(%session_id, %analysis_id, assistant_message_id = %assistant_msg_id, error = %e, "Failed to link analysis to assistant message")
+                }
+            }
+        }
+    }
 
     // Update cumulative token counts for both chat session and user
     // Convert Option<i32> to i32, defaulting to 0 for None values

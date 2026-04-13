@@ -130,8 +130,7 @@
 	}
 </script>
 
-<div class="relative -ml-2 flex w-full gap-4">
-	<div class="flex size-8 shrink-0"></div>
+<div class="relative flex w-full">
 	<div class="flex w-full flex-col gap-4">
 		<input
 			type="file"
@@ -150,7 +149,7 @@
 					{/each}
 				{/if}
 
-				{#each uploadQueue as filename}
+				{#each uploadQueue as filename, i (i)}
 					<PreviewAttachment
 						attachment={{
 							url: '',
@@ -169,7 +168,8 @@
 			{placeholder}
 			bind:value
 			class={_cn(
-				'max-h-[calc(37.5dvh)] min-h-[24px] resize-none overflow-y-auto rounded-2xl bg-muted pb-10 pl-4 pr-4 !text-base dark:border-zinc-700',
+				'max-h-[calc(37.5dvh)] min-h-[56px] resize-none overflow-y-auto rounded-[24px] border border-border/40 bg-muted/30 pb-12 pl-5 pr-5 pt-4 !text-base shadow-md backdrop-blur-md transition-all duration-300 focus-within:border-primary/50 focus-within:bg-muted/50 focus-within:shadow-lg focus-within:ring-1 focus-within:ring-primary/20 hover:bg-muted/40',
+				isLoading ? 'animate-glow-pulse' : '',
 				c
 			)}
 			rows={2}
@@ -186,25 +186,29 @@
 			}}
 		></textarea>
 
-		<div class="absolute bottom-0 right-0 flex w-fit flex-row items-center gap-1 p-4">
-			{#if chatId && onAgentModeChange}
-				<ContextEnrichmentButton
-					value={agentMode}
-					onChange={onAgentModeChange}
-					disabled={isLoading}
-				/>
-			{/if}
-			{#if chatId}
-				<ImpersonateWidget
-					{value}
-					{chatId}
-					onExpand={handleTextExpansion}
-					onImpersonate={handleImpersonateResults}
-					disabled={isLoading}
-				/>
-			{/if}
-			{#if chat && supportsReasoning}
-				<ThinkingLevelSelector {chat} disabled={isLoading} />
+		<div class="absolute bottom-0 right-0 flex w-fit flex-row items-center gap-0.5 p-4">
+			{#if (chatId && onAgentModeChange) || chatId || (chat && supportsReasoning)}
+				<div class="flex items-center gap-0.5 rounded-full bg-muted/30 px-1 py-0.5 backdrop-blur-sm">
+					{#if chatId && onAgentModeChange}
+						<ContextEnrichmentButton
+							value={agentMode}
+							onChange={onAgentModeChange}
+							disabled={isLoading}
+						/>
+					{/if}
+					{#if chatId}
+						<ImpersonateWidget
+							{value}
+							{chatId}
+							onExpand={handleTextExpansion}
+							onImpersonate={handleImpersonateResults}
+							disabled={isLoading}
+						/>
+					{/if}
+					{#if chat && supportsReasoning}
+						<ThinkingLevelSelector {chat} disabled={isLoading} />
+					{/if}
+				</div>
 			{/if}
 			{#if isLoading}
 				{@render stopButton()}
@@ -215,7 +219,8 @@
 
 {#snippet stopButton()}
 	<ButtonComponent
-		class="h-fit rounded-full border p-1.5 dark:border-zinc-600"
+		variant="ghost"
+		class="h-9 w-9 my-auto rounded-full border border-destructive/30 bg-background/50 p-0 text-destructive/80 shadow-sm backdrop-blur-md transition-all hover:bg-destructive/10 hover:border-destructive/50 hover:text-destructive hover:shadow-[0_0_12px_3px] hover:shadow-destructive/20"
 		onclick={(_event: MouseEvent) => {
 			_event.preventDefault();
 			stopGeneration(); // Use stopGeneration prop

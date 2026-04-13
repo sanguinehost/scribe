@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { goto as _goto } from '$app/navigation';
 	import { apiClient as _apiClient } from '$lib/api';
 	import { env } from '$env/dynamic/public';
@@ -72,6 +73,13 @@
 	let isSaving = $state(false);
 	let editValue = $state('');
 
+	// Appearance Editor state
+	let appearanceEditorOpen = $state(false);
+	let editBannerUrl = $state('');
+	let editBannerFile = $state<File | null>(null);
+	let editPrimaryColor = $state('');
+
+
 	// Character editor dialog state
 	let characterEditorOpen = $state(false);
 
@@ -95,6 +103,17 @@
 	function getInitials(name: string): string {
 		return name ? name.charAt(0).toUpperCase() : '?';
 	}
+
+	// Extract visual metadata safely
+	const visualMetadata = $derived.by(() => {
+		if (!character?.extensions?.visual_metadata) return null;
+		return character.extensions.visual_metadata as Record<string, string | undefined>;
+	});
+
+	const customPrimaryColor = $derived(visualMetadata?.primary_color);
+	const heroBannerUrl = $derived(visualMetadata?.banner_url);
+	const cssVars = $derived(customPrimaryColor ? `--char-primary: ${customPrimaryColor};` : '');
+
 
 	// Create properly formatted avatar URL
 	const characterAvatarSrc = $derived.by(() => {
@@ -360,7 +379,7 @@
 				if (onStartChat) {
 					onStartChat(chat.id);
 				}
-				await _goto(`/chat/${chat.id}`, { invalidateAll: true });
+				await _goto(resolve(`/chat/${chat.id}` as `/${string}`), { invalidateAll: true });
 			} else {
 				toast.error('Failed to start chat', {
 					description: createChatResult.error.message
@@ -373,7 +392,7 @@
 	}
 
 	function handleSelectChat(chatId: string) {
-		_goto(`/chat/${chatId}`);
+		_goto(resolve(`/chat/${chatId}`));
 	}
 
 	async function handleDeleteClick(e: MouseEvent, chat: ScribeChatSession) {
@@ -483,6 +502,68 @@
 		popoutContent = '';
 	}
 
+	function handleOpenAppearance() {
+		editBannerUrl = visualMetadata?.banner_url || '';
+		editBannerFile = null;
+		editPrimaryColor = visualMetadata?.primary_color || '';
+
+		appearanceEditorOpen = true;
+	}
+
+	async function handleSaveAppearance() {
+		if (!character) return;
+
+		isSaving = true;
+		try {
+			// First, handle banner upload if a file was selected
+			let newBannerUrl = editBannerUrl;
+			if (editBannerFile) {
+				const uploadResult = await _apiClient.uploadCharacterBanner(character.id, editBannerFile);
+				if (uploadResult.isOk()) {
+					// The backend usually sets the banner URL to /api/avatars/character/{id}/banner or similar.
+					// We'll construct the canonical URL for the character banner.
+					newBannerUrl = `/api/characters/${character.id}/banner?t=${Date.now()}`;
+				} else {
+					toast.error('Failed to upload banner: ' + uploadResult.error.message);
+					isSaving = false;
+					return;
+				}
+			}
+
+			// Construct new extensions object safely
+			const currentExtensions = character.extensions || {};
+			const updatedVisualMetadata = {
+				...(currentExtensions.visual_metadata || {}),
+				banner_url: newBannerUrl || undefined,
+				primary_color: editPrimaryColor || undefined
+			};
+
+			const updatedExtensions = {
+				...currentExtensions,
+				visual_metadata: Object.keys(updatedVisualMetadata).filter(k => (updatedVisualMetadata as Record<string, string | undefined>)[k] !== undefined).length > 0
+					? updatedVisualMetadata
+					: undefined
+			};
+
+			const result = await _apiClient.updateCharacter(character.id, {
+				extensions: updatedExtensions
+			});
+
+			if (result.isOk()) {
+				character.extensions = updatedExtensions;
+				toast.success('Appearance updated successfully');
+				appearanceEditorOpen = false;
+			} else {
+				toast.error('Failed to update appearance: ' + result.error.message);
+			}
+		} catch (_error) {
+			toast.error('Error updating appearance');
+			console.error('Error updating appearance:', _error);
+		} finally {
+			isSaving = false;
+		}
+	}
+
 	// Track the last loaded character ID to prevent unnecessary reloads
 	let lastLoadedCharacterId = $state<string | null>(null);
 	let isTransitioning = $state(false);
@@ -508,16 +589,16 @@
 	});
 </script>
 
-<div class="mx-auto flex h-[90vh] max-w-7xl flex-col gap-6 px-4">
+<div class="mx-auto flex h-[90vh] max-w-7xl flex-col gap-6 px-4 pt-6 pb-4">
 	<div
 		class="flex min-h-0 flex-1 flex-col gap-6"
 		style="opacity: {isTransitioning ? 0.3 : 1}; transition: opacity 300ms ease-in-out;"
 	>
 		<!-- Compact Character Header -->
 		{#if isLoadingCharacter}
-			<Card class="border-0 shadow-sm">
-				<CardHeader class="py-4">
-					<div class="flex items-center gap-4">
+			<Card class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4">
+				<CardHeader class="py-5 px-6">
+					<div class="flex flex-col sm:flex-row sm:items-center gap-5">
 						<Skeleton class="h-16 w-16 rounded-full" />
 						<div class="flex-1 space-y-2">
 							<Skeleton class="h-7 w-1/2" />
@@ -531,143 +612,185 @@
 				</CardHeader>
 			</Card>
 		{:else if character}
-			<!-- Compact Character Header -->
-			<Card class="border-0 shadow-sm">
-				<CardHeader class="py-4">
-					<div class="flex items-center gap-4">
-						<!-- Compact Avatar -->
+			<!-- Dossier Character Header -->
+			<Card
+				class="border-border/10 shadow-sm bg-background/50 backdrop-blur-sm rounded-xl overflow-hidden mt-4 transition-all duration-300 relative border-0 sm:border"
+				style={cssVars}
+			>
+				<!-- Hero Banner Image or blurred background placeholder -->
+				<div class="h-32 sm:h-48 w-full relative overflow-hidden bg-muted/30">
+					{#if heroBannerUrl}
+						<img src={heroBannerUrl} alt="Banner" class="w-full h-full object-cover" />
+						<div class="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent"></div>
+					{:else if characterAvatarSrc}
+						<!-- Fallback to blurred avatar -->
+						<img src={characterAvatarSrc} alt="" class="w-full h-full object-cover blur-[32px] scale-125 opacity-40 dark:opacity-30" />
+						<div class="absolute inset-0 bg-gradient-to-t from-background via-background/50 to-background/10"></div>
+					{:else}
+						<div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-primary/5"></div>
+						<div class="absolute inset-0 bg-gradient-to-t from-background to-transparent"></div>
+					{/if}
+
+					<!-- Top Right Appearance Buttons -->
+					<div class="absolute top-4 right-4 z-10 flex gap-2">
+						<ButtonComponent variant="outline" size="sm" class="bg-background/40 backdrop-blur-md border-border/20 text-foreground hover:bg-background/80" onclick={handleOpenAppearance}>
+							<SettingsIcon class="h-4 w-4 sm:mr-2" />
+							<span class="hidden sm:inline">Appearance</span>
+						</ButtonComponent>
+					</div>
+				</div>
+
+				<div class="px-4 sm:px-6 pb-6 relative">
+					<div class="flex flex-col sm:flex-row gap-4 sm:gap-6 -mt-12 sm:-mt-16">
+						<!-- Dossier Avatar -->
 						<Avatar
-							class="h-16 w-16 border-2 border-muted transition-transform hover:scale-105 {characterAvatarSrc
-								? 'cursor-pointer'
-								: ''}"
+							class="h-32 w-32 md:h-48 md:w-48 rounded-2xl border-4 shadow-xl transition-transform hover:scale-[1.02] duration-300 {characterAvatarSrc ? 'cursor-pointer' : ''} bg-background z-10 shrink-0 border-background/80 backdrop-blur-sm"
 							onclick={() => characterAvatarSrc && (avatarLightboxOpen = true)}
+							style={customPrimaryColor ? `box-shadow: 0 4px 20px -5px ${customPrimaryColor}` : ''}
 						>
 							{#if characterAvatarSrc}
-								<AvatarImage src={characterAvatarSrc} alt={character.name} />
+								<AvatarImage src={characterAvatarSrc} alt={character.name} class="object-cover" />
 							{/if}
-							<AvatarFallback class="text-xl font-semibold">
+							<AvatarFallback class="text-3xl sm:text-4xl font-bold bg-muted text-muted-foreground">
 								{getInitials(character.name)}
 							</AvatarFallback>
 						</Avatar>
 
-						<!-- Character Name and Inline Edit -->
-						<div class="min-w-0 flex-1">
-							{#if editingField !== 'name'}
-								<div class="group relative">
-									<h1 class="truncate text-2xl font-bold">{character.name}</h1>
+						<!-- Character Name and Actions -->
+						<div class="min-w-0 flex-1 pt-4 md:pt-[4.5rem] flex flex-col justify-between gap-4">
+							<div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+								<!-- Name Section -->
+								<div class="min-w-0 flex-1 space-y-1">
+									{#if editingField !== 'name'}
+										<div class="group relative flex items-center max-w-full">
+											<h1 class="text-3xl sm:text-4xl md:text-5xl font-black tracking-tight text-balance leading-tight pr-8 drop-shadow-sm">{character.name}</h1>
+											<ButtonComponent
+												variant="ghost"
+												size="sm"
+												class="absolute right-0 top-1 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100 text-muted-foreground flex-shrink-0"
+												onclick={() => handleEditField('name', character?.name || '')}
+												aria-label="Edit character name"
+											>
+												<PencilEdit class="h-3 w-3" />
+											</ButtonComponent>
+										</div>
+									{:else}
+										<div class="space-y-2 max-w-sm">
+											<Input
+												bind:value={editValue}
+												class="h-auto py-1 text-2xl font-bold"
+												placeholder="Character name"
+												onfocus={(e) => (e.target as HTMLInputElement)?.select()}
+												onkeydown={(e) => {
+													if (e.key === 'Enter') handleSaveField();
+													if (e.key === 'Escape') handleCancelEdit();
+												}}
+											/>
+											<div class="flex gap-2">
+												<ButtonComponent onclick={handleSaveField} disabled={isSaving} size="sm" class="gap-2">
+													{#if isSaving}
+														<div class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+													{:else}
+														<CheckCircleFill class="h-3 w-3" />
+													{/if}
+												</ButtonComponent>
+												<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm">Cancel</ButtonComponent>
+											</div>
+										</div>
+									{/if}
+
+									{#if character.creator || character.character_version}
+										<div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground font-medium mt-1">
+											{#if character.creator}<span>By <span class="text-foreground/80">{character.creator}</span></span>{/if}
+											{#if character.creator && character.character_version}<span class="text-border text-xs">•</span>{/if}
+											{#if character.character_version}<span>v{character.character_version}</span>{/if}
+										</div>
+									{/if}
+								</div>
+
+								<!-- Primary Actions -->
+								<div class="flex flex-wrap md:flex-nowrap items-center gap-3 shrink-0 w-full md:w-auto mt-4 md:mt-0 pt-2 self-start md:self-center">
 									<ButtonComponent
-										variant="ghost"
-										size="sm"
-										class="absolute -right-2 top-0 h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-										onclick={() => handleEditField('name', character?.name || '')}
-										aria-label="Edit character name"
+										onclick={handleStartNewChat}
+										class="gap-2 shadow-sm text-primary-foreground relative overflow-hidden group flex-1 sm:flex-none justify-center"
+										style={customPrimaryColor ? `background-color: var(--char-primary); border-color: var(--char-primary);` : ''}
 									>
-										<PencilEdit class="h-3 w-3" />
+										{#if customPrimaryColor}
+											<div class="absolute inset-0 opacity-10 group-hover:opacity-20 transition-opacity bg-black dark:bg-white"></div>
+										{/if}
+										<PlusIcon class="h-4 w-4 relative z-10" />
+										<span class="relative z-10">Chat</span>
+									</ButtonComponent>
+									{#if getMostRecentChat()}
+										<ButtonComponent
+											variant="outline"
+											class="gap-2 shadow-sm bg-background/50 flex-1 sm:flex-none justify-center border-border/40"
+											onclick={() => handleSelectChat(getMostRecentChat()!.id)}
+										>
+											<MessageIcon class="h-4 w-4" />
+											Continue
+										</ButtonComponent>
+									{/if}
+									<ButtonComponent
+										variant="outline"
+										class="gap-2 shadow-sm bg-background/50 flex-none justify-center border-border/40 px-3 hidden sm:flex"
+										onclick={() => _goto(resolve(`/chronicles?character=${characterId}` as `/${string}`))}
+										title="View chronicles"
+									>
+										<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+											/>
+										</svg>
 									</ButtonComponent>
 								</div>
-							{:else}
-								<div class="space-y-2">
-									<Input
-										bind:value={editValue}
-										class="h-auto py-1 text-2xl font-bold"
-										placeholder="Character name"
-										onfocus={(e) => (e.target as HTMLInputElement)?.select()}
-										onkeydown={(e) => {
-											if (e.key === 'Enter') handleSaveField();
-											if (e.key === 'Escape') handleCancelEdit();
-										}}
-									/>
-									<div class="flex gap-2">
-										<ButtonComponent
-											onclick={handleSaveField}
-											disabled={isSaving}
-											size="sm"
-											class="gap-2"
-										>
-											{#if isSaving}
-												<div
-													class="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-												></div>
-												Saving...
-											{:else}
-												<CheckCircleFill class="h-3 w-3" />
-												Save
-											{/if}
-										</ButtonComponent>
-										<ButtonComponent onclick={handleCancelEdit} variant="outline" size="sm"
-											>Cancel</ButtonComponent
-										>
-									</div>
-								</div>
-							{/if}
-							<p class="mt-1 text-sm text-muted-foreground">
-								{allChats.length} conversation{allChats.length !== 1 ? 's' : ''}
-							</p>
-						</div>
+							</div>
 
-						<!-- Primary Actions -->
-						<div class="flex flex-shrink-0 gap-2">
-							<ButtonComponent onclick={handleStartNewChat} size="default" class="gap-2">
-								<PlusIcon class="h-4 w-4" />
-								New Chat
-							</ButtonComponent>
-							{#if getMostRecentChat()}
-								<ButtonComponent
-									variant="outline"
-									size="default"
-									class="gap-2"
-									onclick={() => handleSelectChat(getMostRecentChat()!.id)}
-								>
-									<MessageIcon class="h-4 w-4" />
-									Continue
-								</ButtonComponent>
-							{/if}
-							<ButtonComponent
-								variant="outline"
-								size="default"
-								class="gap-2"
-								onclick={() => _goto('/chronicles?character=' + characterId)}
-								title="View character's chronicles"
-							>
-								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										stroke-width="2"
-										d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
-									/>
-								</svg>
-								Chronicles
-							</ButtonComponent>
-							<ButtonComponent
-								variant="outline"
-								size="default"
-								class="gap-1"
-								onclick={() => {
-									characterEditorOpen = true;
-								}}
-							>
-								<SettingsIcon class="h-4 w-4" />
-								Edit
-							</ButtonComponent>
+							<!-- Stat Grid (Tags, Context, etc) -->
+							<div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs sm:text-sm mt-1 border-t sm:border-t-0 border-border/10 pt-3 sm:pt-0">
+								<div class="flex items-center gap-1.5 text-muted-foreground bg-muted/30 px-2 py-1 rounded-md border border-border/5">
+									<MessageIcon class="h-3.5 w-3.5 opacity-70" />
+									<span class="font-medium text-foreground/80">{allChats.length}</span> entries
+								</div>
+								{#if character.token_budget}
+									<div class="flex items-center gap-1.5 text-muted-foreground bg-muted/30 px-2 py-1 rounded-md border border-border/5">
+										<div class="h-3.5 w-3.5 rounded-full border border-current flex items-center justify-center opacity-70"><span class="text-[8px] font-bold">C</span></div>
+										<span class="font-medium text-foreground/80">{character.token_budget}</span> tokens
+									</div>
+								{/if}
+								{#if character.tags && character.tags.length > 0}
+									<div class="w-px h-4 bg-border/40 hidden sm:block"></div>
+									<div class="flex items-center gap-1.5 flex-wrap">
+										{#each character.tags.slice(0, 4) as tag, i (i)}
+											<span class="px-2 py-0.5 rounded-full bg-secondary/40 text-secondary-foreground font-medium border border-border/40">{tag}</span>
+										{/each}
+										{#if character.tags.length > 4}
+											<span class="text-muted-foreground font-medium ml-1">+{character.tags.length - 4}</span>
+										{/if}
+									</div>
+								{/if}
+							</div>
 						</div>
 					</div>
-				</CardHeader>
+				</div>
 			</Card>
 
 			<!-- Two-Column Layout -->
-			<div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-5">
+			<div class="grid min-h-0 flex-1 grid-cols-1 gap-6 md:grid-cols-5 mt-2">
 				<!-- Left Column: Recent Chats & Character Details (2/5 width) -->
-				<div class="flex flex-col gap-4 md:col-span-2 md:min-h-0">
+				<div class="flex flex-col gap-6 md:col-span-2 md:min-h-0">
 					<!-- Recent Chats -->
-					<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-						<CardHeader class="pb-3">
-							<h3 class="text-lg font-semibold">Recent Chats</h3>
+					<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+						<CardHeader class="pb-3 border-b border-border/5">
+							<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Recent Chats</h3>
 						</CardHeader>
 						<CardContent class="flex-1 overflow-y-auto pt-0">
 							{#if isLoadingChats}
 								<div class="space-y-2">
-									{#each Array(3) as _}
+									{#each Array(3) as _, i (i)}
 										<div class="flex items-center gap-3 p-2">
 											<Skeleton class="h-2 w-2 rounded-full" />
 											<div class="flex-1 space-y-1">
@@ -684,7 +807,7 @@
 								</div>
 							{:else}
 								<div class="space-y-1">
-									{#each chats as chat}
+									{#each chats as chat, i (i)}
 										<div
 											class="group cursor-pointer rounded-md p-2 transition-colors hover:bg-muted/50"
 											onclick={() => handleSelectChat(chat.id)}
@@ -706,7 +829,7 @@
 													variant="ghost"
 													size="sm"
 													class="h-6 w-6 p-0 opacity-0 transition-opacity group-hover:opacity-100"
-													onclick={(e) => handleDeleteClick(e, chat)}
+													onclick={(e: MouseEvent) => handleDeleteClick(e, chat)}
 													aria-label="Delete chat"
 												>
 													<TrashIcon class="h-3 w-3 text-destructive" />
@@ -721,10 +844,11 @@
 
 					{#if character}
 						<!-- Scenario Section -->
-						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-							<CardHeader class="pb-3">
+						{#if character.scenario || editingField === 'scenario'}
+						<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+							<CardHeader class="pb-3 border-b border-border/5">
 								<div class="flex items-center justify-between">
-									<h3 class="text-lg font-semibold">Scenario</h3>
+									<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Scenario</h3>
 									<div class="flex items-center gap-2">
 										{#if character.scenario && editingField !== 'scenario'}
 											<ButtonComponent
@@ -831,12 +955,14 @@
 								{/if}
 							</CardContent>
 						</Card>
+						{/if}
 
 						<!-- Personality Section -->
-						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-							<CardHeader class="pb-3">
+						{#if character.personality || editingField === 'personality'}
+						<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+							<CardHeader class="pb-3 border-b border-border/5">
 								<div class="flex items-center justify-between">
-									<h3 class="text-lg font-semibold">Personality</h3>
+									<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Personality</h3>
 									<div class="flex items-center gap-2">
 										{#if character.personality && editingField !== 'personality'}
 											<ButtonComponent
@@ -943,16 +1069,17 @@
 								{/if}
 							</CardContent>
 						</Card>
+						{/if}
 					{/if}
 				</div>
 
 				<!-- Right Column: Character Description (3/5 width) -->
-				<div class="flex flex-col gap-4 md:col-span-3 md:min-h-0">
+				<div class="flex flex-col gap-6 md:col-span-3 md:min-h-0">
 					{#if character.description || editingField === 'description'}
-						<Card class="flex flex-col shadow-sm md:min-h-0 md:flex-1">
-							<CardHeader class="pb-3">
+						<Card class="flex flex-col shadow-sm border-border/10 bg-background/50 backdrop-blur-sm rounded-xl md:min-h-0 md:flex-1">
+							<CardHeader class="pb-3 border-b border-border/5">
 								<div class="flex items-center justify-between">
-									<h3 class="text-lg font-semibold">Description</h3>
+									<h3 class="text-sm font-bold tracking-wider uppercase text-muted-foreground/80">Description</h3>
 									<div class="flex items-center gap-2">
 										{#if character.description && editingField !== 'description'}
 											<ButtonComponent
@@ -1416,3 +1543,85 @@
 		margin-bottom: 1rem;
 	}
 </style>
+
+<!-- Appearance Settings Dialog -->
+<Dialog bind:open={appearanceEditorOpen}>
+	<DialogContent class="sm:max-w-md">
+		<DialogHeader>
+			<DialogTitle>Appearance Settings</DialogTitle>
+			<DialogDescription>
+				Customize the visual presentation of this character.
+			</DialogDescription>
+		</DialogHeader>
+
+		<div class="grid gap-4 py-4">
+			<div class="grid gap-2">
+				<label for="banner_file" class="text-sm font-medium leading-none">Banner Image</label>
+				<Input
+					id="banner_file"
+					type="file"
+					accept="image/png, image/jpeg, image/webp"
+					onchange={(e) => {
+						const target = e.target as HTMLInputElement;
+						if (target.files && target.files.length > 0) {
+							editBannerFile = target.files[0];
+						} else {
+							editBannerFile = null;
+						}
+					}}
+				/>
+				<p class="text-[0.8rem] text-muted-foreground">Upload a hero banner image (max 5MB).</p>
+			</div>
+
+			<div class="grid gap-2 relative">
+				<div class="absolute inset-0 flex items-center" aria-hidden="true">
+					<div class="w-full border-t border-border"></div>
+				</div>
+				<div class="relative flex justify-center">
+					<span class="bg-background px-2 text-xs text-muted-foreground uppercase">OR</span>
+				</div>
+			</div>
+
+			<div class="grid gap-2">
+				<label for="banner_url" class="text-sm font-medium leading-none">Banner Image URL</label>
+				<Input
+					id="banner_url"
+					bind:value={editBannerUrl}
+					disabled={editBannerFile !== null}
+					placeholder="https://example.com/image.png"
+				/>
+				<p class="text-[0.8rem] text-muted-foreground">External URL for the hero banner.</p>
+			</div>
+
+			<div class="grid gap-2">
+				<label for="primary_color" class="text-sm font-medium leading-none">Primary Color</label>
+				<div class="flex gap-2 items-center">
+					<Input
+						id="primary_color"
+						type="color"
+						bind:value={editPrimaryColor}
+						class="w-12 h-10 p-1 bg-background"
+					/>
+					<Input
+						bind:value={editPrimaryColor}
+						placeholder="#ff0000 or hsl(0, 100%, 50%)"
+						class="flex-1"
+					/>
+				</div>
+				<p class="text-[0.8rem] text-muted-foreground">Custom accent color for buttons and typography.</p>
+			</div>
+
+
+		</div>
+
+		<DialogFooter>
+			<ButtonComponent variant="outline" onclick={() => (appearanceEditorOpen = false)}>Cancel</ButtonComponent>
+			<ButtonComponent onclick={handleSaveAppearance} disabled={isSaving}>
+				{#if isSaving}
+					<div class="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+				{/if}
+				Save Changes
+			</ButtonComponent>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>

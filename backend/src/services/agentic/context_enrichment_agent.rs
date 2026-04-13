@@ -178,7 +178,7 @@ impl ContextEnrichmentAgent {
                 let last_user_message = messages
                     .iter()
                     .rev()
-                    .find(|(role, _)| role == "user")
+                    .find(|(role, _)| role.to_lowercase() == "user")
                     .map(|(_, content)| content.as_str())
                     .unwrap_or("");
 
@@ -493,10 +493,27 @@ Examples: Instead of 'China user interaction', use 'China'. Instead of 'Mount Ev
                 Ok(response) => {
                     // Extract JSON from response
                     let text = response.content.as_str();
-                    // info!("🔍 CONTEXT ENRICHMENT RAW RESPONSE: {}", text);
 
-                    let json_result = serde_json::from_str::<Value>(text).map_err(|e| {
-                        warn!("Failed to parse JSON from response: {}. Text: {}", e, text);
+                    // First try to find a JSON block in the text (handles preamble/postamble)
+                    let json_source = crate::llm::response_utils::extract_json_block(text)
+                        .unwrap_or_else(|| {
+                            // Fallback to stripping fences if no block found with first/last braces
+                            crate::llm::response_utils::strip_markdown_fences(text)
+                        });
+
+                    let json_result = serde_json::from_str::<Value>(json_source).map_err(|e| {
+                        // Diagnostic logging without raw content
+                        let snippet = if text.len() > 100 {
+                            format!("{}...", &text[..100].replace('\n', " "))
+                        } else {
+                            text.replace('\n', " ")
+                        };
+                        warn!(
+                            "Failed to parse JSON from AI response: {}. JSON source length: {}. Response start: '{}'",
+                            e,
+                            json_source.len(),
+                            snippet
+                        );
                         AppError::AiError("Failed to extract JSON from response".to_string())
                     })?;
 
@@ -908,8 +925,11 @@ Examples of BAD searches: \"user interaction\", \"character goals\", \"player Ch
         // Try to get AI synthesis
         match self.state.ai_client.completion(rig_req).await {
             Ok(response) => {
-                // Extract JSON from response
-                if let Ok(json_result) = serde_json::from_str::<Value>(&response.content) {
+                // Extract JSON from response. Handle potential markdown code blocks.
+                let json_str = crate::llm::response_utils::extract_json_block(&response.content)
+                    .unwrap_or(&response.content);
+
+                if let Ok(json_result) = serde_json::from_str::<Value>(json_str) {
                     let synthesis_text = json_result
                         .get("summary")
                         .and_then(|s| s.as_str())
