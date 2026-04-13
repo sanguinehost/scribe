@@ -118,7 +118,12 @@ class DesktopStreamingService implements IStreamingService {
 	public async connect(params: {
 		chatId: string;
 		userMessage: string;
-		history: Array<{ role: 'user' | 'assistant'; content: string }>;
+		history: Array<{
+			role: 'user' | 'assistant';
+			content: string;
+			id?: string;
+			current_variant_index?: number;
+		}>;
 		model?: string;
 		agentMode?: string;
 		analysisMode?: 'existing' | 'refresh' | 'skip';
@@ -274,7 +279,12 @@ class DesktopStreamingService implements IStreamingService {
 		params: {
 			chatId: string;
 			userMessage: string;
-			history: Array<{ role: 'user' | 'assistant'; content: string }>;
+			history: Array<{
+				role: 'user' | 'assistant';
+				content: string;
+				id?: string;
+				current_variant_index?: number;
+			}>;
 			model?: string;
 			agentMode?: string;
 			analysisMode?: 'existing' | 'refresh' | 'skip';
@@ -336,7 +346,7 @@ class DesktopStreamingService implements IStreamingService {
 			await invoke('stream_chat_response', {
 				sessionId: params.chatId,
 				userMessage: params.userMessage,
-				history: params.history.map((msg) => ({ role: msg.role, content: msg.content })),
+				history: params.history,
 				model: params.model || null,
 				agentMode: params.agentMode || null,
 				analysisMode: params.analysisMode || null,

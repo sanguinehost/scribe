@@ -412,7 +412,6 @@
 	<ChatHeader
 		{chat}
 		{readonly}
-		onOpenExtractDialog={handleOpenExtractDialog}
 		onToggleGameMasterPanel={handleToggleGameMasterPanel}
 	/>
 

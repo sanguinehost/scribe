@@ -482,7 +482,12 @@ class StreamingService implements IStreamingService {
 	public async connect(params: {
 		chatId: string;
 		userMessage: string;
-		history: Array<{ role: 'user' | 'assistant'; content: string }>;
+		history: Array<{
+			role: 'user' | 'assistant';
+			content: string;
+			id?: string;
+			current_variant_index?: number;
+		}>;
 		model?: string;
 		agentMode?: string;
 		analysisMode?: 'existing' | 'refresh' | 'skip'; // For variant regeneration
@@ -651,7 +656,12 @@ class StreamingService implements IStreamingService {
 		params: {
 			chatId: string;
 			userMessage: string;
-			history: Array<{ role: 'user' | 'assistant'; content: string }>;
+			history: Array<{
+				role: 'user' | 'assistant';
+				content: string;
+				id?: string;
+				current_variant_index?: number;
+			}>;
 			model?: string;
 			agentMode?: string;
 			analysisMode?: 'existing' | 'refresh' | 'skip';

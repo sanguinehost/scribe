@@ -1498,7 +1498,10 @@ let chatInput = $state(''); // Initialize with empty string
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content // Use full content for API, not displayedContent
+				content: m.content, // Use full content for API, not displayedContent
+				id: m.backend_id || m.id, // Use backend database ID if available
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variant_count || 0
 			}));
 
 		// DEBUG: Log the first assistant message content to verify variant is applied
@@ -1582,7 +1585,10 @@ let chatInput = $state(''); // Initialize with empty string
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.variants ? m.variants[m.current_variant_index || 0]?.content : m.content,
+				id: m.backend_id || m.id,
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variants?.length || m.variant_count || 0
 			}));
 
 		try {
@@ -1668,7 +1674,10 @@ let chatInput = $state(''); // Initialize with empty string
 			.filter((m) => !(m.isAnimating ?? false)) // Only include completed messages
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.variants ? m.variants[m.current_variant_index || 0]?.content : m.content,
+				id: m.backend_id || m.id,
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variants?.length || m.variant_count || 0
 			}));
 
 		console.log('DEBUG: regenerateResponse guidance:', guidance);
@@ -2294,7 +2303,7 @@ let chatInput = $state(''); // Initialize with empty string
 
 <div class="flex h-dvh min-w-0 flex-col bg-background">
 	<!-- ChatHeader type mismatch fixed by updating ChatHeader component -->
-	<ChatHeader {chat} {readonly} onOpenExtractDialog={handleOpenExtractDialog} />
+	<ChatHeader {chat} {readonly} />
 	{#key `${displayMessages.length}-${firstMessageVariantIndex}`}
 		<!-- Messages component render key - includes variant index to force re-render -->
 	{/key}

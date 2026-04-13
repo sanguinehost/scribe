@@ -716,7 +716,10 @@ export class ChatController {
 			.filter((m) => !(m.isAnimating ?? false))
 			.map((m) => ({
 				role: m.sender,
-				content: m.content
+				content: m.variants ? m.variants[m.current_variant_index || 0]?.content : m.content,
+				id: m.backend_id || m.id,
+				current_variant_index: m.current_variant_index || 0,
+				variant_count: m.variants?.length || m.variant_count || 0
 			}));
 
 		try {
@@ -835,7 +838,9 @@ export class ChatController {
 
 		const historyToSend = filteredMessages.map((m) => ({
 			role: m.sender,
-			content: m.content
+			content: m.content,
+			id: m.backend_id || m.id,
+			current_variant_index: m.current_variant_index
 		}));
 
 		console.log('DEBUG: regenerateResponse historyToSend:', JSON.stringify(historyToSend));
@@ -1272,7 +1277,7 @@ export class ChatController {
 		const { content, index, messageId } = detail;
 
 		if (typeof window !== 'undefined' && this.chat?.id) {
-			localStorage.setItem(`greeting - variant - ${this.chat.id} `, index.toString());
+			localStorage.setItem(`greeting-variant-${this.chat.id}`, index.toString());
 		}
 
 		// Find the message to update

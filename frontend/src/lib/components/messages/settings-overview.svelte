@@ -5,7 +5,7 @@
 	import { SettingsStore } from '$lib/stores/settings.svelte';
 	import { MembershipSettings } from '$lib/components/membership';
 	import { ENABLE_PAYMENTS } from '$lib/utils/features';
-	import { Settings, Sliders } from 'lucide-svelte';
+	import { Settings, Sliders, AlignLeft, AlignRight } from 'lucide-svelte';
 
 	const settingsStore = SettingsStore.fromContext();
 
@@ -29,6 +29,35 @@
 			Configure your default preferences for <strong>Scribe</strong>. These settings will apply to
 			new chats and can be overridden per-chat.
 		</p>
+
+		<!-- Message Alignment Setting -->
+		<div class="flex flex-col gap-3 rounded-xl border border-border/40 bg-card/60 p-4 text-left backdrop-blur-sm">
+			<div class="flex items-center gap-2">
+				<AlignLeft class="h-4 w-4 text-muted-foreground" />
+				<span class="text-sm font-medium">Message Alignment</span>
+			</div>
+			<p class="text-xs text-muted-foreground">Choose how your messages appear in the chat.</p>
+			<div class="flex gap-2">
+				<button
+					class="flex flex-1 flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all {settingsStore.messageAlignment === 'left'
+						? 'border-primary bg-primary/10 text-foreground'
+						: 'border-border/40 text-muted-foreground hover:border-border hover:bg-muted/30'}"
+					onclick={() => settingsStore.setMessageAlignment('left')}
+				>
+					<AlignLeft class="h-4 w-4" />
+					Symmetric
+				</button>
+				<button
+					class="flex flex-1 flex-col items-center gap-1.5 rounded-lg border px-3 py-2.5 text-xs font-medium transition-all {settingsStore.messageAlignment === 'right'
+						? 'border-primary bg-primary/10 text-foreground'
+						: 'border-border/40 text-muted-foreground hover:border-border hover:bg-muted/30'}"
+					onclick={() => settingsStore.setMessageAlignment('right')}
+				>
+					<AlignRight class="h-4 w-4" />
+					Right-aligned
+				</button>
+			</div>
+		</div>
 
 		<!-- Membership Settings Card - Make it prominent -->
 		{#if ENABLE_PAYMENTS}

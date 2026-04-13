@@ -1,3 +1,4 @@
+#![recursion_limit = "2048"]
 use axum::{
     extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::get, Json, Router,
 };
@@ -407,17 +408,16 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         // Real model loading will happen on-demand or via settings
         None
     };
-    #[cfg(not(feature = "local-llm"))]
-    let mistralrs_service: Option<
-        Arc<scribe_backend::services::ai::mistralrs_service::MistralRsService>,
-    > = None;
 
     // Use RigClient instead of ScribeGeminiClient
-    let ai_client = scribe_backend::llm::rig_client::RigClient::new(
-        config.gemini_api_key.clone(),
-        mistralrs_service,
-        None,
-    );
+    let mut ai_client =
+        scribe_backend::llm::rig_client::RigClient::new(config.gemini_api_key.clone(), None);
+
+    #[cfg(feature = "local-llm")]
+    if let Some(ms) = mistralrs_service {
+        ai_client = ai_client.with_mistralrs(ms);
+    }
+
     let ai_client_arc = Arc::new(ai_client);
 
     // --- Initialize Embedding Client ---

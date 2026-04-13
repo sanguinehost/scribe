@@ -60,35 +60,20 @@ pub struct RigClient {
 }
 
 impl RigClient {
-    pub fn new(
-        api_key: Option<String>,
-        mistralrs: Option<Arc<MistralRsService>>,
-        model: Option<String>,
-    ) -> Self {
+    pub fn new(api_key: Option<String>, model: Option<String>) -> Self {
         let api_key = api_key.map(|k| k.trim().to_string());
-
-        if let Some(ref key) = api_key {
-            let len = key.len();
-            if len >= 8 {
-                tracing::info!(
-                    "RigClient initialized with API key (len: {}, mask: {}...{})",
-                    len,
-                    &key[0..4],
-                    &key[len - 4..]
-                );
-            } else {
-                tracing::info!("RigClient initialized with short API key (len: {})", len);
-            }
-        } else {
-            tracing::warn!("RigClient initialized WITHOUT API key - will fallback to environment");
-        }
 
         Self {
             api_key,
-            mistralrs,
+            mistralrs: None,
             default_provider: "gemini".to_string(),
             model,
         }
+    }
+
+    pub fn with_mistralrs(mut self, mistralrs: Arc<MistralRsService>) -> Self {
+        self.mistralrs = Some(mistralrs);
+        self
     }
 
     pub fn with_provider(mut self, provider: String) -> Self {
@@ -371,7 +356,6 @@ impl RigClient {
         >,
         anyhow::Error,
     > {
-        eprintln!("DEBUG: RigClient::completion_stream (INHERENT) CALLED");
         match req.provider.as_str() {
             "gemini" => {
                 // Use Rig's native streaming - it properly handles ReasoningDelta and Reasoning chunks

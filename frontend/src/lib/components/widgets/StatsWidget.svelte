@@ -14,6 +14,11 @@
 			let currentArrayItems: string[] = [];
 
 			for (const line of lines) {
+				// Ignore common structural artifacts from dumb formatting
+				if (/^```[a-zA-Z]*$/.test(line) || /^<\/?stats>$/i.test(line)) {
+					continue;
+				}
+
 				// e.g. "Physical status: Fine"
 				const baseMatch = line.match(/^([^:]+):\s*(.*)$/);
 

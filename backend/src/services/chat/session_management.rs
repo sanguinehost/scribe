@@ -964,6 +964,12 @@ fn create_session_in_transaction(
         })
         .unwrap_or((None, None, None));
 
+    tracing::info!(
+        session_id = %new_session_id,
+        "Extracted alternate_greetings: {:?}",
+        alternate_greetings
+    );
+
     Ok((
         fully_created_session,
         first_mes,

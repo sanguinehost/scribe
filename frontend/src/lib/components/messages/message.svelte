@@ -9,15 +9,26 @@
 	import { segmentMessageContent, type ContentSegment } from '$lib/utils/parsers/widget-parser';
 	import StatsWidget from '../widgets/StatsWidget.svelte';
 	import { fly, fade, slide } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import type { ScribeChatMessage, User, ScribeCharacter, ScribeChatSession } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar'; // Import Avatar components
 	import ImageLightbox from '$lib/components/ui/image-lightbox.svelte';
 	import { env } from '$env/dynamic/public';
 	import { getLock } from '$lib/hooks/lock';
 	import { streamingService, type StreamingMessage } from '$lib/services/StreamingService.svelte';
+	import { SettingsStore } from '$lib/stores/settings.svelte';
 
 	// Make reactive to streaming service state
 	let _streamingState = $derived(streamingService.getState());
+
+	// Read message alignment preference
+	let settingsStore: SettingsStore | null = null;
+	try {
+		settingsStore = SettingsStore.fromContext();
+	} catch {
+		// Settings store not available in this context, default to left
+	}
+	const isRightAligned = $derived(settingsStore?.messageAlignment === 'right');
 
 	// Helper function to convert ScribeChatMessage to StreamingMessage
 	function toStreamingMessage(msg: ScribeChatMessage): StreamingMessage {
@@ -222,19 +233,21 @@
 <div
 	class="group/message mx-auto w-full max-w-3xl px-4"
 	data-role={message.message_type.toLowerCase()}
-	in:fly|global={{ opacity: 0, y: 5 }}
+	in:fly|global={{ opacity: 0, y: 20, duration: 400, easing: cubicOut }}
 >
 	<div
 		class={cn(
-			'flex w-full gap-4 group-data-[role=user]/message:ml-auto group-data-[role=user]/message:max-w-2xl'
-			// Removed mode === 'edit' check as edit mode is removed
-			// {
-			// 	'w-full': mode === 'edit',
-			// 	'group-data-[role=user]/message:w-fit': mode !== 'edit'
-			// }
+			'flex w-full gap-4',
+			{
+				// Right-aligned user messages (ChatGPT-style)
+				'ml-auto max-w-2xl flex-row-reverse': isRightAligned && message.message_type === 'User',
+				// Left-aligned user messages (default/symmetric)
+				'ml-auto max-w-2xl': !isRightAligned && message.message_type === 'User'
+			}
 		)}
 	>
-		<!-- Avatar container (simplified) -->
+		<!-- Avatar container (hidden for right-aligned user messages) -->
+		{#if !(isRightAligned && message.message_type === 'User')}
 		<div class="size-8 shrink-0">
 			{#if message.message_type === 'Assistant'}
 				<Avatar
@@ -286,6 +299,7 @@
 				</div>
 			{/if}
 		</div>
+		{/if}
 
 		<div class="flex w-full flex-col gap-4">
 			<!-- TODO: Re-evaluate attachment handling based on Scribe backend -->
@@ -320,18 +334,27 @@
 					<!-- Normal message display -->
 					<div
 						class={cn(
-							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 group relative w-full max-w-none break-words rounded-md border bg-background px-3 py-2',
+							'prose dark:prose-invert prose-p:leading-relaxed prose-pre:p-0 group relative w-full max-w-none break-words rounded-xl px-3 py-2 transition-colors duration-200',
 							{
-								'pb-8': !message.loading, // Only add large bottom padding when complete
-								'pb-4': message.loading,   // Use tighter padding during streaming
-								'border-primary/10 bg-primary/10': message.message_type === 'User',
+								'pb-5': !message.loading,
+								'pb-4': message.loading,
+								// User messages: tinted primary bubble
+								'msg-user-bubble': message.message_type === 'User' && !message.error,
+								// Assistant messages: card with left accent
+								'msg-assistant-bubble shadow-sm': message.message_type === 'Assistant' && !message.error,
+								// Right-aligned user bubbles get more rounded
+								'rounded-2xl rounded-br-md': isRightAligned && message.message_type === 'User',
+								// Error state
 								'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20': message.error
 							}
 						)}
 					>
 						{#if message.reasoning_content}
 							{@const isReasoningOpen = message.isThinking || message.is_thinking || (message.loading && !message.content)}
-							<div class="mb-4 overflow-hidden rounded-md border border-border/50 bg-background/50" transition:slide={{ duration: 300 }}>
+							<div
+								class="mb-4 overflow-hidden rounded-lg border-l-2 bg-background/50 {isReasoningOpen ? 'animate-shimmer border-purple-500' : 'border-purple-400/60'}"
+								transition:slide={{ duration: 300 }}
+							>
 								<div class="group/reasoning">
 									<button
 										type="button"

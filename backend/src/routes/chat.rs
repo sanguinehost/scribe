@@ -622,6 +622,18 @@ async fn generate_chat_response_sse(
         let mut rig_recent_history: Vec<RigMessage> = Vec::new();
         for db_msg in managed_db_history {
             let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+            // VARIANT DEBUG: Log what content is being sent to the LLM
+            {
+                let preview: String = content_str.chars().take(80).collect();
+                tracing::info!(
+                    message_id = %db_msg.id,
+                    message_type = ?db_msg.message_type,
+                    current_variant_index = db_msg.current_variant_index,
+                    variant_count = db_msg.variant_count,
+                    content_preview = %preview,
+                    "🔀 VARIANT DEBUG: Converting managed_db_history to rig message"
+                );
+            }
             let rig_msg = match db_msg.message_type {
                 MessageRole::User => RigMessage::User { content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(content_str)) },
                 _ => RigMessage::Assistant { id: None, content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(content_str)) },
@@ -1268,7 +1280,18 @@ async fn generate_chat_response_json_inner(
     // Convert DbChatMessage history to RigMessage history
     let mut rig_recent_history: Vec<RigMessage> = Vec::new();
     for db_msg in managed_db_history {
-        let content_str = String::from_utf8_lossy(&db_msg.content).into_owned();
+        // Use variant-aware content retrieval
+        let content_str = crate::services::chat::generation::get_message_content_with_variant(
+            &db_msg,
+            &state_arc.pool,
+            user_id_value,
+            session_dek_arc.as_ref(),
+        )
+        .await
+        .map_err(|e| {
+            AppError::InternalServerErrorGeneric(format!("Failed to get variant content: {e}"))
+        })?;
+
         let rig_msg = match db_msg.message_type {
             MessageRole::User => RigMessage::User {
                 content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
@@ -4135,6 +4158,9 @@ pub async fn expand_text_handler(
                 MessageRole::System => "system".to_string(),
             },
             content: decrypted_content,
+            id: Some(db_message.id.to_string()),
+            current_variant_index: Some(db_message.current_variant_index),
+            variant_count: Some(db_message.variant_count),
         };
         chat_history.push(api_message);
     }
@@ -4146,6 +4172,9 @@ pub async fn expand_text_handler(
             "[EXPAND: Take this brief text and expand it into a more detailed, natural response while maintaining perfect consistency with the conversation's established tone, style, setting, and voice. Original text: '{}']",
             payload.original_text
         ),
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
     };
     chat_history.push(expansion_instruction);
 
@@ -4499,6 +4528,9 @@ pub async fn impersonate_handler(
                 MessageRole::System => "system".to_string(),
             },
             content: decrypted_content,
+            id: Some(db_message.id.to_string()),
+            current_variant_index: Some(db_message.current_variant_index),
+            variant_count: Some(db_message.variant_count),
         };
         chat_history.push(api_message);
     }
@@ -4507,6 +4539,9 @@ pub async fn impersonate_handler(
     let impersonation_instruction = crate::models::chats::ApiChatMessage {
         role: "user".to_string(),
         content: "[IMPERSONATE: You are now speaking as the user persona. Generate a natural response that the user would make in this conversation context. Respond only as the user, not as an assistant.]".to_string(),
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
     };
     chat_history.push(impersonation_instruction);
 

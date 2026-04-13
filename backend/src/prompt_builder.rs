@@ -1829,10 +1829,15 @@ pub fn ensure_message_alternation(messages: Vec<RigMessage>) -> Vec<RigMessage> 
             (None, RigMessage::User { content }) => {
                 sanitized.push(RigMessage::User { content });
             }
-            (None, RigMessage::Assistant { .. }) => {
+            (None, RigMessage::Assistant { content, id }) => {
                 // Gemini API usually requires the first message in the contents array to be from the 'user'.
-                // If we have a leading assistant message, we skip it to avoid a 400 Bad Request.
-                debug!("Skipping leading Assistant message to enforce User-first history for Gemini compatibility.");
+                // Instead of skipping the leading assistant message (which is often the character greeting),
+                // we anchor it with a subtle dummy user message to satisfy the API while preserving context.
+                debug!("Anchoring leading Assistant message with dummy User turn for Gemini compatibility.");
+                sanitized.push(RigMessage::User {
+                    content: OneOrMany::one(UserContent::text("(Context established)".to_string())),
+                });
+                sanitized.push(RigMessage::Assistant { content, id });
             }
 
             // Case 2: Consecutive User messages -> Merge
@@ -2019,7 +2024,7 @@ mod tests {
         }
 
         #[test]
-        fn test_alternation_skips_leading_assistant_message() {
+        fn test_alternation_preserves_leading_assistant_message() {
             let messages = vec![
                 RigMessage::Assistant {
                     content: OneOrMany::one(AssistantContent::text("Leading bot")),
@@ -2031,8 +2036,23 @@ mod tests {
             ];
 
             let sanitized = ensure_message_alternation(messages);
-            assert_eq!(sanitized.len(), 1);
+            // Should now have 3 messages: [User Anchor, Assistant, User]
+            assert_eq!(sanitized.len(), 3);
             assert!(matches!(sanitized[0], RigMessage::User { .. }));
+            assert!(matches!(sanitized[1], RigMessage::Assistant { .. }));
+            assert!(matches!(sanitized[2], RigMessage::User { .. }));
+
+            // Verify anchor content
+            if let RigMessage::User { content } = &sanitized[0] {
+                let text = content
+                    .iter()
+                    .find_map(|c| match c {
+                        UserContent::Text(t) => Some(t.text.clone()),
+                        _ => None,
+                    })
+                    .unwrap();
+                assert!(text.contains("Context established"));
+            }
         }
 
         #[test]

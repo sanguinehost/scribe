@@ -136,9 +136,24 @@
 		{:else if error}
 			<p class="p-4 text-sm text-destructive">{error}</p>
 		{:else if personas.length === 0}
-			<p class="p-4 text-sm text-muted-foreground">
-				No personas found. Create one to customize your interaction style!
-			</p>
+			<div class="flex flex-col items-center justify-center gap-4 px-6 py-12 text-center">
+				<div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+					<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+				</div>
+				<div class="space-y-1">
+					<p class="text-sm font-medium text-foreground">No personas yet</p>
+					<p class="text-xs text-muted-foreground">Create a persona to define who you are in your stories.</p>
+				</div>
+				<ButtonComponent
+					variant="outline"
+					size="sm"
+					class="rounded-full"
+					onclick={handleCreateClick}
+				>
+					<PlusIcon class="mr-1 h-3.5 w-3.5" />
+					Create Persona
+				</ButtonComponent>
+			</div>
 		{:else}
 			{#each personas as persona (persona.id)}
 				{#key persona.id}

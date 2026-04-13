@@ -2171,7 +2171,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     ) = if use_real_ai {
         let api_key =
             std::env::var("GEMINI_API_KEY").unwrap_or_else(|_| "test-api-key".to_string());
-        let real_ai_client = crate::llm::rig_client::RigClient::new(Some(api_key), None, None);
+        let real_ai_client = crate::llm::rig_client::RigClient::new(Some(api_key), None);
         (Arc::new(real_ai_client), None)
     } else {
         let mock_client = Arc::new(MockAiClient::new());

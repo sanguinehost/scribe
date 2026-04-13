@@ -2,11 +2,31 @@ import { getContext, setContext } from 'svelte';
 import { apiClient as _apiClient } from '$lib/api';
 import { logger } from '$lib/utils/logger';
 
+export type MessageAlignment = 'left' | 'right';
+
 export class SettingsStore {
 	isVisible = $state(false);
 	isTransitioning = $state(false);
 	viewMode = $state<'overview' | 'consolidated'>('overview');
 	typingSpeed = $state(30); // milliseconds between characters for streaming text
+	messageAlignment = $state<MessageAlignment>('left'); // User message alignment
+
+	constructor() {
+		// Load message alignment from localStorage
+		if (typeof window !== 'undefined') {
+			const stored = localStorage.getItem('scribe:messageAlignment');
+			if (stored === 'left' || stored === 'right') {
+				this.messageAlignment = stored;
+			}
+		}
+	}
+
+	setMessageAlignment(alignment: MessageAlignment) {
+		this.messageAlignment = alignment;
+		if (typeof window !== 'undefined') {
+			localStorage.setItem('scribe:messageAlignment', alignment);
+		}
+	}
 
 	async loadTypingSpeed() {
 		try {

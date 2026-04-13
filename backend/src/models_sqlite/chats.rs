@@ -2552,6 +2552,9 @@ pub struct ApiChatMessage {
     pub role: String,
     #[validate(length(min = 1))]
     pub content: String,
+    pub id: Option<String>,
+    pub current_variant_index: Option<i32>,
+    pub variant_count: Option<i32>,
 }
 
 impl std::fmt::Debug for ApiChatMessage {
@@ -4401,7 +4404,7 @@ pub struct MessageVariantDto {
     pub id: crate::db::DbId,
     pub parent_message_id: crate::db::DbId,
     pub variant_index: i32,
-    pub content: String, // Decrypted content
+    pub content: String,
     pub user_id: crate::db::DbId,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,

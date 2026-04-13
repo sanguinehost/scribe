@@ -149,6 +149,10 @@
 		// This prevents unnecessary navigation and content flickering
 	}
 
+	// Compute tab index for sliding indicator position
+	const TAB_ORDER = ['characters', 'personas', 'lorebooks', 'chronicles'] as const;
+	const tabIndex = $derived(TAB_ORDER.indexOf(sidebarStore.activeTab));
+
 	function toggleTheme() {
 		theme.selectedTheme = theme.resolvedTheme === 'light' ? 'dark' : 'light';
 	}
@@ -294,18 +298,38 @@
 	}
 
 	// Set up event listener for re-authentication completion
+	// Overview quick-start event handlers
+	function handleOverviewUploadCharacter() {
+		handleUploadCharacter();
+	}
+
+	function handleOverviewCreatePersona() {
+		switchTab('personas');
+		selectedPersonaStore.showCreating();
+	}
+
+	function handleOverviewExploreLorebooks() {
+		switchTab('lorebooks');
+	}
+
 	onMount(() => {
-		console.log('[AppSidebar] Setting up auth:reauth-complete event listener');
+		console.log('[AppSidebar] Setting up event listeners');
 		if (browser) {
 			window.addEventListener('auth:reauth-complete', handleReAuthComplete);
+			window.addEventListener('overview:upload-character', handleOverviewUploadCharacter);
+			window.addEventListener('overview:create-persona', handleOverviewCreatePersona);
+			window.addEventListener('overview:explore-lorebooks', handleOverviewExploreLorebooks);
 		}
 	});
 
-	// Clean up event listener
+	// Clean up event listeners
 	onDestroy(() => {
-		console.log('[AppSidebar] Cleaning up auth:reauth-complete event listener');
+		console.log('[AppSidebar] Cleaning up event listeners');
 		if (browser) {
 			window.removeEventListener('auth:reauth-complete', handleReAuthComplete);
+			window.removeEventListener('overview:upload-character', handleOverviewUploadCharacter);
+			window.removeEventListener('overview:create-persona', handleOverviewCreatePersona);
+			window.removeEventListener('overview:explore-lorebooks', handleOverviewExploreLorebooks);
 		}
 	});
 </script>
@@ -350,15 +374,21 @@
 		</SidebarMenu>
 	</SidebarHeader>
 	<SidebarContent class="p-0">
-		<!-- Tab Navigation -->
+		<!-- Tab Navigation with Sliding Indicator -->
 		<Tooltip.Provider>
-			<div class="m-2 flex rounded-lg bg-muted/40 p-1">
+			<div class="relative m-2 flex rounded-lg bg-muted/40 p-1">
+				<!-- Sliding indicator pill -->
+				<div
+					class="absolute inset-y-1 rounded-md bg-background shadow-sm transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+					style="width: calc(25% - 2px); left: calc({tabIndex} * 25% + 1px);"
+				></div>
+
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
+						class="relative z-10 flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-colors duration-200 {sidebarStore.activeTab ===
 						'characters'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+							? 'text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
 						onclick={() => switchTab('characters')}
 					>
 						<Users class="h-4 w-4" />
@@ -370,10 +400,10 @@
 
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
+						class="relative z-10 flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-colors duration-200 {sidebarStore.activeTab ===
 						'personas'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+							? 'text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
 						onclick={() => switchTab('personas')}
 					>
 						<UserCircle class="h-4 w-4" />
@@ -385,10 +415,10 @@
 
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
+						class="relative z-10 flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-colors duration-200 {sidebarStore.activeTab ===
 						'lorebooks'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+							? 'text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
 						onclick={() => switchTab('lorebooks')}
 					>
 						<BookOpen class="h-4 w-4" />
@@ -400,10 +430,10 @@
 
 				<Tooltip.Root>
 					<Tooltip.Trigger
-						class="flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-all duration-200 {sidebarStore.activeTab ===
+						class="relative z-10 flex flex-1 items-center justify-center rounded-md px-2 py-2 transition-colors duration-200 {sidebarStore.activeTab ===
 						'chronicles'
-							? 'bg-background text-foreground shadow-sm'
-							: 'text-muted-foreground hover:text-foreground hover:bg-muted/60'}"
+							? 'text-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
 						onclick={() => switchTab('chronicles')}
 					>
 						<ScrollText class="h-4 w-4" />
@@ -464,33 +494,33 @@
 			</div>
 		</div>
 	</SidebarContent>
-	<SidebarFooter class="p-3 border-t border-border/5 bg-background/50 backdrop-blur-sm mt-auto">
+	<SidebarFooter class="border-t border-border/10 bg-background/50 p-2 backdrop-blur-sm mt-auto">
 		<!-- Main Footer Controls -->
-		<div class="flex items-center justify-between w-full gap-1 mb-2">
+		<div class="flex items-center justify-between w-full gap-1">
 			<ButtonComponent
 				variant="ghost"
-				class="flex-1 justify-start h-9 px-3 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
+				class="flex-1 justify-start h-8 px-2.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
 				onclick={openSettings}
 			>
-				<SettingsIcon size={16} class="mr-2" />
-				<span class="text-sm font-medium">Settings</span>
+				<SettingsIcon size={15} class="mr-2" />
+				<span class="text-xs font-medium">Settings</span>
 			</ButtonComponent>
 
-			<div class="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/10">
+			<div class="flex items-center gap-0.5 rounded-full bg-muted/30 p-0.5">
 				<ButtonComponent
 					variant="ghost"
 					size="icon"
-					class="w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-background shadow-sm transition-all"
+					class="w-7 h-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-background transition-all"
 					onclick={toggleTheme}
 					title={theme.resolvedTheme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
 				>
 					{#if theme.resolvedTheme === 'light'}
-						<Moon size={15} />
+						<Moon size={14} />
 					{:else}
-						<Sun size={15} />
+						<Sun size={14} />
 					{/if}
 				</ButtonComponent>
-				<div class="scale-90">
+				<div class="scale-[0.85]">
 					<ThemeSwitcher />
 				</div>
 			</div>
@@ -498,7 +528,7 @@
 
 		<!-- User Nav Area -->
 		{#if getIsAuthenticated() && getCurrentUser()}
-			<div class="pt-1 border-t border-border/10">
+			<div class="pt-1">
 				<SidebarUserNav />
 			</div>
 		{/if}

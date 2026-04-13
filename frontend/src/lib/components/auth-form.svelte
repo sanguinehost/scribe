@@ -119,13 +119,21 @@
 	);
 </script>
 
-<form onsubmit={handleSubmit} class="flex flex-col gap-4 px-4 sm:px-16" novalidate>
+<form onsubmit={handleSubmit} class="glass-panel mx-auto flex max-w-md flex-col gap-5 rounded-2xl px-8 py-10 shadow-2xl sm:px-12" novalidate>
+	<!-- Scribe Wordmark -->
+	<div class="mb-2 text-center">
+		<h1 class="text-gradient font-heading text-4xl font-black tracking-tight">Scribe</h1>
+		<p class="mt-1 text-sm text-muted-foreground">
+			{authType === 'login' ? 'Welcome back' : 'Create your account'}
+		</p>
+	</div>
+
 	<!-- Email/Identifier field: Hidden in desktop mode for registration -->
 	{#if !inDesktopMode || authType === 'login'}
 		<div class="flex flex-col gap-2">
 			<label
 				for={identifierName}
-				class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+				class="text-sm font-medium leading-none text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 				>{identifierLabel}</label
 			>
 
@@ -161,7 +169,7 @@
 		<div class="flex flex-col gap-2">
 			<label
 				for="username"
-				class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+				class="text-sm font-medium leading-none text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 				>Username</label
 			>
 			<Input
@@ -181,7 +189,7 @@
 	<div class="flex flex-col gap-2">
 		<label
 			for="password"
-			class="text-sm font-medium leading-none text-zinc-600 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-zinc-400"
+			class="text-sm font-medium leading-none text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 			>Password</label
 		>
 

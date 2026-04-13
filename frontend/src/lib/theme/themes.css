@@ -23,6 +23,14 @@
 		--input: 0 5% 88%;
 		--ring: 0 100% 27%;
 		--radius: 0.5rem;
+		--glow: 0 100% 27% / 0.12;
+		--glow-strong: 0 100% 27% / 0.25;
+		--glow-hue: 0;
+		--ambient-mesh-1: 0 100% 27% / 0.04;
+		--ambient-mesh-2: 0 5% 92% / 0.06;
+		--msg-user-bg: 0 100% 27% / 0.08;
+		--msg-user-border: 0 100% 27% / 0.15;
+		--msg-assistant-accent: 0 100% 27% / 0.35;
 	}
 	:root.dark.theme-sanguine {
 		--background: 0 28.5714% 5.4902%;
@@ -44,6 +52,14 @@
 		--border: 0 100% 14.7059%;
 		--input: 0 26.6667% 11.7647%;
 		--ring: 0 59.4203% 40.5882%;
+		--glow: 0 59% 41% / 0.2;
+		--glow-strong: 0 59% 41% / 0.4;
+		--glow-hue: 0;
+		--ambient-mesh-1: 0 59% 41% / 0.06;
+		--ambient-mesh-2: 38 61% 57% / 0.04;
+		--msg-user-bg: 0 59% 41% / 0.12;
+		--msg-user-border: 0 59% 41% / 0.2;
+		--msg-assistant-accent: 0 59% 41% / 0.4;
 	}
 
 	/* --- THEME: OBSIDIAN (Monochrome/Graphite) --- */
@@ -68,6 +84,14 @@
 		--input: 220 5% 88%;
 		--ring: 220 9% 46%;
 		--radius: 0.5rem;
+		--glow: 220 9% 46% / 0.1;
+		--glow-strong: 220 9% 46% / 0.2;
+		--glow-hue: 220;
+		--ambient-mesh-1: 220 9% 46% / 0.04;
+		--ambient-mesh-2: 220 5% 92% / 0.06;
+		--msg-user-bg: 220 9% 46% / 0.06;
+		--msg-user-border: 220 9% 46% / 0.12;
+		--msg-assistant-accent: 220 9% 46% / 0.3;
 	}
 	:root.dark.theme-obsidian {
 		--background: 224 71.4% 4.1%;
@@ -89,6 +113,14 @@
 		--border: 217.2 32.6% 17.5%;
 		--input: 217.2 32.6% 17.5%;
 		--ring: 212.7 26.8% 83.9%;
+		--glow: 210 40% 98% / 0.12;
+		--glow-strong: 210 40% 98% / 0.25;
+		--glow-hue: 220;
+		--ambient-mesh-1: 210 40% 98% / 0.04;
+		--ambient-mesh-2: 217 33% 18% / 0.08;
+		--msg-user-bg: 210 40% 98% / 0.08;
+		--msg-user-border: 210 40% 98% / 0.12;
+		--msg-assistant-accent: 212 27% 84% / 0.35;
 	}
 
 	/* --- THEME: OCEAN (Blue/Teal) --- */
@@ -113,6 +145,14 @@
 		--input: 210 10% 88%;
 		--ring: 221.2 83.2% 53.3%;
 		--radius: 0.5rem;
+		--glow: 221 83% 53% / 0.15;
+		--glow-strong: 221 83% 53% / 0.3;
+		--glow-hue: 221;
+		--ambient-mesh-1: 221 83% 53% / 0.05;
+		--ambient-mesh-2: 180 60% 50% / 0.03;
+		--msg-user-bg: 221 83% 53% / 0.08;
+		--msg-user-border: 221 83% 53% / 0.15;
+		--msg-assistant-accent: 221 83% 53% / 0.35;
 	}
 	:root.dark.theme-ocean {
 		--background: 222.2 84% 4.9%;
@@ -134,6 +174,14 @@
 		--border: 217.2 32.6% 17.5%;
 		--input: 217.2 32.6% 17.5%;
 		--ring: 224.3 76.3% 48%;
+		--glow: 217 91% 60% / 0.2;
+		--glow-strong: 217 91% 60% / 0.4;
+		--glow-hue: 217;
+		--ambient-mesh-1: 217 91% 60% / 0.06;
+		--ambient-mesh-2: 200 50% 40% / 0.04;
+		--msg-user-bg: 217 91% 60% / 0.1;
+		--msg-user-border: 217 91% 60% / 0.18;
+		--msg-assistant-accent: 217 91% 60% / 0.4;
 	}
 
 	/* --- THEME: FOREST (Green/Earthy) --- */
@@ -158,6 +206,14 @@
 		--input: 140 5% 88%;
 		--ring: 142.1 76.2% 36.3%;
 		--radius: 0.5rem;
+		--glow: 142 76% 36% / 0.12;
+		--glow-strong: 142 76% 36% / 0.25;
+		--glow-hue: 142;
+		--ambient-mesh-1: 142 76% 36% / 0.04;
+		--ambient-mesh-2: 80 50% 40% / 0.03;
+		--msg-user-bg: 142 76% 36% / 0.08;
+		--msg-user-border: 142 76% 36% / 0.15;
+		--msg-assistant-accent: 142 76% 36% / 0.35;
 	}
 	:root.dark.theme-forest {
 		--background: 20 14.3% 4.1%;
@@ -179,6 +235,14 @@
 		--border: 240 3.7% 15.9%;
 		--input: 240 3.7% 15.9%;
 		--ring: 142.4 71.8% 29.2%;
+		--glow: 142 71% 45% / 0.18;
+		--glow-strong: 142 71% 45% / 0.35;
+		--glow-hue: 142;
+		--ambient-mesh-1: 142 71% 45% / 0.05;
+		--ambient-mesh-2: 12 7% 15% / 0.06;
+		--msg-user-bg: 142 71% 45% / 0.1;
+		--msg-user-border: 142 71% 45% / 0.18;
+		--msg-assistant-accent: 142 71% 45% / 0.4;
 	}
 
 	/* --- THEME: AMETHYST (Purple/Violet) --- */
@@ -203,6 +267,14 @@
 		--input: 270 5% 88%;
 		--ring: 262.1 83.3% 57.8%;
 		--radius: 0.5rem;
+		--glow: 262 83% 58% / 0.15;
+		--glow-strong: 262 83% 58% / 0.3;
+		--glow-hue: 262;
+		--ambient-mesh-1: 262 83% 58% / 0.04;
+		--ambient-mesh-2: 300 40% 50% / 0.03;
+		--msg-user-bg: 262 83% 58% / 0.08;
+		--msg-user-border: 262 83% 58% / 0.15;
+		--msg-assistant-accent: 262 83% 58% / 0.35;
 	}
 	:root.dark.theme-amethyst {
 		--background: 224 71.4% 4.1%;
@@ -224,6 +296,14 @@
 		--border: 217.2 32.6% 17.5%;
 		--input: 217.2 32.6% 17.5%;
 		--ring: 263.4 70% 50.4%;
+		--glow: 263 70% 50% / 0.2;
+		--glow-strong: 263 70% 50% / 0.4;
+		--glow-hue: 263;
+		--ambient-mesh-1: 263 70% 50% / 0.06;
+		--ambient-mesh-2: 217 33% 18% / 0.06;
+		--msg-user-bg: 263 70% 50% / 0.1;
+		--msg-user-border: 263 70% 50% / 0.18;
+		--msg-assistant-accent: 263 70% 50% / 0.4;
 	}
 
 	/* --- THEME: SUNSET (Orange/Rose) --- */
@@ -248,6 +328,14 @@
 		--input: 30 10% 88%;
 		--ring: 24.6 95% 53.1%;
 		--radius: 0.5rem;
+		--glow: 25 95% 53% / 0.15;
+		--glow-strong: 25 95% 53% / 0.3;
+		--glow-hue: 25;
+		--ambient-mesh-1: 25 95% 53% / 0.05;
+		--ambient-mesh-2: 340 60% 50% / 0.03;
+		--msg-user-bg: 25 95% 53% / 0.08;
+		--msg-user-border: 25 95% 53% / 0.15;
+		--msg-assistant-accent: 25 95% 53% / 0.35;
 	}
 	:root.dark.theme-sunset {
 		--background: 20 14.3% 4.1%;
@@ -269,5 +357,13 @@
 		--border: 12 6.5% 15.1%;
 		--input: 12 6.5% 15.1%;
 		--ring: 20.5 90.2% 48.2%;
+		--glow: 21 90% 48% / 0.2;
+		--glow-strong: 21 90% 48% / 0.4;
+		--glow-hue: 21;
+		--ambient-mesh-1: 21 90% 48% / 0.06;
+		--ambient-mesh-2: 12 7% 15% / 0.06;
+		--msg-user-bg: 21 90% 48% / 0.1;
+		--msg-user-border: 21 90% 48% / 0.18;
+		--msg-assistant-accent: 21 90% 48% / 0.4;
 	}
 }
