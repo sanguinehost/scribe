@@ -102,7 +102,7 @@ secrecy = { version = "0.10.3", features = [
 aes-gcm = "0.10.3" # For AES-GCM encryption
 ring = "0.17.8" # Add ring
 sha2 = "0.10.8" # For SHA-256 hashing in integrity checks
-zip = { version = "7.4.0", default-features = false, features = ["deflate"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # Fix zlib-rs compilation issue by forcing flate2 to use zlib backend
 flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
 tracing = "0.1.41"
