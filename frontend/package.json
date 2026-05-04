@@ -59,7 +59,7 @@
 		"prettier": "^3.8.1",
 		"prettier-plugin-svelte": "^3.5.1",
 		"prettier-plugin-tailwindcss": "^0.7.2",
-		"shadcn-svelte": "1.2.5",
+		"shadcn-svelte": "1.2.7",
 		"svelte": "^5.55.1",
 		"svelte-check": "^4.4.6",
 		"svelte-exmarkdown": "^5.0.2",
@@ -96,7 +96,7 @@
 		"@types/marked": "^6.0.0",
 		"cookie": "^1.1.1",
 		"dompurify": "^3.3.3",
-		"eventsource-parser": "^3.0.6",
+		"eventsource-parser": "^3.0.8",
 		"marked": "^17.0.5",
 		"sveltekit-sse": "^0.14.3"
 	}
