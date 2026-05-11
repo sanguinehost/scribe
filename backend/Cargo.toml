@@ -89,7 +89,7 @@ diesel-derive-enum = { version = "2.1.0", default-features = false }
 uuid = { version = "1.16.0", features = ["v4", "serde"] }
 tower = { version = "0.5.2" }
 tower-http = { version = "0.6.2", features = ["trace", "cors"] }
-tower-sessions = { version = "0.14.0", features = ["signed", "private"] }
+tower-sessions = { version = "0.15.0", features = ["signed", "private"] }
 tower-sessions-memory-store = "0.15.0"
 axum-login = "0.18.0"
 bcrypt = "0.18.0"
@@ -102,7 +102,7 @@ secrecy = { version = "0.10.3", features = [
 aes-gcm = "0.10.3" # For AES-GCM encryption
 ring = "0.17.8" # Add ring
 sha2 = "0.10.8" # For SHA-256 hashing in integrity checks
-zip = { version = "7.4.0", default-features = false, features = ["deflate"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # Fix zlib-rs compilation issue by forcing flate2 to use zlib backend
 flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
 tracing = "0.1.41"
@@ -123,7 +123,7 @@ deadpool-diesel = { version = "0.6.1", default-features = false, features = [
 async-trait = "0.1.88"
 time = { version = "0.3.47", features = ["serde", "serde-well-known"] }
 
-rand = "0.9.1"
+rand = { version = "0.10.0", features = ["sys_rng"] }
 cookie = { version = "0.18.1", features = ["secure"] }
 tower-cookies = "0.11.0"
 
