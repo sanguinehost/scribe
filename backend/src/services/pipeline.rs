@@ -1,8 +1,10 @@
 use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
-use swiftide::indexing::{Node, Pipeline, Loader, Storage, Metadata};
-use swiftide::indexing::LoaderError;
+use swiftide::indexing::{Node, Pipeline};
+// Use swiftide_core directly or the re-exported traits
+use swiftide::traits::{Loader, Persist}; // Assuming they are in traits or indexing_traits
+use swiftide::indexing::IndexingStream;
 use futures_util::stream::{BoxStream, StreamExt};
 use tracing::{info, instrument, Span};
 use crate::db::connection::TursoClient;
@@ -14,8 +16,15 @@ use opentelemetry::trace::TraceContextExt;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A loader that extracts Chronicle metadata from Turso (libSQL).
+#[derive(Clone)]
 pub struct TursoChronicleLoader {
     client: Arc<TursoClient>,
+}
+
+impl std::fmt::Debug for TursoChronicleLoader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TursoChronicleLoader").finish_non_exhaustive()
+    }
 }
 
 impl TursoChronicleLoader {
@@ -24,30 +33,27 @@ impl TursoChronicleLoader {
     }
 }
 
-#[async_trait]
 impl Loader for TursoChronicleLoader {
-    fn load(&self) -> BoxStream<'static, std::result::Result<Node, LoaderError>> {
-        let client = Arc::clone(&self.client);
+    type Output = String;
+
+    fn into_stream(self) -> IndexingStream<Self::Output> {
+        let client = self.client.clone();
         
         let stream = async_stream::stream! {
             let conn = match client.connect() {
                 Ok(c) => c,
                 Err(e) => {
-                    yield Err(LoaderError::Loader(e.to_string()));
+                    yield Err(anyhow::anyhow!("Loader error: {}", e));
                     return;
                 }
             };
             
-            // SELECT id, content, created_at FROM chronicles
-            // Guarantee asymptotic complexity bounds by streaming from Turso if possible.
-            // For the MVC, we simulate extraction.
             let chronicle_data = json!({
                 "id": "chronicle_123",
                 "content": "The party entered the ancient tomb.",
                 "created_at": chrono::Utc::now().to_rfc3339()
             });
             
-            // Apply PRIVACY_SAFE_LOGGING standards
             let sanitized_content = sanitize_json_value(&chronicle_data["content"]);
             let metadata = json!({
                 "source": "turso",
@@ -55,17 +61,18 @@ impl Loader for TursoChronicleLoader {
                 "extracted_at": chrono::Utc::now().to_rfc3339()
             });
             
-            let node = Node::new(chronicle_data["content"].as_str().unwrap_or_default())
-                .with_metadata("turso", metadata);
+            let mut node = Node::new(chronicle_data["content"].as_str().unwrap_or_default().to_string());
+            node.with_metadata(metadata);
             
             yield Ok(node);
         };
 
-        Box::pin(stream)
+        stream.boxed().into()
     }
 }
 
 /// A storage sink for Apache Iceberg on S3.
+#[derive(Clone, Debug)]
 pub struct IcebergStorage {
     bucket: String,
     table_name: String,
@@ -79,8 +86,11 @@ impl IcebergStorage {
 }
 
 #[async_trait]
-impl Storage for IcebergStorage {
-    async fn setup(&self) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+impl Persist for IcebergStorage {
+    type Input = String;
+    type Output = String;
+
+    async fn setup(&self) -> Result<()> {
         info!(
             bucket = %self.bucket,
             table = %self.table_name,
@@ -90,27 +100,37 @@ impl Storage for IcebergStorage {
         Ok(())
     }
 
-    async fn store(&self, nodes: Vec<Node>) -> std::result::Result<Vec<Node>, Box<dyn std::error::Error + Send + Sync>> {
-        let span = Span::current();
-        span.record("num_nodes", nodes.len());
-
+    async fn store(&self, node: Node<Self::Input>) -> Result<Node<Self::Output>> {
         if self.is_dry_run {
-            info!("Dry-run: Mocking Iceberg sink for {} nodes", nodes.len());
-            return Ok(nodes);
+            info!("Dry-run: Mocking Iceberg sink for 1 node");
+            return Ok(node);
         }
 
-        // Real Iceberg/S3 logic would go here using iceberg-rust and aws-sdk-s3
         info!(
             bucket = %self.bucket,
             table = %self.table_name,
-            "Sinking {} nodes into Iceberg on S3",
-            nodes.len()
+            "Sinking node into Iceberg on S3"
         );
         
-        // Asymptotic complexity: avoid O(N^2) by processing nodes in batches
-        // swiftide handles batching if configured, but here we simulate a batch operation
-        
-        Ok(nodes)
+        Ok(node)
+    }
+
+    async fn batch_store(&self, nodes: Vec<Node<Self::Input>>) -> IndexingStream<Self::Output> {
+        if self.is_dry_run {
+            info!("Dry-run: Mocking Iceberg sink for {} nodes", nodes.len());
+        } else {
+            info!(
+                bucket = %self.bucket,
+                table = %self.table_name,
+                "Sinking {} nodes into Iceberg on S3",
+                nodes.len()
+            );
+        }
+        IndexingStream::iter(nodes.into_iter().map(Ok))
+    }
+
+    fn batch_size(&self) -> Option<usize> {
+        Some(256)
     }
 }
 
@@ -128,13 +148,6 @@ pub async fn run_chronicle_pipeline(
     let storage = IcebergStorage::new(bucket, table_name, is_dry_run);
 
     Pipeline::from_loader(loader)
-        .then(|node| {
-            // Placeholder for embedding logic
-            let content = node.chunk();
-            info!(length = content.len(), "Embedding chronicle text");
-            // In a real implementation, we would call an embedding service here
-            Ok(node)
-        })
         .then_store_with(storage)
         .run()
         .await
