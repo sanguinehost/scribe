@@ -314,6 +314,7 @@ mod tests {
             recall_pipeline: Arc::new(crate::services::cognitive::RecallPipeline::new(
                 pool.clone(),
             )),
+            classifier: Arc::new(agent_classify::RoleClassifier::new()),
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));
