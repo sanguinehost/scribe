@@ -30,6 +30,7 @@ pub mod token_client;
 pub mod tokenizer_service;
 pub mod user_persona_service;
 pub mod user_settings_service;
+pub mod mem_client;
 
 // Re-export agentic components
 pub use agentic::{
@@ -54,3 +55,4 @@ pub use secure_llm_service::SecureLlmService;
 pub use template_preference_service::TemplatePreferenceService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;
+pub use mem_client::{MemServerClient, MemClientError};

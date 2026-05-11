@@ -32,6 +32,7 @@ pub mod backend_trait;
 pub mod backend_traits; // NEW: Unified type system trait definitions
 pub mod pool_helpers;
 pub mod unified_types; // NEW: Backend-agnostic unified types
+pub mod connection; // NEW: Turso/LibSQL hot state replication
 
 #[cfg(feature = "postgres-backend")]
 pub mod postgres_backend;
