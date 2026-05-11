@@ -150,6 +150,7 @@ reqwest = { version = "0.13.1", features = [
     "rustls",
     "multipart",
 ], default-features = false }
+libsql = { version = "0.6.0", features = ["replication", "hrana"] }
 reqwest-middleware = { version = "0.5.1" }
 reqwest-retry = { version = "0.9.0" }
 
