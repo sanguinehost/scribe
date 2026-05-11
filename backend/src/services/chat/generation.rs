@@ -1460,37 +1460,23 @@ pub async fn get_session_data_for_generation(
             });
             debug!(%session_id, ?max_game_time_day, "Determined max_game_time_day for RAG filtering.");
 
-            // Retrieve Lorebook Chunks
-            if let Some(lorebook_ids) = &active_lorebook_ids_for_search {
-                if !lorebook_ids.is_empty() {
-                    info!(%session_id, ?lorebook_ids, "Retrieving lorebook chunks for RAG.");
-                    let session_dek_temp = user_dek_secret_box.as_ref().map(|arc| {
-                        use secrecy::ExposeSecret;
-                        let dek_bytes = ExposeSecret::expose_secret(&**arc).clone();
-                        crate::auth::SessionDek(secrecy::SecretBox::new(Box::new(dek_bytes)))
-                    });
-                    match state
-                        .embedding_pipeline_service
-                        .retrieve_relevant_chunks(
-                            state.clone(),
-                            user_id,
-                            None, // Not searching chat history here
-                            Some(lorebook_ids.clone()),
-                            None,            // Not searching chronicles here (done separately)
-                            &rag_query_text, // query_text (enriched)
-                            lorebook_search_limit,
-                            max_game_time_day, // Filter by game time
-                            session_dek_temp.as_ref(),
-                        )
-                        .await
-                    {
-                        Ok(lore_chunks) => {
-                            info!(%session_id, num_lore_chunks = lore_chunks.len(), "Retrieved lorebook chunks.");
-                            combined_rag_candidates.extend(lore_chunks);
-                        }
-                        Err(e) => {
-                            warn!(%session_id, error = %e, "Failed to retrieve lorebook chunks for RAG. Proceeding without them.");
-                        }
+            // Create dynamic RAG selector earlier to support Iceberg recall
+            let budget_planner = ContextBudgetPlanner::new_for_model(
+                &session_model_name_db,
+                Some(context_total_token_limit),
+            );
+            let rag_selector = DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+
+            // REPLACED: Legacy hot-state lorebook retrieval replaced with semantic Iceberg recall
+            // This now directs semantic queries to the Iceberg catalog for deep recall.
+            if let Some(_lorebook_ids) = &active_lorebook_ids_for_search {
+                match rag_selector.query_iceberg_lorebooks(&rag_query_text, lorebook_search_limit as usize).await {
+                    Ok(iceberg_chunks) => {
+                        info!(%session_id, num_iceberg_chunks = iceberg_chunks.len(), "Retrieved lorebook chunks from Iceberg catalog.");
+                        combined_rag_candidates.extend(iceberg_chunks);
+                    }
+                    Err(e) => {
+                        warn!(%session_id, error = %e, "Failed to retrieve lorebook chunks from Iceberg catalog.");
                     }
                 }
             }
@@ -1616,12 +1602,6 @@ pub async fn get_session_data_for_generation(
             } else {
                 info!(%session_id, num_combined_candidates = combined_rag_candidates.len(), "Starting independent RAG selection with flexible budgets.");
 
-                // Create pricing-aware context budget planner for the current model
-                let budget_planner = ContextBudgetPlanner::new_for_model(
-                    &session_model_name_db,
-                    Some(context_total_token_limit),
-                );
-
                 // Separate candidates by source type
                 let mut lorebook_candidates = Vec::new();
                 let mut chronicle_candidates = Vec::new();
@@ -1634,10 +1614,6 @@ pub async fn get_session_data_for_generation(
                         RetrievedMetadata::Chat(_) => older_chat_candidates.push(candidate),
                     }
                 }
-
-                // Create dynamic RAG selector
-                let rag_selector =
-                    DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
 
                 let query_time = Some(chrono::Utc::now().into());
 

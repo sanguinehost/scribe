@@ -19,6 +19,7 @@ pub mod history_manager;
 pub mod hybrid_token_counter;
 pub mod lorebook;
 pub mod narrative_intelligence_service;
+pub mod pipeline;
 #[cfg(feature = "payment")]
 pub mod payment;
 pub mod rag_budget_manager;
