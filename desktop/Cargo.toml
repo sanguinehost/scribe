@@ -66,5 +66,5 @@ diesel = { version = "2.3", default-features = false, features = ["sqlite"] }
 diesel_migrations = { version = "2.3", default-features = false, features = ["sqlite"] }
 
 # Workspace dependencies
-scribe-backend = { path = "../backend", default-features = false, features = ["desktop"] }
+scribe-server = { path = "../crates/scribe-server", default-features = false, features = ["desktop"] }
 tauri-plugin-upload = "2.3.2"
