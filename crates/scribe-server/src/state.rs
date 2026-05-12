@@ -1,0 +1,209 @@
+// Use deadpool-diesel types for async pooling (PostgreSQL only)
+// Import auth module
+// Import AuthError enum
+// Removed AppError import as it's not directly used here
+use crate::config::Config; // Use Config instead
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+// Removed #[cfg(test)] - Mutex needed unconditionally now for tracker
+use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
+                                      // Use the AiClient trait from our llm module
+use crate::llm::AiClient;
+use crate::llm::EmbeddingClient; // Add this
+use crate::services::embeddings::EmbeddingPipelineServiceTrait;
+// Remove concrete service import, use trait
+use crate::vector_db::VectorService;
+// use crate::auth::user_store::Backend as AuthBackend; // For axum-login
+use crate::auth::token_service::TokenService; // Added for token-based authentication
+use crate::auth::user_store::Backend as AuthBackend; // Added for shared AuthBackend
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::LlamaCppServerManager; // Added for local LLM server management
+#[cfg(feature = "local-llm")]
+use crate::llm::llamacpp::{ModelIntegrityVerifier, SecurityAuditLogger}; // Added for LLM security
+use crate::middleware::llm_security::LlmRateLimiter; // Added for rate limiting
+use crate::services::ai_client_factory::AiClientFactory;
+use crate::services::character_service::CharacterService;
+use crate::services::chat_override_service::ChatOverrideService; // <<< ADDED THIS IMPORT
+use crate::services::cognitive::RecallPipeline; // Added for RecallPipeline
+use crate::services::encryption_service::EncryptionService; // Added for EncryptionService
+use crate::services::hybrid_token_counter::HybridTokenCounter; // Added for token counting
+use crate::services::lorebook::LorebookService; // Added for LorebookService
+use crate::services::narrative_intelligence_service::NarrativeIntelligenceService; // Added for narrative intelligence
+use crate::services::user_persona_service::UserPersonaService; // <<< ADDED THIS IMPORT
+use crate::services::EmailService; // For email service
+use std::fmt;
+// For embedding_call_tracker // For manual Debug impl
+
+// --- DB Connection Pool Type ---
+// Use the backend-agnostic pool type from the db module
+pub use crate::db::DbPool;
+// Note: Both deadpool::Pool (PostgreSQL) and r2d2::Pool (SQLite) are Cloneable.
+
+/// Configuration for `AppState` services to reduce constructor arguments
+pub struct AppStateServices {
+    pub ai_client: Arc<dyn AiClient + Send + Sync>,
+    pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>,
+    pub qdrant_service: Arc<VectorService>,
+    pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>,
+    pub chat_override_service: Arc<ChatOverrideService>,
+    pub character_service: Arc<CharacterService>,
+    pub user_persona_service: Arc<UserPersonaService>,
+    pub token_counter: Arc<HybridTokenCounter>,
+    pub encryption_service: Arc<EncryptionService>,
+    pub lorebook_service: Arc<LorebookService>,
+    pub auth_backend: Arc<AuthBackend>,
+    pub token_service: Option<Arc<TokenService>>, // Added for token-based authentication
+    pub email_service: Arc<dyn EmailService + Send + Sync>,
+    pub ai_client_factory: Arc<AiClientFactory>,
+    pub rate_limiter: Arc<LlmRateLimiter>,
+    pub recall_pipeline: Arc<RecallPipeline>,
+    #[cfg(feature = "local-llm")]
+    pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
+    #[cfg(feature = "local-llm")]
+    pub security_audit_logger: Option<Arc<SecurityAuditLogger>>, // Added for LLM security auditing
+    #[cfg(feature = "local-llm")]
+    pub model_integrity_verifier: Option<Arc<ModelIntegrityVerifier>>, // Added for model integrity verification
+}
+
+// --- Shared application state ---
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: DbPool,
+    // Change to Arc<Config> and make public
+    pub config: Arc<Config>,
+    // #[cfg(test)] // Remove cfg(test)
+    // pub mock_llm_response: std::sync::Arc<tokio::sync::Mutex<Option<String>>>, // Keep for now if other tests use it
+    // Change to use the AiClient trait object
+    pub ai_client: Arc<dyn AiClient + Send + Sync>,
+    pub embedding_client: Arc<dyn EmbeddingClient + Send + Sync>, // Add Send + Sync
+    // Change to use the Rig-based VectorService
+    pub qdrant_service: Arc<VectorService>,
+    pub embedding_pipeline_service: Arc<dyn EmbeddingPipelineServiceTrait + Send + Sync>, // Add Send + Sync
+    pub chat_override_service: Arc<ChatOverrideService>, // <<< ADDED THIS FIELD
+    pub character_service: Arc<CharacterService>,
+    pub user_persona_service: Arc<UserPersonaService>, // <<< ADDED THIS FIELD
+    // Remove #[cfg(test)]
+    pub embedding_call_tracker: Arc<TokioMutex<Vec<crate::db::DbId>>>, // Track message IDs for embedding calls
+    pub token_counter: Arc<HybridTokenCounter>,                        // Added for token counting
+    pub encryption_service: Arc<EncryptionService>, // Added for lorebook and other encryption needs
+    pub lorebook_service: Arc<LorebookService>,     // Added for LorebookService
+    pub auth_backend: Arc<AuthBackend>,             // Added for shared AuthBackend instance
+    pub token_service: Option<Arc<TokenService>>,   // Added for token-based authentication
+    pub email_service: Arc<dyn EmailService + Send + Sync>, // Added for email service
+    pub ai_client_factory: Arc<AiClientFactory>,    // Added for dynamic AI client selection
+    pub rate_limiter: Arc<LlmRateLimiter>,          // Added for rate limiting
+    pub recall_pipeline: Arc<RecallPipeline>,       // Added for secure cognitive recall
+    pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
+    #[cfg(feature = "local-llm")]
+    pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
+    #[cfg(feature = "local-llm")]
+    pub security_audit_logger: Option<Arc<SecurityAuditLogger>>, // Added for LLM security auditing
+    #[cfg(feature = "local-llm")]
+    pub model_integrity_verifier: Option<Arc<ModelIntegrityVerifier>>, // Added for model integrity verification
+    pub qdrant_healthy: Arc<AtomicBool>, // Dynamic feature flag for RAG degradation
+}
+
+// Manual Debug implementation for AppState
+impl fmt::Debug for AppState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug_struct = f.debug_struct("AppState");
+        debug_struct
+            .field("pool", &"<DbPool>") // Placeholder for pool
+            .field("config", &self.config) // Config should be Debug
+            .field("ai_client", &"<Arc<dyn AiClient>>")
+            .field("embedding_client", &"<Arc<dyn EmbeddingClient>>")
+            .field("qdrant_service", &"<Arc<VectorService>>")
+            .field(
+                "embedding_pipeline_service",
+                &"<Arc<dyn EmbeddingPipelineServiceTrait>>",
+            )
+            .field("chat_override_service", &"<Arc<ChatOverrideService>>") // <<< ADDED THIS LINE FOR DEBUG
+            .field("character_service", &"<Arc<CharacterService>>")
+            .field("user_persona_service", &"<Arc<UserPersonaService>>") // <<< ADDED THIS LINE FOR DEBUG
+            .field(
+                "embedding_call_tracker",
+                &"<Arc<TokioMutex<Vec<crate::db::DbId>>>>",
+            ) // Or try to debug its contents if safe
+            .field("token_counter", &"<Arc<HybridTokenCounter>>") // Added
+            .field("encryption_service", &"<Arc<EncryptionService>>") // Added
+            .field("lorebook_service", &"<Arc<LorebookService>>") // Added for LorebookService
+            .field("auth_backend", &"<Arc<AuthBackend>>") // Added
+            .field("token_service", &"<Option<Arc<TokenService>>>") // Added for token auth
+            .field("email_service", &"<Arc<dyn EmailService>>") // Added for email service
+            .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
+            .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
+            .field("recall_pipeline", &"<Arc<RecallPipeline>>") // Added for secure cognitive recall
+            .field(
+                "narrative_intelligence_service",
+                &"<Option<Arc<NarrativeIntelligenceService>>>",
+            )
+            .field(
+                "qdrant_healthy",
+                &self.qdrant_healthy.load(Ordering::Relaxed),
+            ); // Added for agentic narrative processing
+
+        #[cfg(feature = "local-llm")]
+        {
+            debug_struct
+                .field(
+                    "llamacpp_server_manager",
+                    &"<Option<Arc<LlamaCppServerManager>>>",
+                )
+                .field(
+                    "security_audit_logger",
+                    &"<Option<Arc<SecurityAuditLogger>>>",
+                )
+                .field(
+                    "model_integrity_verifier",
+                    &"<Option<Arc<ModelIntegrityVerifier>>>",
+                );
+        }
+
+        debug_struct.finish()
+    }
+}
+
+impl AppState {
+    /// Create new `AppState` with reduced constructor arguments
+    #[must_use]
+    pub fn new(pool: DbPool, config: Arc<Config>, services: AppStateServices) -> Self {
+        Self {
+            pool,
+            config,
+            ai_client: services.ai_client,
+            embedding_client: services.embedding_client,
+            qdrant_service: services.qdrant_service,
+            embedding_pipeline_service: services.embedding_pipeline_service,
+            chat_override_service: services.chat_override_service,
+            character_service: services.character_service,
+            user_persona_service: services.user_persona_service,
+            embedding_call_tracker: Arc::new(TokioMutex::new(Vec::new())),
+            token_counter: services.token_counter,
+            encryption_service: services.encryption_service,
+            lorebook_service: services.lorebook_service,
+            auth_backend: services.auth_backend,
+            token_service: services.token_service,
+            email_service: services.email_service,
+            ai_client_factory: services.ai_client_factory,
+            rate_limiter: services.rate_limiter,
+            recall_pipeline: services.recall_pipeline,
+            narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
+            #[cfg(feature = "local-llm")]
+            llamacpp_server_manager: services.llamacpp_server_manager,
+            #[cfg(feature = "local-llm")]
+            security_audit_logger: services.security_audit_logger,
+            #[cfg(feature = "local-llm")]
+            model_integrity_verifier: services.model_integrity_verifier,
+            qdrant_healthy: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// Set the narrative intelligence service after AppState construction
+    /// This is needed to break the circular dependency during construction
+    pub fn set_narrative_intelligence_service(
+        &mut self,
+        service: Arc<NarrativeIntelligenceService>,
+    ) {
+        self.narrative_intelligence_service = Some(service);
+    }
+}

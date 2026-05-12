@@ -1,0 +1,271 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2025-09-18",
+  "currency": "USD",
+  "tiers": {
+    "free": {
+      "display_name": "Free",
+      "description": "Perfect for trying out character AI conversations",
+      "price_monthly": 0,
+      "paddle_price_id": null,
+      "limits": {
+        "daily_messages": 20,
+        "daily_limit_type": "hard",
+        "context_tokens": 32768,
+        "chronicles_enabled": false,
+        "lorebooks_enabled": false,
+        "personas_enabled": false,
+        "max_characters": 5,
+        "max_lorebooks": 1
+      },
+      "credits": {
+        "included_monthly": 0,
+        "welcome_bonus": 25,
+        "rollover_enabled": false
+      },
+      "models": {
+        "allowed": [
+          "gemini-2.5-flash-lite"
+        ],
+        "default": "gemini-2.5-flash-lite"
+      },
+      "features": {
+        "priority_support": false,
+        "api_access": false,
+        "beta_features": false,
+        "export_enabled": true,
+        "import_enabled": false
+      }
+    },
+    "basic": {
+      "display_name": "Basic",
+      "description": "For serious character AI enthusiasts and creators",
+      "price_monthly": 10.00,
+      "paddle_price_id_monthly": "pri_01k4qbyetvn495nzv9nkqhxz02",
+      "paddle_price_id_yearly": "pri_01k5ejs7h9zmw4d888r3pjjqna",
+      "limits": {
+        "daily_messages": 100,
+        "daily_limit_type": "soft",
+        "context_tokens": 65536,
+        "chronicles_enabled": true,
+        "lorebooks_enabled": true,
+        "personas_enabled": true,
+        "max_characters": 50,
+        "max_lorebooks": 10
+      },
+      "credits": {
+        "included_monthly": 250,
+        "welcome_bonus": 0,
+        "rollover_enabled": true,
+        "rollover_max": 500
+      },
+      "models": {
+        "allowed": [
+          "gemini-3-flash-preview",
+          "gemini-2.5-flash",
+          "gemini-2.5-flash-lite"
+        ],
+        "default": "gemini-2.5-flash"
+      },
+      "features": {
+        "priority_support": true,
+        "api_access": false,
+        "beta_features": false,
+        "export_enabled": true,
+        "import_enabled": true,
+        "custom_personas": true
+      }
+    },
+    "premium": {
+      "display_name": "Premium",
+      "description": "Professional roleplay & storytelling platform",
+      "price_monthly": 25.00,
+      "paddle_price_id_monthly": "pri_01k5ej7wzvpcj6j65vcbpam6t4",
+      "paddle_price_id_yearly": "pri_01k5ejva0cwqzbtgzd2c9qk0d4",
+      "limits": {
+        "daily_messages": 200,
+        "daily_limit_type": "soft",
+        "context_tokens": 200000,
+        "chronicles_enabled": true,
+        "lorebooks_enabled": true,
+        "personas_enabled": true,
+        "max_characters": -1,
+        "max_lorebooks": -1
+      },
+      "credits": {
+        "included_monthly": 800,
+        "welcome_bonus": 100,
+        "rollover_enabled": true,
+        "rollover_max": 2000,
+        "purchase_discount": 0.10
+      },
+      "models": {
+        "allowed": [
+          "gemini-3-pro-preview",
+          "gemini-3-flash-preview",
+          "gemini-2.5-flash",
+          "gemini-2.5-flash-lite"
+        ],
+        "default": "gemini-2.5-flash"
+      },
+      "features": {
+        "priority_support": true,
+        "api_access": true,
+        "beta_features": true,
+        "export_enabled": true,
+        "import_enabled": true,
+        "custom_personas": true,
+        "priority_queue": true,
+        "advanced_analytics": true
+      }
+    }
+  },
+  "credit_system": {
+    "enabled": true,
+    "packages": [
+      {
+        "id": "credits_250",
+        "name": "Starter Pack",
+        "credits": 250,
+        "price": 5.00,
+        "bonus_percentage": 0,
+        "paddle_price_id": "pri_01k5ej9f8281rvnzybmpxc9hpm"
+      },
+      {
+        "id": "credits_500",
+        "name": "Value Pack",
+        "credits": 500,
+        "price": 10.00,
+        "bonus_percentage": 0,
+        "paddle_price_id": "pri_01k5ejc7dkwxfty64nfvenj8yq"
+      },
+      {
+        "id": "credits_1500",
+        "name": "Power Pack",
+        "credits": 1500,
+        "price": 25.00,
+        "bonus_percentage": 20,
+        "paddle_price_id": "pri_01k5ejdg0hzzem86wzd28zmd2q"
+      },
+      {
+        "id": "credits_3500",
+        "name": "Ultra Pack",
+        "credits": 3500,
+        "price": 50.00,
+        "bonus_percentage": 40,
+        "paddle_price_id": "pri_01k5ejenme5xjtje37jwfpbxe2"
+      },
+      {
+        "id": "credits_8000",
+        "name": "Mega Pack",
+        "credits": 8000,
+        "price": 100.00,
+        "bonus_percentage": 60,
+        "paddle_price_id": "pri_01k5ejfy6t65v6d28fqf0c4kmr"
+      }
+    ],
+    "model_costs": {
+      "gemini-3-pro-preview": 50,
+      "gemini-3-flash-preview": 10,
+      "gemini-2.5-flash-lite": 0,
+      "gemini-2.5-flash": 0,
+      "gemini-2.5-pro": 0,
+      "gemini-2.0-flash-experimental": 0,
+      "claude-3.5-sonnet": 75,
+      "gpt-4o": 60,
+      "gpt-4o-mini": 10
+    },
+    "token_pricing": {
+      "markup_percentage": 20,
+      "base_api_costs": {
+        "gemini-3-flash-preview": {
+          "input_per_million": "0.50",
+          "output_per_million": "3.00",
+          "description": "Google API pricing: $0.50/1M input, $3.00/1M output"
+        },
+        "gemini-3-pro-preview": {
+          "input_per_million": "2.00",
+          "output_per_million": "12.00",
+          "description": "Google API pricing: $2.00/1M input, $12.00/1M output (<200k tokens)"
+        },
+        "gemini-2.5-flash-lite": {
+          "input_per_million": "0.10",
+          "output_per_million": "0.40",
+          "description": "Google API pricing: $0.10/1M input, $0.40/1M output"
+        },
+        "gemini-2.5-flash": {
+          "input_per_million": "0.30",
+          "output_per_million": "2.50",
+          "description": "Google API pricing: $0.30/1M input, $2.50/1M output"
+        },
+        "gemini-2.5-pro": {
+          "input_per_million": "1.25",
+          "output_per_million": "10.00",
+          "description": "Google API pricing: $1.25/1M input, $10.00/1M output"
+        },
+        "gemini-2.0-flash-experimental": {
+          "input_per_million": "0.10",
+          "output_per_million": "0.40",
+          "description": "Google API pricing: $0.10/1M input, $0.40/1M output"
+        }
+      }
+    },
+    "context_multipliers": {
+      "32768": 1.0,
+      "65536": 1.0,
+      "100000": 1.2,
+      "200000": 1.5
+    }
+  },
+  "soft_limits": {
+    "enabled": true,
+    "free": {
+      "thresholds": []
+    },
+    "basic": {
+      "thresholds": [
+        {
+          "after_message": 100,
+          "delay_ms": 2000,
+          "warning_message": "You've reached your daily soft limit. Responses may be slightly delayed."
+        },
+        {
+          "after_message": 150,
+          "delay_ms": 5000,
+          "fallback_model": "gemini-2.5-flash-lite",
+          "warning_message": "Heavy usage detected. Using lite model for faster responses."
+        }
+      ]
+    },
+    "premium": {
+      "thresholds": [
+        {
+          "after_message": 200,
+          "delay_ms": 1000,
+          "warning_message": "You're using the service heavily today. Minimal delay applied."
+        },
+        {
+          "after_message": 300,
+          "delay_ms": 3000,
+          "warning_message": "Exceptional usage detected. Please consider our API for bulk operations."
+        }
+      ]
+    }
+  },
+  "usage_reset": {
+    "daily_reset_time_utc": "00:00",
+    "monthly_reset_day": 1,
+    "timezone": "UTC"
+  },
+  "grace_periods": {
+    "subscription_expired_days": 3,
+    "payment_failed_days": 7,
+    "credit_negative_allowance": 10
+  },
+  "feature_flags": {
+    "credits_enabled": true,
+    "soft_limits_enabled": true,
+    "legacy_token_system": false,
+    "migration_mode": false
+  }
+}

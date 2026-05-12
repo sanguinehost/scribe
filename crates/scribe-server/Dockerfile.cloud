@@ -1,0 +1,54 @@
+FROM rust:1.84-slim-bookworm as builder
+
+WORKDIR /usr/src/scribe
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    clang \
+    pkg-config \
+    libssl-dev \
+    libpq-dev \
+    protobuf-compiler \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install nightly toolchain
+RUN rustup toolchain install nightly && rustup default nightly
+
+# Set build environment variables for stability and debugging
+ENV CARGO_BUILD_JOBS=1
+ENV RUST_BACKTRACE=1
+
+# Copy workspace
+COPY . .
+
+# Patch Cargo.toml to exclude cli and desktop from workspace members
+RUN sed -i 's/members = \[.*\]/members = ["backend"]/' Cargo.toml
+
+# Build binary
+RUN cargo build --release --bin scribe-backend --no-default-features --features cloud,payment
+
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy binary, config, and resources
+COPY --from=builder /usr/src/scribe/target/release/scribe-backend /app/scribe-backend
+COPY --from=builder /usr/src/scribe/backend/config /app/backend/config
+COPY --from=builder /usr/src/scribe/backend/resources /app/backend/resources
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -k -f https://localhost:8080/api/health || exit 1
+
+CMD ["./scribe-backend"]
