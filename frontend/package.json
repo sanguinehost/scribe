@@ -39,7 +39,7 @@
 		"@types/ms": "^2.1.0",
 		"@types/node": "^25.6.2",
 		"@vercel/blob": "^2.3.3",
-		"@vitest/ui": "^4.1.5",
+		"@vitest/ui": "^4.1.6",
 		"bcrypt-ts": "^8.0.1",
 		"bits-ui": "2.18.1",
 		"clsx": "^2.1.1",
