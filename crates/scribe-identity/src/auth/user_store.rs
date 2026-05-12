@@ -10,14 +10,15 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::models::auth::LoginPayload; // Import LoginPayload
-use scribe_core::{AccountStatus, NewUser, SerializableSecretDek, User, UserDbQuery, UserRole}; // Removed unused SerializableSecretDek, UserCredentials // Added SerializableSecretDek
-use scribe_core::privacy::loggable_user_id;
+use crate::models::db_models::{NewUser, SerializableSecretDek, User, UserDbQuery};
+use scribe_core::{AccountStatus, UserRole};
+use crate::privacy::loggable_user_id;
 // Remove UserCredentials import if no longer needed elsewhere in this file
-use crate::db::DbPool; // Assuming you use a DbPool
+
                           // diesel imports are used in cfg blocks where they're imported locally
                           // Added for as_returning // Added for get_result
                           // use crate::models::users::{UserFilter, UserIdentifier}; // Removed unused imports
-use scribe_core::schema;
+use crate::schema;
 use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
@@ -88,12 +89,12 @@ impl AuthnBackend for Backend {
         let verify_result = crate::db::with_conn(&pool, move |conn| {
             crate::auth::verify_credentials(conn, &identifier_clone, password_clone).map_err(|e| {
                 match e {
-                    AuthError::UserNotFound => scribe_core::AppError::UserNotFound,
-                    AuthError::WrongCredentials => scribe_core::AppError::InvalidCredentials,
-                    AuthError::AccountPendingVerification => scribe_core::AppError::Forbidden(
+                    AuthError::UserNotFound => crate::error::AppError::UserNotFound,
+                    AuthError::WrongCredentials => crate::error::AppError::InvalidCredentials,
+                    AuthError::AccountPendingVerification => crate::error::AppError::Forbidden(
                         "Your account is pending email verification.".to_string(),
                     ),
-                    _ => scribe_core::AppError::DatabaseQueryError(format!(
+                    _ => crate::error::AppError::InternalServerError(format!(
                         "Credential verification failed: {}",
                         e
                     )),
@@ -107,9 +108,9 @@ impl AuthnBackend for Backend {
             Err(e) => {
                 // Map AppError back to AuthError for axum-login
                 return match e {
-                    scribe_core::AppError::UserNotFound => Err(AuthError::UserNotFound),
-                    scribe_core::AppError::InvalidCredentials => Err(AuthError::WrongCredentials),
-                    scribe_core::AppError::Forbidden(msg)
+                    crate::error::AppError::UserNotFound => Err(AuthError::UserNotFound),
+                    crate::error::AppError::InvalidCredentials => Err(AuthError::WrongCredentials),
+                    crate::error::AppError::Forbidden(msg)
                         if msg == "Your account is pending email verification." =>
                     {
                         Err(AuthError::AccountPendingVerification)
@@ -122,7 +123,7 @@ impl AuthnBackend for Backend {
         match verify_result {
             (user, Some(dek_secret_box)) => {
                 // Store the DEK in the cache
-                let dek_to_cache = scribe_core::SerializableSecretDek(dek_secret_box);
+                let dek_to_cache = crate::models::db_models::SerializableSecretDek(dek_secret_box);
                 let mut cache = self.dek_cache.write().await; // Use .await
                 cache.insert(user.id, dek_to_cache.clone());
                 // More verbose logging
@@ -165,7 +166,7 @@ impl AuthnBackend for Backend {
         // Get user from database
         match crate::db::with_conn(&pool, move |conn| {
             crate::auth::get_user(conn, id).map_err(|e| {
-                scribe_core::AppError::DatabaseQueryError(format!("Get user failed: {}", e))
+                crate::error::AppError::InternalServerError(format!("Get user failed: {}", e))
             })
         })
         .await
@@ -206,7 +207,7 @@ impl Backend {
         user_id: crate::db::DbId,
         crypto_fields: UserCryptoFields,
     ) -> Result<(), AuthError> {
-        use scribe_core::schema::users::dsl::{
+        use crate::schema::users::dsl::{
             encrypted_dek, encrypted_dek_by_recovery, kek_salt, password_hash, updated_at, users,
         };
         use diesel::prelude::*;
@@ -218,16 +219,16 @@ impl Backend {
         let update_result = crate::db::with_conn(&pool, move |conn| {
             // Validate required fields (non-nullable in DB)
             let pwd_hash = crypto_fields.password_hash.ok_or_else(|| {
-                scribe_core::AppError::DatabaseQueryError("password_hash must be provided".into())
+                crate::error::AppError::InternalServerError("password_hash must be provided".into())
             })?;
             let kek_salt_value = crypto_fields.kek_salt.ok_or_else(|| {
-                scribe_core::AppError::DatabaseQueryError("kek_salt must be provided".into())
+                crate::error::AppError::InternalServerError("kek_salt must be provided".into())
             })?;
             let dek_ciphertext = crypto_fields.dek_ciphertext.ok_or_else(|| {
-                scribe_core::AppError::DatabaseQueryError("encrypted_dek must be provided".into())
+                crate::error::AppError::InternalServerError("encrypted_dek must be provided".into())
             })?;
             let dek_nonce_value = crypto_fields.dek_nonce.ok_or_else(|| {
-                scribe_core::AppError::DatabaseQueryError("dek_nonce must be provided".into())
+                crate::error::AppError::InternalServerError("dek_nonce must be provided".into())
             })?;
 
             diesel::update(users.find(user_id))
@@ -235,14 +236,13 @@ impl Backend {
                     password_hash.eq(pwd_hash),
                     kek_salt.eq(kek_salt_value),
                     encrypted_dek.eq(dek_ciphertext),
-                    scribe_core::schema::users::dsl::dek_nonce.eq(dek_nonce_value),
+                    crate::schema::users::dsl::dek_nonce.eq(dek_nonce_value),
                     encrypted_dek_by_recovery.eq(crypto_fields.recovery_dek_ciphertext), // This is nullable
-                    scribe_core::schema::users::dsl::recovery_dek_nonce
-                        .eq(crypto_fields.recovery_dek_nonce), // This is nullable
-                    updated_at.eq(scribe_core::DbTimestamp::now()), // Use Rust timestamp instead of diesel::dsl::now for cross-DB compatibility
+                    crate::schema::users::dsl::recovery_dek_nonce.eq(crypto_fields.recovery_dek_nonce), // This is nullable
+                    updated_at.eq(crate::db::DbTimestamp::now()), // Use Rust timestamp instead of diesel::dsl::now for cross-DB compatibility
                 ))
                 .execute(conn)
-                .map_err(|e| scribe_core::AppError::DatabaseQueryError(e.to_string()))
+                .map_err(|e| crate::error::AppError::InternalServerError(e.to_string()))
         })
         .await
         .map_err(|e| AuthError::DatabaseError(e.to_string()))?;
@@ -333,15 +333,22 @@ pub async fn create_user_in_db(
         encrypted_dek_by_recovery: None,
         recovery_kek_salt: None,
         recovery_dek_nonce: None,
-        role: UserRole::User, // 'User' enum variant for DB
-        account_status: AccountStatus::Active,      // Default to Active account status
+        #[cfg(feature = "postgres-backend")]
+        role: UserRole::User.into(),
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        role: UserRole::User.to_string(),
+        
+        #[cfg(feature = "postgres-backend")]
+        account_status: AccountStatus::Active.into(),
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        account_status: AccountStatus::Active.to_string(),
         total_prompt_tokens: crate::db::DbBigInt::from(0),
         total_completion_tokens: crate::db::DbBigInt::from(0),
         total_token_cost_cents: crate::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
-        token_usage_updated_at: scribe_core::DbTimestamp::now(),
-        created_at: scribe_core::DbTimestamp::now(),
-        updated_at: scribe_core::DbTimestamp::now(),
+        token_usage_updated_at: crate::db::DbTimestamp::now(),
+        created_at: crate::db::DbTimestamp::now(),
+        updated_at: crate::db::DbTimestamp::now(),
     };
 
     let user_from_db: UserDbQuery = crate::db::with_conn(pool, move |conn| {
@@ -353,7 +360,7 @@ pub async fn create_user_in_db(
                 .returning(UserDbQuery::as_returning())
                 .get_result(conn)
                 .map_err(|e| {
-                    scribe_core::AppError::DatabaseQueryError(format!(
+                    crate::error::AppError::InternalServerError(format!(
                         "Diesel query failed for create_user_in_db: {}",
                         e
                     ))
@@ -369,7 +376,7 @@ pub async fn create_user_in_db(
                 .values(new_user_payload)
                 .execute(conn)
                 .map_err(|e| {
-                    scribe_core::AppError::DatabaseQueryError(format!(
+                    crate::error::AppError::InternalServerError(format!(
                         "Diesel insert failed for create_user_in_db: {}",
                         e
                     ))
@@ -379,7 +386,7 @@ pub async fn create_user_in_db(
                 .filter(schema::users::username.eq(username_clone))
                 .first::<UserDbQuery>(conn)
                 .map_err(|e| {
-                    scribe_core::AppError::DatabaseQueryError(format!(
+                    crate::error::AppError::InternalServerError(format!(
                         "Diesel query failed for create_user_in_db (fetch after insert): {}",
                         e
                     ))

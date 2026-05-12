@@ -1,8 +1,8 @@
-use scribe_core::{AccountStatus, DbBigInt, DbBlob, DbId, DbTimestamp, UserRole, User, NewUser, UserDbQuery, SerializableSecretDek};
+pub use crate::models::db_models::{User, NewUser, UserDbQuery, SerializableSecretDek};
+pub use scribe_core::{AccountStatus, UserRole};
+
 use secrecy::SecretString;
 use serde::Deserialize;
-
-pub use scribe_core::models::*;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UserCredentials {

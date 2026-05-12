@@ -5,7 +5,7 @@ use axum_login::AuthSession;
 use tracing::Span;
 
 use crate::auth::AuthBackend;
-use scribe_core::privacy::loggable_user_id;
+use crate::privacy::loggable_user_id;
 
 /// Middleware to capture the authenticated User ID and attach it to the current tracing span
 /// in a privacy-safe (obfuscated) format.

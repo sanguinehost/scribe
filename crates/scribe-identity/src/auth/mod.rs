@@ -1,9 +1,10 @@
 // This file defines the auth module, including user store logic.
 
 pub use crate::models::auth::RegisterPayload; // Added for RegisterPayload
-use scribe_core::{AccountStatus, UserRole, NewUser, User, UserDbQuery};
-use scribe_core::privacy::loggable_user_id;
-use scribe_core::schema::{users, email_verification_tokens};
+use crate::models::db_models::{NewUser, User, UserDbQuery};
+use scribe_core::{AccountStatus, UserRole};
+use crate::privacy::loggable_user_id;
+use crate::schema::{users, email_verification_tokens};
 use bcrypt::BcryptError;
 #[cfg(feature = "postgres-backend")]
 use deadpool_diesel::InteractError;
@@ -17,7 +18,7 @@ use uuid::Uuid; // Import InteractError
 use scribe_crypto::{self, CryptoError}; // Added for encryption
 use crate::models::email_verification::EmailVerificationToken;
 use crate::models::email_verification::NewEmailVerificationToken; // Added for verification tokens
-use scribe_core::EmailService; // Added for email verification
+use crate::email::EmailService; // Added for email verification
 // use crate::state::DbPool; // Removed - using crate::db::DbPool
 use chrono::{Duration, Utc}; // Added for token expiration
 use std::sync::Arc;
@@ -35,11 +36,11 @@ fn generate_verification_token() -> String {
 fn insert_verification_token_sync(
     conn: &mut crate::db::DbConnection,
     token: &NewEmailVerificationToken,
-) -> Result<usize, scribe_core::AppError> {
+) -> Result<usize, crate::error::AppError> {
     diesel::insert_into(email_verification_tokens::table)
         .values(token)
         .execute(conn)
-        .map_err(|e| scribe_core::CoreError::DatabaseQueryError(e.to_string()))
+        .map_err(|e| crate::error::AppError::InternalServerError(e.to_string()))
 }
 
 // Make AuthError enum public
@@ -141,8 +142,8 @@ impl From<diesel::result::Error> for AuthError {
 }
 
 // From implementation for AppError
-impl From<scribe_core::AppError> for AuthError {
-    fn from(err: scribe_core::AppError) -> Self {
+impl From<crate::error::AppError> for AuthError {
+    fn from(err: crate::error::AppError) -> Self {
         // Map AppError to AuthError variants appropriately
         Self::DatabaseError(err.to_string())
     }
@@ -155,7 +156,7 @@ impl From<scribe_core::AppError> for AuthError {
 /// Returns an error if the database query fails
 #[instrument(skip(conn), err)]
 pub fn are_there_any_users(conn: &mut crate::db::DbConn) -> Result<bool, AuthError> {
-    use scribe_core::schema::users::dsl::{id, users};
+    use crate::schema::users::dsl::{id, users};
     use diesel::dsl::count;
 
     debug!("Checking if there are any users in the database");
@@ -183,7 +184,7 @@ pub async fn create_user_with_verification(
     // This is a sync function that creates the user
     let user = crate::db::with_conn(pool, move |conn| {
         create_user_sync(conn, credentials_clone, password_hash)
-            .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))
+            .map_err(|e| crate::error::AppError::InternalServerError(e.to_string()))
     })
     .await
     .map_err(AuthError::from)?;
@@ -201,7 +202,6 @@ pub async fn create_user_with_verification(
     // Store verification token in database
     crate::db::with_conn(pool, move |conn| {
         insert_verification_token_sync(conn, &new_token)
-            .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string())) // Ensure it returns AppError for with_conn
     })
     .await
     .map_err(AuthError::from)?;
@@ -340,15 +340,22 @@ pub fn create_user_sync(
         recovery_kek_salt,
         dek_nonce: crate::db::DbBlob::from(dek_nonce),
         recovery_dek_nonce: recovery_dek_nonce.map(crate::db::DbBlob::from),
-        role: user_role, // Using appropriate role based on whether this is the first user
-        account_status: AccountStatus::Pending, // Default to Pending account status
+        #[cfg(feature = "postgres-backend")]
+        role: user_role.into(), // Using appropriate role based on whether this is the first user
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        role: user_role.to_string(),
+        
+        #[cfg(feature = "postgres-backend")]
+        account_status: AccountStatus::Pending.into(), // Default to Pending account status
+        #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
+        account_status: AccountStatus::Pending.to_string(),
         total_prompt_tokens: crate::db::DbBigInt::from(0),
         total_completion_tokens: crate::db::DbBigInt::from(0),
         total_token_cost_cents: crate::db::DbBigInt::from(0),
         tokens_last_reset_at: None,
         token_usage_updated_at: chrono::Utc::now().into(),
-        created_at: scribe_core::DbTimestamp::now(),
-        updated_at: scribe_core::DbTimestamp::now(),
+        created_at: crate::db::DbTimestamp::now(),
+        updated_at: crate::db::DbTimestamp::now(),
     };
 
     debug!("Inserting new user with encryption fields into database...");
@@ -706,7 +713,7 @@ pub async fn recover_user_password_with_phrase(
                     .or(users::email.eq(&identifier)),
             )
             .first::<UserDbQuery>(conn)
-            .map_err(|e| scribe_core::AppError::DatabaseQueryError(e.to_string()))
+            .map_err(|e| crate::error::AppError::InternalServerError(e.to_string()))
     })
     .await
     .map_err(AuthError::from)?;
@@ -809,7 +816,7 @@ fn extract_user_id_from_session(session_id: &str, data_json_str: &str) -> Option
             }, |session_user_id_str| Uuid::parse_str(session_user_id_str).map_or_else(|_| {
                 warn!(session_id, "Failed to parse userId UUID from session data during invalidation sweep.");
                 None
-            }, |id| Some(crate::db::DbId::from(id))))
+            }, |id| Some(crate::db::DbId::from_uuid(id))))
         }
         Err(e) => {
             warn!(session_id, error = ?e, "Failed to parse session data JSON during invalidation sweep.");
@@ -838,7 +845,7 @@ fn delete_sessions_from_db(
     conn: &mut crate::db::DbConn,
     session_ids_to_delete: &[String],
 ) -> Result<usize, AuthError> {
-    use scribe_core::schema::sessions::dsl::{id as session_id_col, sessions};
+    use crate::schema::sessions::dsl::{id as session_id_col, sessions};
     use diesel::{QueryDsl, RunQueryDsl};
 
     if session_ids_to_delete.is_empty() {
@@ -863,7 +870,7 @@ pub async fn delete_all_sessions_for_user(
     pool: &crate::db::DbPool,
     user_id_to_invalidate: crate::db::DbId,
 ) -> Result<usize, AuthError> {
-    use scribe_core::schema::sessions::dsl::{
+    use crate::schema::sessions::dsl::{
         id as session_id_col, session as session_data_col, sessions,
     };
     use diesel::{QueryDsl, RunQueryDsl};
@@ -877,7 +884,7 @@ pub async fn delete_all_sessions_for_user(
             .load::<(String, String)>(conn)
             .map_err(|e| {
                 error!(error = ?e, "Failed to load sessions from DB for invalidation.");
-                scribe_core::AppError::DatabaseQueryError(e.to_string())
+                crate::error::AppError::InternalServerError(e.to_string())
             })?;
 
         // 2. Filter to find session IDs belonging to the target user
@@ -886,8 +893,8 @@ pub async fn delete_all_sessions_for_user(
 
         // 3. Delete the identified sessions
         delete_sessions_from_db(conn, &session_ids_to_delete).map_err(|e| match e {
-            AuthError::DatabaseError(msg) => scribe_core::AppError::DatabaseQueryError(msg),
-            _ => scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()),
+            AuthError::DatabaseError(msg) => crate::error::AppError::InternalServerError(msg),
+            _ => crate::error::AppError::InternalServerError(e.to_string()),
         })
     })
     .await
@@ -902,7 +909,7 @@ pub async fn delete_all_sessions_for_user(
 
 #[instrument(skip(conn), err)]
 pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, AuthError> {
-    use scribe_core::schema::email_verification_tokens;
+    use crate::schema::email_verification_tokens;
 
     info!("Attempting to verify email with token");
 
@@ -925,8 +932,9 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
     // 3. Update the user's account status to Active
     #[cfg(feature = "postgres-backend")]
     let updated_user = {
+        let status: crate::models::db_models::DbAccountStatus = AccountStatus::Active.into();
         diesel::update(users::table.find(verification_token.user_id))
-            .set(users::account_status.eq(AccountStatus::Active))
+            .set(users::account_status.eq(status))
             .returning(UserDbQuery::as_returning())
             .get_result(conn)
             .map_err(|e| {
@@ -940,7 +948,7 @@ pub fn verify_email(conn: &mut crate::db::DbConn, token: &str) -> Result<User, A
         use diesel::prelude::*;
         // SQLite doesn't support RETURNING on UPDATE, so we update and query back
         diesel::update(users::table.find(verification_token.user_id))
-            .set(users::account_status.eq(AccountStatus::Active))
+            .set(users::account_status.eq(AccountStatus::Active.to_string()))
             .execute(conn)
             .map_err(|e| {
                 error!(user_id = %verification_token.user_id, error = ?e, "Failed to update user status to active");

@@ -31,15 +31,16 @@ validator = { version = "0.19", features = ["derive"] }
 deadpool-diesel = { version = "0.6", optional = true }
 diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
 
-diesel = { version = "2.3", default-features = false, features = ["chrono", "uuid", "serde_json"] }
+diesel = { version = "2.3", default-features = false, features = ["chrono", "uuid", "serde_json", "numeric", "32-column-tables", "64-column-tables", "128-column-tables"] }
+bigdecimal = { version = "0.4.5", features = ["serde"] }
 scribe-config = { path = "../scribe-config" }
 scribe-core = { path = "../scribe-core" }
 scribe-crypto = { path = "../scribe-crypto" }
 
 [features]
 default = ["postgres-backend"]
-postgres-backend = ["diesel/postgres", "deadpool-diesel/postgres", "scribe-core/postgres-backend", "scribe-core/axum"]
-sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "scribe-core/sqlite-backend", "scribe-core/axum"]
+postgres-backend = ["diesel/postgres", "deadpool-diesel/postgres"]
+sqlite-backend = ["diesel/sqlite", "diesel/r2d2"]
 
 [dev-dependencies]
 tokio = { version = "1.44.2", features = ["full"] }

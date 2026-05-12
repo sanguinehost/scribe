@@ -9,8 +9,8 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::auth::AuthError;
 use crate::db::DbId;
-use scribe_core::AppError;
-use scribe_core::User;
+use crate::error::AppError;
+use crate::models::db_models::User;
 use scribe_core::UserRole as Role;
 use crate::state::AuthAppState as AuthAppState;
 
@@ -98,7 +98,7 @@ where
                         Some(service) => service,
                         None => {
                             error!("Token service not initialized");
-                            return Err(AppError::InternalServerErrorGeneric(
+                            return Err(AppError::InternalServerError(
                                 "Token service unavailable".to_string(),
                             )
                             .into_response());
@@ -115,7 +115,7 @@ where
                             let user_id = claims.sub;
 
                             let user = match crate::db::with_conn(&pool, move |conn| {
-                                crate::auth::get_user(conn, user_id).map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))
+                                crate::auth::get_user(conn, user_id).map_err(|e| crate::error::AppError::InternalServerError(e.to_string()))
                             })
                             .await
                             {
@@ -139,7 +139,7 @@ where
                                 UnifiedAuthSession::from_request_parts(parts, state)
                                     .await
                                     .map_err(|_| {
-                                        AppError::InternalServerErrorGeneric(
+                                        AppError::InternalServerError(
                                             "Failed to create auth session".to_string(),
                                         )
                                         .into_response()
@@ -148,7 +148,7 @@ where
                             // Set the user in the session (in-memory only, not persisted)
                             auth_session.user = Some(user.clone());
 
-                            info!(user_id = %scribe_core::privacy::loggable_user_id(user.id), "JWT authentication successful - user loaded and session created");
+                            info!(user_id = %crate::privacy::loggable_user_id(user.id), "JWT authentication successful - user loaded and session created");
 
                             return Ok(UnifiedAuth {
                                 session: auth_session,
@@ -188,7 +188,7 @@ where
             if user.dek.is_none() {
                 if let Ok(session) = Session::from_request_parts(parts, state).await {
                     if let Ok(Some(dek)) = session
-                        .get::<scribe_core::SerializableSecretDek>("dek")
+                        .get::<crate::models::db_models::SerializableSecretDek>("dek")
                         .await
                     {
                         recovered_dek = Some(dek);
@@ -200,7 +200,7 @@ where
         if let Some(dek) = recovered_dek {
             if let Some(user) = auth_session.user.as_mut() {
                 info!(
-                    user_id = %scribe_core::privacy::loggable_user_id(user.id),
+                    user_id = %crate::privacy::loggable_user_id(user.id),
                     "✓ DEK retrieved from secure session (cache miss recovery)"
                 );
                 user.dek = Some(dek.clone());
