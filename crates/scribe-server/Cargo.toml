@@ -1,5 +1,5 @@
 [package]
-name = "scribe-backend"
+name = "scribe-server"
 version = "0.2.1"
 edition = "2021"
 
@@ -64,6 +64,7 @@ path = "src/bin/re_embed_chronicles.rs"
 
 [dependencies]
 axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] }
+scribe-core = { path = "../scribe-core" }
 axum-macros = "0.5.0"
 axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 tokio = { version = "1.44.2", features = ["full"] }
