@@ -1,7 +1,7 @@
 // Directly reference the crate
 // extern crate axum_login;
 
-use scribe_core::schema::sessions;
+use crate::schema::sessions;
 use async_trait::async_trait;
 // use axum_login::AuthSessionStore;
 // use axum_login::AuthUser;
@@ -39,7 +39,7 @@ use tracing::{debug, error, info, instrument};
 pub struct SessionRecord {
     pub id: String, // Keep as String to match DB schema (Text)
     // Use chrono::DateTime<Utc> for TIMESTAMPTZ
-    pub expires: Option<scribe_core::DbTimestamp>,
+    pub expires: Option<crate::db::DbTimestamp>,
     // Session data is likely stringified JSON or similar
     pub session: String,
 }
@@ -90,13 +90,13 @@ impl DieselSessionStore {
         let metadata_result = crate::db::with_conn(&pool, move |conn| {
             let result = sessions::table
                 .select((sessions::id, sessions::expires))
-                .load::<(String, Option<scribe_core::DbTimestamp>)>(conn) // Load ID as String from DB
+                .load::<(String, Option<crate::db::DbTimestamp>)>(conn) // Load ID as String from DB
                 .map(|rows| {
                     rows.into_iter()
                         .map(|(id, expires)| SessionMetadata { id, expires })
                         .collect::<Vec<_>>()
                 })
-                .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))?;
+                .map_err(|e| scribe_core::CoreError::Internal(e.to_string()))?;
             Ok(result)
         })
         .await;
@@ -134,7 +134,7 @@ impl DieselSessionStore {
                 ),
             )
             .execute(conn)
-            .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))?;
+            .map_err(|e| scribe_core::CoreError::Internal(e.to_string()))?;
             Ok(count)
         })
         .await;
@@ -154,13 +154,13 @@ impl DieselSessionStore {
 
 // Helper function to convert time::OffsetDateTime to chrono::DateTime<Utc>
 #[must_use]
-pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<scribe_core::DbTimestamp> {
+pub fn offset_to_utc(offset_dt: Option<OffsetDateTime>) -> Option<crate::db::DbTimestamp> {
     // Made pub
     offset_dt.and_then(|dt| DateTime::from_timestamp(dt.unix_timestamp(), 0).map(|dt| dt.into()))
 }
 
 // Helper function to convert chrono::DateTime<Utc> to time::OffsetDateTime
-fn utc_to_offset(utc_dt: Option<scribe_core::DbTimestamp>) -> Option<OffsetDateTime> {
+fn utc_to_offset(utc_dt: Option<crate::db::DbTimestamp>) -> Option<OffsetDateTime> {
     utc_dt.and_then(|dt| OffsetDateTime::from_unix_timestamp(dt.timestamp()).ok())
 }
 
@@ -168,7 +168,7 @@ fn utc_to_offset(utc_dt: Option<scribe_core::DbTimestamp>) -> Option<OffsetDateT
 #[derive(Debug, Clone)]
 pub struct SessionMetadata {
     pub id: String, // Keep as String to match DB schema
-    pub expires: Option<scribe_core::DbTimestamp>,
+    pub expires: Option<crate::db::DbTimestamp>,
 }
 
 #[async_trait]
@@ -210,7 +210,7 @@ impl SessionStore for DieselSessionStore {
                     sessions::session.eq(&record.session),
                 ))
                 .execute(conn)
-                .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))?;
+                .map_err(|e| scribe_core::CoreError::Internal(e.to_string()))?;
             Ok(rows_affected)
         })
         .await;
@@ -254,7 +254,7 @@ impl SessionStore for DieselSessionStore {
                 .find(&session_id_clone_for_closure) // Use the String clone here
                 .first::<SessionRecord>(conn) // Load as SessionRecord (DB representation)
                 .optional() // Handle not found gracefully within Diesel
-                .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))?;
+                .map_err(|e| scribe_core::CoreError::Internal(e.to_string()))?;
             Ok(result)
         })
         .await
@@ -268,7 +268,7 @@ impl SessionStore for DieselSessionStore {
             // Deserialize the db_record.session (JSON string) into HashMap<String, String> or appropriate type for session.data
             // tower_sessions::Record expects session.data to be HashMap<String, Value> where Value is usually String for JSON.
             // For axum-login, the user is typically serialized into a specific key.
-            let session_data_map: std::collections::HashMap<String, scribe_core::DbJson> =
+            let session_data_map: std::collections::HashMap<String, crate::db::unified_types::DbJson> =
                 serde_json::from_str(&db_record.session).map_err(|e| Self::map_json_error(&e))?;
 
             // --- Log the deserialized session.data HashMap ---
@@ -327,7 +327,7 @@ impl SessionStore for DieselSessionStore {
         let delete_result = crate::db::with_conn(&pool, move |conn| {
             let rows_affected = diesel::delete(sessions::table.find(session_id_str)) // Use String value
                 .execute(conn)
-                .map_err(|e| scribe_core::CoreError::InternalServerErrorGeneric(e.to_string()))?;
+                .map_err(|e| scribe_core::CoreError::Internal(e.to_string()))?;
             Ok(rows_affected)
         })
         .await;

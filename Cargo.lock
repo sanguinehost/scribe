@@ -5899,8 +5899,8 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows-link 0.2.1",
- "windows-result 0.4.1",
+ "windows-link 0.1.3",
+ "windows-result 0.3.4",
 ]
 
 [[package]]
@@ -7047,7 +7047,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -13436,6 +13436,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "scribe-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "envy",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tracing",
+ "url",
+ "validator 0.20.0",
+]
+
+[[package]]
 name = "scribe-core"
 version = "0.1.0"
 dependencies = [
@@ -13445,6 +13460,23 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "uuid 1.23.1",
+]
+
+[[package]]
+name = "scribe-crypto"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "base64 0.22.1",
+ "hex",
+ "hmac 0.12.1",
+ "rand 0.8.6",
+ "ring",
+ "secrecy",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -13479,6 +13511,46 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "scribe-identity"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "axum 0.8.4",
+ "axum-login",
+ "base64 0.22.1",
+ "bcrypt",
+ "bigdecimal",
+ "chrono",
+ "deadpool-diesel",
+ "diesel",
+ "diesel-derive-enum",
+ "http-body-util",
+ "jsonwebtoken 10.3.0",
+ "mockall",
+ "proptest",
+ "regex",
+ "ring",
+ "scribe-config",
+ "scribe-core",
+ "scribe-crypto",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tower-sessions",
+ "tower-sessions-memory-store",
+ "tower-test",
+ "tracing",
+ "uuid 1.23.1",
+ "validator 0.19.0",
 ]
 
 [[package]]
@@ -13612,7 +13684,7 @@ dependencies = [
  "url",
  "utf8_iter",
  "uuid 1.23.1",
- "validator",
+ "validator 0.20.0",
  "which 8.0.2",
  "winapi",
  "zip 8.6.0",
@@ -16127,6 +16199,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-test"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6d24790a10a7af737693a3e8f1d03faef7e6ca0cc99aae5066f533766de545"
+dependencies = [
+ "futures-core",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "tokio-tungstenite"
 version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -16595,6 +16678,20 @@ dependencies = [
  "time",
  "tokio",
  "tower-sessions-core",
+]
+
+[[package]]
+name = "tower-test"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4546773ffeab9e4ea02b8872faa49bb616a80a7da66afc2f32688943f97efa7"
+dependencies = [
+ "futures-util",
+ "pin-project",
+ "tokio",
+ "tokio-test",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]
@@ -17177,6 +17274,22 @@ dependencies = [
 
 [[package]]
 name = "validator"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0b4a29d8709210980a09379f27ee31549b73292c87ab9899beee1c0d3be6303"
+dependencies = [
+ "idna",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
+ "validator_derive 0.19.0",
+]
+
+[[package]]
+name = "validator"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43fb22e1a008ece370ce08a3e9e4447a910e92621bb49b85d6e48a45397e7cfa"
@@ -17188,7 +17301,21 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "url",
- "validator_derive",
+ "validator_derive 0.20.0",
+]
+
+[[package]]
+name = "validator_derive"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bac855a2ce6f843beb229757e6e570a42e837bcb15e5f449dd48d5747d41bf77"
+dependencies = [
+ "darling 0.20.11",
+ "once_cell",
+ "proc-macro-error2",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

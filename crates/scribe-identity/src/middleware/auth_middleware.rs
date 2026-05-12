@@ -1,7 +1,7 @@
 // backend/src/middleware/auth_middleware.rs
 // Authentication middleware that supports both JWT (desktop) and cookie (web) authentication
 
-use scribe_core::loggable_user_id;
+use crate::privacy::loggable_user_id;
 use axum::{
     extract::{FromRequestParts, Request, State},
     middleware::Next,
@@ -35,7 +35,7 @@ pub async fn unified_login_required(
     if !auth.is_authenticated() {
         info!("unified_login_required: No authenticated user found - returning 401");
         return Err(
-            scribe_core::AppError::Unauthorized("Authentication required".to_string())
+            crate::error::AppError::Unauthorized("Authentication required".to_string())
                 .into_response(),
         );
     }

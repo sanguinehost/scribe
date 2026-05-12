@@ -2,7 +2,7 @@ use crate::db::{DbId, DbTimestamp};
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use scribe_core::schema::email_verification_tokens;
+use crate::schema::email_verification_tokens;
 
 /// Email verification token as stored in the database
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Serialize, Deserialize)]

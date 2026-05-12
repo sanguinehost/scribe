@@ -1,6 +1,6 @@
 use crate::auth::user_store::Backend as AuthBackend;
-use scribe_core::AppError;
-use scribe_core::privacy::loggable_user_id;
+use crate::error::AppError;
+use crate::privacy::loggable_user_id;
 
 use axum::{
     extract::{FromRef, FromRequestParts},
@@ -79,7 +79,7 @@ where
                     DEK_HEADER.as_str(),
                     e
                 );
-                AppError::BadRequest("DEK header contains invalid UTF-8 characters".to_string())
+                AppError::InternalServerError("DEK header contains invalid UTF-8 characters".to_string())
             })?;
 
             let dek_bytes = STANDARD.decode(dek_b64).map_err(|e| {
@@ -87,7 +87,7 @@ where
                     "SessionDek extractor: Failed to base64-decode DEK from header: {}",
                     e
                 );
-                AppError::BadRequest("Failed to decode DEK from header".to_string())
+                AppError::InternalServerError("Failed to decode DEK from header".to_string())
             })?;
 
             info!(
@@ -143,7 +143,7 @@ where
 
         if let Ok(session) = Session::from_request_parts(parts, state).await {
             match session
-                .get::<scribe_core::SerializableSecretDek>("dek")
+                .get::<crate::models::db_models::SerializableSecretDek>("dek")
                 .await
             {
                 Ok(Some(dek_wrapper)) => {
@@ -193,7 +193,7 @@ where
             user_id = %loggable_user_id(user_id),
             "SessionDek extractor: DEK recovery failed. User may need to log in again."
         );
-        Err(AppError::DekMissing)
+        Err(AppError::InternalServerError("DEK missing".to_string()))
     }
 }
 

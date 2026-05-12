@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::db::DbId;
-use scribe_core::AppError;
+use crate::error::AppError;
 
 /// JWT token claims structure
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,7 +73,7 @@ impl TokenService {
 
         let access_token =
             encode(&Header::default(), &access_claims, &self.encoding_key).map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
+                AppError::InternalServerError(format!(
                     "Failed to generate access token: {}",
                     e
                 ))
@@ -89,7 +89,7 @@ impl TokenService {
 
         let refresh_token = encode(&Header::default(), &refresh_claims, &self.encoding_key)
             .map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
+                AppError::InternalServerError(format!(
                     "Failed to generate refresh token: {}",
                     e
                 ))
@@ -133,7 +133,7 @@ impl TokenService {
 
         let access_token =
             encode(&Header::default(), &access_claims, &self.encoding_key).map_err(|e| {
-                AppError::InternalServerErrorGeneric(format!(
+                AppError::InternalServerError(format!(
                     "Failed to generate access token: {}",
                     e
                 ))

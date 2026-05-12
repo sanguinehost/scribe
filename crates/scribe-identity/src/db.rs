@@ -2,8 +2,16 @@
 //!
 //! Provides a unified async interface for both PostgreSQL and SQLite.
 
-pub use scribe_core::{DbBigInt, DbBlob, DbId, DbTimestamp};
-use scribe_core::AppError;
+pub mod backend_traits;
+pub mod json_wrapper;
+pub mod sqlite_types;
+pub mod unified_types;
+
+pub use unified_types::{DbId, DbTimestamp, DbDecimal};
+
+pub type DbBigInt = i64;
+pub type DbBlob = Vec<u8>;
+use crate::error::AppError;
 
 #[cfg(feature = "postgres-backend")]
 pub type DbConnection = diesel::pg::PgConnection;
@@ -36,10 +44,10 @@ where
     let conn = pool
         .get()
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Failed to get connection: {}", e)))?;
+        .map_err(|e| AppError::InternalServerError(format!("Failed to get connection: {}", e)))?;
     conn.interact(f)
         .await
-        .map_err(|e| AppError::DatabaseQueryError(format!("Interaction error: {}", e)))?
+        .map_err(|e| AppError::InternalServerError(format!("Interaction error: {}", e)))?
 }
 
 #[cfg(all(feature = "sqlite-backend", not(feature = "postgres-backend")))]
@@ -51,12 +59,12 @@ where
     let pool = pool.clone();
     tokio::task::spawn_blocking(move || {
         let mut conn = pool.get().map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get connection: {}", e))
+            AppError::InternalServerError(format!("Failed to get connection: {}", e))
         })?;
         f(&mut conn)
     })
     .await
-    .map_err(|e| AppError::DatabaseQueryError(format!("Task join error: {}", e)))?
+    .map_err(|e| AppError::InternalServerError(format!("Task join error: {}", e)))?
 }
 
 #[cfg(feature = "postgres-backend")]
@@ -78,11 +86,11 @@ where
     tokio::task::spawn_blocking(move || {
         use diesel::prelude::*;
         let mut conn = pool.get().map_err(|e| {
-            AppError::DatabaseQueryError(format!("Failed to get connection: {}", e))
+            AppError::InternalServerError(format!("Failed to get connection: {}", e))
         })?;
 
         diesel::sql_query("BEGIN IMMEDIATE").execute(&mut conn)
-            .map_err(|e| AppError::DatabaseQueryError(format!("Failed to begin immediate transaction: {}", e)))?;
+            .map_err(|e| AppError::InternalServerError(format!("Failed to begin immediate transaction: {}", e)))?;
 
         let result = f(&mut conn);
 
@@ -90,7 +98,7 @@ where
             diesel::sql_query("COMMIT")
                 .execute(&mut conn)
                 .map_err(|e| {
-                    AppError::DatabaseQueryError(format!(
+                    AppError::InternalServerError(format!(
                         "Failed to commit immediate transaction: {}",
                         e
                     ))
@@ -102,5 +110,5 @@ where
         result
     })
     .await
-    .map_err(|e| AppError::DatabaseQueryError(format!("Task join error: {}", e)))?
+    .map_err(|e| AppError::InternalServerError(format!("Task join error: {}", e)))?
 }
