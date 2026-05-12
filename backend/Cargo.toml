@@ -247,7 +247,7 @@ lazy_static = "1.4" # For global metrics registry
 
 # Vector database (optional - only with embedded-vector feature)
 lancedb = { version = "0.23.1", optional = true }
-arrow = { version = "56.2.0", optional = true }   # Pinned: lancedb 0.23.1 compatible with arrow 56.x
+arrow = { version = "58.3.0", optional = true }   # Pinned: lancedb 0.23.1 compatible with arrow 56.x
 
 # OpenTelemetry (optional - only with otel feature)
 opentelemetry = { version = "0.31", features = [
