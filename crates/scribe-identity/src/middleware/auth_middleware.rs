@@ -1,0 +1,55 @@
+// backend/src/middleware/auth_middleware.rs
+// Authentication middleware that supports both JWT (desktop) and cookie (web) authentication
+
+use scribe_core::loggable_user_id;
+use axum::{
+    extract::{FromRequestParts, Request, State},
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
+use tracing::{debug, info};
+
+use crate::auth::token_auth::UnifiedAuth;
+use crate::state::AuthAppState;
+
+/// Middleware that requires authentication via UnifiedAuth (supports both JWT and cookies)
+/// This replaces axum_login's login_required! which only supports cookies
+pub async fn unified_login_required(
+    State(state): State<AuthAppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    // Extract UnifiedAuth from the request
+    let (mut parts, body) = request.into_parts();
+
+    // Extract UnifiedAuth using the FromRequestParts trait
+    let auth = match UnifiedAuth::from_request_parts(&mut parts, &state).await {
+        Ok(auth) => auth,
+        Err(response) => {
+            debug!("unified_login_required: Failed to extract UnifiedAuth");
+            return Err(response);
+        }
+    };
+
+    // Check if user is authenticated
+    if !auth.is_authenticated() {
+        info!("unified_login_required: No authenticated user found - returning 401");
+        return Err(
+            scribe_core::AppError::Unauthorized("Authentication required".to_string())
+                .into_response(),
+        );
+    }
+
+    let auth_type = if auth.is_token_auth { "JWT" } else { "cookie" };
+    if let Some(user) = auth.user() {
+        debug!(
+            user_id = %loggable_user_id(user.id),
+            auth_type = auth_type,
+            "unified_login_required: User authenticated successfully"
+        );
+    }
+
+    // Reconstruct the request and continue
+    let request = Request::from_parts(parts, body);
+    Ok(next.run(request).await)
+}

@@ -1,0 +1,49 @@
+[package]
+name = "scribe-identity"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] }
+axum-login = "0.18.0"
+tower-sessions = { version = "0.14.0", features = ["signed", "private"] }
+tower-sessions-memory-store = "0.14.0"
+bcrypt = "0.18.0"
+argon2 = { version = "0.5.3", features = ["std"] }
+secrecy = { version = "0.10.3", features = ["serde"] }
+ring = "0.17.8"
+sha2 = "0.10.8"
+uuid = { version = "1.15", features = ["v4", "serde"] }
+chrono = { version = "0.4.40", features = ["serde"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+anyhow = "1.0"
+tracing = "0.1"
+async-trait = "0.1"
+thiserror = "2.0.12"
+tokio = { version = "1.44.2", features = ["full"] }
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+time = { version = "0.3", features = ["serde"] }
+base64 = "0.22.1"
+regex = "1.10"
+validator = { version = "0.19", features = ["derive"] }
+deadpool-diesel = { version = "0.6", optional = true }
+diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
+
+diesel = { version = "2.3", default-features = false, features = ["chrono", "uuid", "serde_json"] }
+scribe-config = { path = "../scribe-config" }
+scribe-core = { path = "../scribe-core" }
+scribe-crypto = { path = "../scribe-crypto" }
+
+[features]
+default = ["postgres-backend"]
+postgres-backend = ["diesel/postgres", "deadpool-diesel/postgres", "scribe-core/postgres-backend", "scribe-core/axum"]
+sqlite-backend = ["diesel/sqlite", "diesel/r2d2", "scribe-core/sqlite-backend", "scribe-core/axum"]
+
+[dev-dependencies]
+tokio = { version = "1.44.2", features = ["full"] }
+tower-test = "0.4"
+http-body-util = "0.1"
+mockall = "0.14"
+proptest = "1.6"
