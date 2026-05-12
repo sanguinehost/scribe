@@ -7,13 +7,11 @@ use scribe_backend::db::SqliteInteractExt;
 use scribe_backend::services::embeddings::metadata::CognitiveFactMetadata;
 use scribe_backend::{
     auth::session_dek::SessionDek,
-    db::DbId,
-    models::cognitive_memory::{CognitiveFact, NewCognitiveFact},
+    models::cognitive_memory::NewCognitiveFact,
     schema::cognitive_facts,
-    test_helpers::{self, PipelineCall},
+    test_helpers::{self},
 };
 use secrecy::SecretBox;
-use std::sync::Arc;
 use uuid::Uuid;
 
 #[tokio::test]

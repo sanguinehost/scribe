@@ -90,7 +90,7 @@ impl RigClient {
                 let client = if let Some(key) = &self.api_key {
                     gemini::Client::new(key)?
                 } else {
-                    gemini::Client::from_env()
+                    gemini::Client::from_env()?
                 };
 
                 let model_name = if req.model_name.is_empty() {
@@ -163,6 +163,7 @@ impl RigClient {
                 }
 
                 let completion_req = rig::completion::CompletionRequest {
+                    model: Some(model_name.to_string()),
                     preamble: req.preamble,
                     chat_history,
                     documents: vec![],
@@ -175,6 +176,7 @@ impl RigClient {
                         Some(serde_json::Value::Object(additional_params))
                     },
                     tool_choice: None,
+                    output_schema: None,
                 };
 
                 let response = match model.completion(completion_req).await {
@@ -215,9 +217,21 @@ impl RigClient {
                 // Extract reasoning if requested
                 if req.capture_reasoning_content {
                     rig_response.reasoning_content = response.choice.iter().find_map(|c| match c {
-                        rig::completion::AssistantContent::Reasoning(r) => {
-                            Some(r.reasoning.join(""))
-                        }
+                        rig::completion::AssistantContent::Reasoning(r) => Some(
+                            r.content
+                                .iter()
+                                .map(|c| match c {
+                                    rig::message::ReasoningContent::Text { text, .. } => {
+                                        text.clone()
+                                    }
+                                    rig::message::ReasoningContent::Redacted { .. } => {
+                                        "[REDACTED]".to_string()
+                                    }
+                                    _ => String::new(),
+                                })
+                                .collect::<Vec<_>>()
+                                .join(""),
+                        ),
                         _ => None,
                     });
                 }
@@ -285,6 +299,7 @@ impl RigClient {
                 }
 
                 let completion_req = rig::completion::CompletionRequest {
+                    model: Some(req.model_name.clone()),
                     preamble: req.preamble,
                     chat_history,
                     documents: vec![],
@@ -297,6 +312,7 @@ impl RigClient {
                         Some(serde_json::Value::Object(additional_params))
                     },
                     tool_choice: None,
+                    output_schema: None,
                 };
 
                 let response = match adapter.completion(completion_req).await {
@@ -363,7 +379,7 @@ impl RigClient {
                 let client = if let Some(key) = &self.api_key {
                     gemini::Client::new(key)?
                 } else {
-                    gemini::Client::from_env()
+                    gemini::Client::from_env()?
                 };
 
                 let model_name = if req.model_name.is_empty() {
@@ -437,6 +453,7 @@ impl RigClient {
                 }
 
                 let completion_req = rig::completion::CompletionRequest {
+                    model: Some(model_name.to_string()),
                     preamble: req.preamble,
                     chat_history,
                     documents: vec![],
@@ -449,6 +466,7 @@ impl RigClient {
                         Some(serde_json::Value::Object(additional_params))
                     },
                     tool_choice: None,
+                    output_schema: None,
                 };
 
                 let stream = match model.stream(completion_req).await {
@@ -497,7 +515,11 @@ impl RigClient {
                                         yield RigStreamEvent::Reasoning(reasoning);
                                     }
                                     rig::streaming::StreamedAssistantContent::Reasoning(r) => {
-                                        let reasoning_text = r.reasoning.join("");
+                                        let reasoning_text = r.content.iter().map(|c| match c {
+                                            rig::message::ReasoningContent::Text { text, .. } => text.clone(),
+                                            rig::message::ReasoningContent::Redacted { .. } => "[REDACTED]".to_string(),
+                                            _ => String::new(),
+                                        }).collect::<Vec<_>>().join("");
                                         tracing::info!(len = reasoning_text.len(), "RigClient: Received full Reasoning chunk");
                                         yield RigStreamEvent::Reasoning(reasoning_text);
                                     }
@@ -563,6 +585,9 @@ impl RigClient {
                                 .collect::<Vec<_>>()
                                 .join("\n");
                             messages.push(("assistant".to_string(), text));
+                        }
+                        rig::message::Message::System { content } => {
+                            messages.push(("system".to_string(), content));
                         }
                     }
                 }
@@ -643,5 +668,5 @@ impl AiClient for RigClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 }

@@ -4,7 +4,6 @@
 use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use scribe_backend::{
-    db::DbId,
     models::{
         chats::{Chat, MessageRole, NewChat, NewChatMessage},
         AgentContextAnalysis,

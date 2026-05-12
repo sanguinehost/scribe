@@ -10,10 +10,8 @@
 // - LLM10: Unbounded Consumption - Count parameter limits and resource controls
 // - Rate Limiting: AI endpoint rate limiting enforcement
 
-use reqwest::StatusCode as HttpStatusCode;
 use scribe_backend::{
     auth::session_dek::SessionDek,
-    db::DbId,
     models::lorebook_dtos::CreateLorebookPayload,
     services::agentic::{
         AnalyzeLorebookTool, CreateBatchLorebookEntriesTool, CreateLorebookEntryTool, ScribeTool,

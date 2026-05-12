@@ -141,7 +141,7 @@ impl<T: DbType> DbExpression for T {}
 
 #[cfg(all(test, feature = "postgres-backend"))]
 mod tests {
-    use super::*;
+    
 
     // Test that the trait compiles and basic usage works
     // (Actual implementations are tested in unified_types.rs)

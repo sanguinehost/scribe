@@ -20,7 +20,6 @@ mod payment_security_tests {
     use scribe_backend::{
         config::Config,
         errors::AppError,
-        models::users::UserRole,
         services::payment::CreditService,
         test_helpers::{spawn_app, TestDataGuard},
     };

@@ -2,15 +2,14 @@
 use diesel::prelude::*;
 #[cfg(feature = "sqlite-backend")]
 use scribe_backend::db::SqliteInteractExt;
-use scribe_backend::db::{get_conn, DbBigInt, DbBlob, DbId, DbTimestamp};
+use scribe_backend::db::{get_conn, DbBigInt, DbBlob, DbId};
 use scribe_backend::llm::RigChatResponse;
 use scribe_backend::models::chronicle::{CreateChronicleRequest, NewPlayerChronicle};
 use scribe_backend::models::chronicle_event::{CreateEventRequest, EventFilter, EventSource};
 use scribe_backend::models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole};
 use scribe_backend::schema::{player_chronicles, users};
 use scribe_backend::services::chronicle_service::ChronicleService;
-use scribe_backend::test_helpers::{spawn_app, TestApp};
-use std::sync::Arc;
+use scribe_backend::test_helpers::spawn_app;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -41,7 +40,7 @@ async fn test_llm_deduplication_solomon_example() {
         token_usage_updated_at: chrono::Utc::now().into(),
     };
 
-    let mut conn = get_conn(&app.db_pool)
+    let conn = get_conn(&app.db_pool)
         .await
         .expect("Failed to get DB connection");
 
@@ -167,7 +166,7 @@ async fn test_llm_deduplication_elara_example() {
     // 2. Create User
     let mut user_id = DbId::new();
     {
-        let mut conn = get_conn(&pool).await.expect("Failed to get connection");
+        let conn = get_conn(&pool).await.expect("Failed to get connection");
         let new_user = NewUser {
             created_at: scribe_backend::db::DbTimestamp::now(),
             updated_at: scribe_backend::db::DbTimestamp::now(),
@@ -282,7 +281,7 @@ async fn test_llm_deduplication_elara_example() {
 
     // 7. Verify
     // Use direct DB query to avoid complex filtering in get_chronicle_events which requires message_variants table
-    let mut conn = get_conn(&pool).await.expect("Failed to get connection");
+    let conn = get_conn(&pool).await.expect("Failed to get connection");
     let events: Vec<scribe_backend::models::chronicle_event::ChronicleEvent> = conn
         .interact(move |conn| {
             use scribe_backend::schema::chronicle_events;

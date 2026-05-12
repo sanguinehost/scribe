@@ -751,7 +751,7 @@ mod token_tracking_tests {
 mod extract_from_chat_api_tests {
     use super::*;
     use scribe_backend::models::Character;
-    use scribe_backend::models::{chats::MessageRole, Chat, NewChat, NewChatMessage};
+    use scribe_backend::models::{chats::MessageRole, NewChat, NewChatMessage};
     use scribe_backend::schema::{characters, chat_messages, chat_sessions};
 
     /// Helper to create test character

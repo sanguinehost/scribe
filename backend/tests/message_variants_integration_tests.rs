@@ -22,7 +22,6 @@ use diesel::RunQueryDsl;
 // Crate imports
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHasher};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,

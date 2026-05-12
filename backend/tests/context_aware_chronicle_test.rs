@@ -7,10 +7,6 @@ use scribe_backend::services::agentic::{
     registry::ToolRegistry,
 };
 use scribe_backend::services::{hybrid_token_counter::HybridTokenCounter, ChronicleService};
-use scribe_backend::state::AppState;
-use scribe_backend::test_helpers::{
-    MockAiClient, MockEmbeddingClient, MockEmbeddingPipelineService,
-};
 use secrecy::SecretBox;
 use std::sync::Arc;
 use uuid::Uuid;

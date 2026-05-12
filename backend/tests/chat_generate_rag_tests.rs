@@ -20,7 +20,6 @@ use diesel::RunQueryDsl;
 
 // Crate imports
 use anyhow::Context as _;
-use bigdecimal::BigDecimal;
 use scribe_backend::{
     db::DbId,
     errors::AppError,
@@ -389,6 +388,9 @@ async fn test_generate_chat_response_triggers_embeddings() -> anyhow::Result<()>
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message to trigger embedding".to_string(),
         }],
@@ -553,6 +555,9 @@ async fn test_generate_chat_response_triggers_embeddings_with_existing_session(
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Second user message to trigger embedding".to_string(),
         }],
@@ -792,6 +797,9 @@ async fn test_rag_context_injection_in_prompt() -> anyhow::Result<()> {
     let query_text = "What is the secret code?";
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: query_text.to_string(),
         }],
@@ -1114,6 +1122,9 @@ async fn generate_chat_response_rag_retrieval_error() -> anyhow::Result<()> {
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message for RAG error test".to_string(),
         }],
@@ -1407,6 +1418,9 @@ async fn setup_test_data(use_real_ai: bool) -> anyhow::Result<RagTestContext> {
     let user_message_content = "User message to trigger embedding";
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: user_message_content.to_string(),
         }],
@@ -1543,6 +1557,9 @@ async fn generate_chat_response_rag_success() -> anyhow::Result<()> {
     let user_query = "A simple query for success test".to_string();
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: user_query.clone(),
         }],
@@ -1686,6 +1703,9 @@ async fn generate_chat_response_rag_empty_history_success() -> anyhow::Result<()
     let user_query_empty_hist = "Query for empty history RAG success".to_string();
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             // API history is just the current message
             role: "user".to_string(),
             content: user_query_empty_hist.clone(),
@@ -1820,6 +1840,9 @@ async fn generate_chat_response_rag_no_relevant_chunks_found() -> anyhow::Result
     let user_query_no_chunks = "Query for no RAG chunks test".to_string();
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: user_query_no_chunks.clone(),
         }],
@@ -1992,6 +2015,9 @@ async fn generate_chat_response_rag_uses_character_settings_if_no_session() -> a
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Another query".to_string(),
         }],

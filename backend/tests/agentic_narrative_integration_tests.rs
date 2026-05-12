@@ -289,7 +289,7 @@ async fn test_agentic_tools_with_mock_ai() {
     let mut _guard = TestDataGuard::new(test_app.db_pool.clone(), test_app.test_db_name.clone());
 
     let (user_id, session_dek) = create_test_user(&test_app).await.unwrap();
-    let session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
+    let _session_id: scribe_backend::db::DbId = Uuid::new_v4().into();
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Test messages that should trigger significance

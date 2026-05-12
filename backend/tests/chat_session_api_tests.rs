@@ -8,7 +8,7 @@ use axum::{
 };
 use chrono::Utc;
 use http_body_util::BodyExt;
-use rand::TryRngCore;
+use rand::RngCore;
 use serde_json::json;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -29,7 +29,7 @@ use std::sync::Arc;
 use tracing::debug;
 
 use scribe_backend::crypto;
-use scribe_backend::db::{DbId, DbStringArray, DbTimestamp};
+use scribe_backend::db::DbStringArray;
 use scribe_backend::models::{
     // scribe_backend::models::chats::Chat is already aliased as DbChatSession in this file
     chats::{Message as DbChatMessage, MessageRole},

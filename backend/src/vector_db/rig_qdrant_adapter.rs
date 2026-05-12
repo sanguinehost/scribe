@@ -166,6 +166,7 @@ impl RigQdrantService {
                     field_type: Some(FieldType::Keyword.into()),
                     field_index_params: None,
                     ordering: None,
+                    timeout: None,
                 })
                 .await;
 
@@ -204,6 +205,7 @@ impl RigQdrantService {
                     field_type: Some(FieldType::Text.into()),
                     field_index_params: None,
                     ordering: None,
+                    timeout: None,
                 })
                 .await;
 

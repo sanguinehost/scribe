@@ -1,5 +1,5 @@
 use scribe_backend::logging::init_subscriber;
-use tracing::{info, span, Level};
+use tracing::info;
 
 #[tokio::test]
 async fn test_otel_redaction_flow() {

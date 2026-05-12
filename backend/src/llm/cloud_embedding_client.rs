@@ -118,7 +118,7 @@ fn calculate_jitter_ms(backoff_ms: u64) -> i64 {
         return 0;
     }
 
-    let random_offset = rand::rng().random_range(0..random_range);
+    let random_offset = rand::thread_rng().gen_range(0..random_range);
     random_offset - max_jitter
 }
 

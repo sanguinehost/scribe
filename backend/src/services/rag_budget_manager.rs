@@ -10,9 +10,7 @@ use crate::{
         embeddings::{RetrievedChunk, RetrievedMetadata},
         hybrid_token_counter::{CountingMode, HybridTokenCounter},
     },
-    privacy::logging::sanitize_json_value,
 };
-use serde_json::json;
 
 /// Context budget planner that adapts to different Gemini model pricing tiers
 #[derive(Debug, Clone)]
@@ -173,7 +171,7 @@ impl DynamicRagSelector {
     pub fn new(token_counter: HybridTokenCounter, budget_planner: ContextBudgetPlanner) -> Self {
         // Load Iceberg configuration from environment or config
         let iceberg_catalog_uri = std::env::var("ICEBERG_CATALOG_URI").ok();
-        
+
         Self {
             token_counter,
             budget_planner,
@@ -183,7 +181,7 @@ impl DynamicRagSelector {
 
     /// Performs a semantic query directed to the Iceberg catalog for deep recall.
     /// This replaces the legacy Lorebook retrieval that relied on hot-state vector DBs.
-    /// 
+    ///
     /// # Complexity
     /// Guarantees O(log N) metadata pruning via Iceberg manifest files, avoiding O(N) scans.
     #[tracing::instrument(skip(self))]
@@ -192,7 +190,7 @@ impl DynamicRagSelector {
         query: &str,
         limit: usize,
     ) -> Result<Vec<RetrievedChunk>, AppError> {
-        let span = tracing::Span::current();
+        let _span = tracing::Span::current();
         info!(
             query = %query,
             limit,
@@ -209,11 +207,11 @@ impl DynamicRagSelector {
         // 2. Load the lorebook table metadata
         // 3. Register with DataFusion for distributed-ready querying
         // 4. Execute vector similarity search via DataFusion UDFs
-        
+
         // Performance Note: Iceberg's partitioning (e.g., by world_id) further optimizes recall
         // by pruning entire manifest lists before reading any data files.
 
-        // For the MVC spike, we return an empty list. 
+        // For the MVC spike, we return an empty list.
         // In production, this would bridge to the S3 parquet files.
         Ok(Vec::new())
     }
@@ -358,7 +356,7 @@ mod tests {
     use crate::db::DbId;
     use crate::services::embeddings::ChronicleEventMetadata;
     use chrono::Utc;
-    use uuid::Uuid;
+    
 
     #[test]
     fn test_budget_planner_pro_model() {

@@ -16,7 +16,7 @@ mod subscription_past_due_tests {
     use deadpool_diesel::Pool;
     use diesel::prelude::*;
     use reqwest::{Client, StatusCode};
-    use scribe_backend::db::{DbId, DbTimestamp};
+    
     use scribe_backend::models::payment::{NewSubscription, Subscription};
     use scribe_backend::schema::subscriptions;
     use scribe_backend::test_helpers::{spawn_app, TestDataGuard};

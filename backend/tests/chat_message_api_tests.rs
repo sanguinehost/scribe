@@ -16,7 +16,6 @@ use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 // For mime::APPLICATION_JSON
 use scribe_backend::{
-    db::DbId,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,

@@ -5,14 +5,13 @@ use anyhow::Result as AnyhowResult;
 use bcrypt;
 use chrono::Utc;
 use diesel::{prelude::*, RunQueryDsl};
-use scribe_backend::db;
 use scribe_backend::{
     auth::session_dek::SessionDek,
     db::{DbBigInt, DbId, DbPool},
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
-        chronicle_event::{CreateEventRequest, EventFilter, EventSource},
+        chronicle_event::EventFilter,
         users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::users,
@@ -26,7 +25,7 @@ use uuid::Uuid;
 
 /// Helper to create a test user
 async fn create_test_user(test_app: &TestApp) -> AnyhowResult<(Uuid, SessionDek)> {
-    let mut conn = scribe_backend::db::get_conn(&test_app.db_pool).await?;
+    let conn = scribe_backend::db::get_conn(&test_app.db_pool).await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
     let username = format!("variant_test_user_{}", Uuid::new_v4().simple());
@@ -103,7 +102,7 @@ async fn create_test_chat_session(
     user_id: DbId,
     session_id: DbId,
 ) -> AnyhowResult<()> {
-    let mut conn = scribe_backend::db::get_conn(db_pool)
+    let conn = scribe_backend::db::get_conn(db_pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
 

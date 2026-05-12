@@ -213,6 +213,9 @@ async fn generate_chat_response_streaming_ai_error() {
 
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "User message for error stream".to_string(),
     }];
@@ -494,6 +497,9 @@ async fn generate_chat_response_streaming_initiation_error() {
     // Construct the new payload with history
     let user_message_content = "User message for stream initiation error";
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: user_message_content.to_string(),
     }];
@@ -746,6 +752,9 @@ async fn generate_chat_response_streaming_error_before_content() {
     // Construct the new payload with history
     let user_message_content = "User message for error before content";
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: user_message_content.to_string(),
     }];
@@ -1030,6 +1039,9 @@ async fn generate_chat_response_streaming_llm_json_error() {
     // Construct the new payload with history
     let payload_user_message_content = "User message for JSON error stream"; // This is the second user message, from the payload
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: payload_user_message_content.to_string(),
     }];

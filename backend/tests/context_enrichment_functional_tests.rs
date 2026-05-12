@@ -3,11 +3,8 @@
 
 use diesel::prelude::*;
 use scribe_backend::{
-    auth::{session_dek::SessionDek, token_service::TokenService},
-    db::DbId,
-    models::chats::{ChatMessage, MessageRole},
+    auth::token_service::TokenService,
     services::{
-        agentic::factory::AgenticNarrativeFactory,
         agentic::{
             context_enrichment_agent::{ContextEnrichmentAgent, EnrichmentMode},
             narrative_tools::SearchKnowledgeBaseTool,
@@ -16,7 +13,7 @@ use scribe_backend::{
         ChronicleService,
     },
     state::{AppState, AppStateServices},
-    test_helpers::{db::create_test_user, spawn_app, MockAiClient, TestDataGuard},
+    test_helpers::{db::create_test_user, spawn_app, TestDataGuard},
 };
 use secrecy::ExposeSecret;
 use std::sync::Arc;

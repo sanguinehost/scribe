@@ -7,7 +7,7 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use scribe_backend::{
-    models::chats::{ApiChatMessage, Chat as DbChatSession, GenerateChatRequest},
+    models::chats::{ApiChatMessage, GenerateChatRequest},
     test_helpers,
 };
 use serde_json::json;
@@ -88,7 +88,7 @@ async fn test_gemini_reasoning_streaming_real_ai() {
     let model_name = "gemini-2.5-flash";
 
     let payload = GenerateChatRequest {
-        history: vec![ApiChatMessage {
+        history: vec![ApiChatMessage { id: None, current_variant_index: None, variant_count: None,
             role: "user".to_string(),
             content: "Please provide a rigorous proof (thinking step-by-step) for the following problem: Show that for any positive integer n, the number of ways to tile a 2 x n rectangle with dominoes (1x2 tiles) is equal to the (n+1)-th Fibonacci number (where F1=1, F2=1, F3=2, etc.).".to_string(),
         }],

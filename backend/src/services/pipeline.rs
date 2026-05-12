@@ -1,19 +1,15 @@
-use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
 use swiftide::indexing::{Node, Pipeline};
 // Use swiftide_core directly or the re-exported traits
-use swiftide::traits::{Loader, Persist}; // Assuming they are in traits or indexing_traits
-use swiftide::indexing::IndexingStream;
-use futures_util::stream::{BoxStream, StreamExt};
-use tracing::{info, instrument, Span};
 use crate::db::connection::TursoClient;
 use crate::privacy::logging::sanitize_json_value;
-use serde_json::{json, Value};
-#[cfg(feature = "otel")]
-use opentelemetry::trace::TraceContextExt;
-#[cfg(feature = "otel")]
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use futures_util::stream::StreamExt;
+use serde_json::json;
+use swiftide::indexing::IndexingStream;
+use swiftide::traits::{Loader, Persist}; // Assuming they are in traits or indexing_traits
+use tracing::{info, instrument};
 
 /// A loader that extracts Chronicle metadata from Turso (libSQL).
 #[derive(Clone)]
@@ -23,7 +19,8 @@ pub struct TursoChronicleLoader {
 
 impl std::fmt::Debug for TursoChronicleLoader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TursoChronicleLoader").finish_non_exhaustive()
+        f.debug_struct("TursoChronicleLoader")
+            .finish_non_exhaustive()
     }
 }
 
@@ -38,32 +35,37 @@ impl Loader for TursoChronicleLoader {
 
     fn into_stream(self) -> IndexingStream<Self::Output> {
         let client = self.client.clone();
-        
+
         let stream = async_stream::stream! {
-            let conn = match client.connect() {
+            let _conn = match client.connect() {
                 Ok(c) => c,
                 Err(e) => {
                     yield Err(anyhow::anyhow!("Loader error: {}", e));
                     return;
                 }
             };
-            
+
             let chronicle_data = json!({
                 "id": "chronicle_123",
                 "content": "The party entered the ancient tomb.",
                 "created_at": chrono::Utc::now().to_rfc3339()
             });
-            
+
             let sanitized_content = sanitize_json_value(&chronicle_data["content"]);
             let metadata = json!({
                 "source": "turso",
                 "sanitized_content": sanitized_content,
                 "extracted_at": chrono::Utc::now().to_rfc3339()
             });
-            
-            let mut node = Node::new(chronicle_data["content"].as_str().unwrap_or_default().to_string());
-            node.with_metadata(metadata);
-            
+
+            let mut node = Node::<String>::new(chronicle_data["content"].as_str().unwrap_or_default().to_string());
+            if let Some(obj) = metadata.as_object() {
+                let metadata_map: Vec<(String, serde_json::Value)> = obj.iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                node.with_metadata(metadata_map);
+            }
+
             yield Ok(node);
         };
 
@@ -81,7 +83,11 @@ pub struct IcebergStorage {
 
 impl IcebergStorage {
     pub fn new(bucket: String, table_name: String, is_dry_run: bool) -> Self {
-        Self { bucket, table_name, is_dry_run }
+        Self {
+            bucket,
+            table_name,
+            is_dry_run,
+        }
     }
 }
 
@@ -111,7 +117,7 @@ impl Persist for IcebergStorage {
             table = %self.table_name,
             "Sinking node into Iceberg on S3"
         );
-        
+
         Ok(node)
     }
 

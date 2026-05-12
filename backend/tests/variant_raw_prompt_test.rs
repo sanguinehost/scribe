@@ -21,20 +21,16 @@ use diesel::prelude::*;
 use diesel::RunQueryDsl;
 
 // Crate imports
-use argon2::password_hash::{rand_core::OsRng, SaltString};
-use argon2::{Argon2, PasswordHasher};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 // use scribe_backend::db::SqliteInteractExt;
 #[cfg(feature = "sqlite-backend")]
 use scribe_backend::db::{SqliteInteractExt, SqlitePoolExt};
 use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
-    db::{self},
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
-        chats::{Chat, Message as DbChatMessage, MessageRole, NewChatMessage, NewMessageVariant},
+        chats::{Chat, Message as DbChatMessage, MessageRole, NewMessageVariant},
         users::{AccountStatus, NewUser, UserDbQuery, UserRole},
     },
     schema::{characters, chat_messages, chat_sessions, message_variants, users},
@@ -51,7 +47,7 @@ async fn create_test_user_with_dek(
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
     #[cfg(feature = "postgres-backend")]
-    let mut conn = test_app
+    let conn = test_app
         .db_pool
         .get()
         .await

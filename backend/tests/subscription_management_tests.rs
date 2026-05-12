@@ -78,7 +78,7 @@ mod subscription_management_tests {
 
         // Test that SubscriptionService can be created with the app config
         let encryption_service = EncryptionService::new();
-        let subscription_service =
+        let _subscription_service =
             SubscriptionService::new((*app.config).clone(), encryption_service);
 
         // Basic smoke test - service should be created successfully
@@ -97,7 +97,7 @@ mod subscription_management_tests {
 
         // Test that UsageTrackingService can be created with the app config
         let encryption_service = EncryptionService::new();
-        let usage_service = UsageTrackingService::new((*app.config).clone(), encryption_service);
+        let _usage_service = UsageTrackingService::new((*app.config).clone(), encryption_service);
 
         // Basic smoke test - service should be created successfully
         assert!(true, "UsageTrackingService created successfully");
@@ -114,7 +114,7 @@ mod subscription_management_tests {
             .expect("Failed to create user");
 
         let encryption_service = EncryptionService::new();
-        let subscription_service =
+        let _subscription_service =
             SubscriptionService::new((*app.config).clone(), encryption_service);
 
         // Note: Actual subscription operations would require more setup
@@ -139,7 +139,7 @@ mod subscription_management_tests {
         .expect("Failed to create user");
 
         let encryption_service = EncryptionService::new();
-        let usage_service = UsageTrackingService::new((*app.config).clone(), encryption_service);
+        let _usage_service = UsageTrackingService::new((*app.config).clone(), encryption_service);
 
         // Note: Actual usage tracking operations would require more setup
         // This is a placeholder test for basic service functionality

@@ -10,22 +10,15 @@
 
 #[cfg(feature = "payment")]
 mod credit_flow_tests {
-    use diesel::{Connection, ExpressionMethods, PgConnection, QueryDsl, RunQueryDsl};
+    
     use reqwest::{Client, StatusCode};
     use scribe_backend::{
-        auth::{user_store::Backend as AuthBackend, AuthError},
-        models::{
-            character_card::NewCharacter,
-            characters::Character,
-            credit::{CreditBalance, CreditTransactionDto},
-            users::{NewUser, User},
-        },
         services::payment::CreditService,
         test_helpers::{payment_test_helpers, spawn_app, TestDataGuard},
     };
     use serde_json::json;
-    use std::sync::Arc;
-    use uuid::Uuid;
+    
+    
 
     /// Simple test helper to check that credit deduction endpoint works
     async fn test_credit_deduction_basic() {

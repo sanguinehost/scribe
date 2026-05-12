@@ -6,15 +6,13 @@
 
 #[cfg(all(test, feature = "payment"))]
 mod credit_service_tests {
-    use chrono::{Duration, Utc};
+    use chrono::Utc;
     use deadpool_diesel::{Manager as DeadpoolManager, Pool};
     use diesel::prelude::*;
     use scribe_backend::{
         config::Config,
         errors::AppError,
-        models::credit::{CreditBalance, CreditPackage, CreditTransaction, NewCreditPackage},
-        models::users::{AccountStatus, NewUser, UserRole},
-        schema::users,
+        models::credit::NewCreditPackage,
         services::payment::CreditService,
         test_helpers::{spawn_app, TestDataGuard},
     };

@@ -5,7 +5,6 @@
 use scribe_backend::models::character_card::{CharacterCardDataV3, CharacterCardV3, NewCharacter};
 use scribe_backend::services::character_parser::ParsedCharacterCard;
 // Add this if not already implicitly imported by other uses
-use scribe_backend::db::DbId;
 use uuid::Uuid; // Keep this specific import
 
 #[test]

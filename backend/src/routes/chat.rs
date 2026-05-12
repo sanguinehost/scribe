@@ -635,8 +635,20 @@ async fn generate_chat_response_sse(
                 );
             }
             let rig_msg = match db_msg.message_type {
-                MessageRole::User => RigMessage::User { content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(content_str)) },
-                _ => RigMessage::Assistant { id: None, content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(content_str)) },
+                MessageRole::User => RigMessage::User {
+                    content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
+                        content_str,
+                    )),
+                },
+                MessageRole::System => RigMessage::System {
+                    content: content_str,
+                },
+                _ => RigMessage::Assistant {
+                    id: None,
+                    content: rig::one_or_many::OneOrMany::one(rig::message::AssistantContent::text(
+                        content_str,
+                    )),
+                },
             };
             rig_recent_history.push(rig_msg);
         }
@@ -1304,11 +1316,8 @@ async fn generate_chat_response_json_inner(
                     content_str,
                 )),
             },
-            MessageRole::System => RigMessage::User {
-                // Should not happen in recent history, but map to User as fallback
-                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
-                    content_str,
-                )),
+            MessageRole::System => RigMessage::System {
+                content: content_str,
             },
         };
         rig_recent_history.push(rig_msg);
@@ -1577,6 +1586,9 @@ async fn generate_chat_response_json_inner(
                                         .unwrap_or_default();
                                     ("Assistant".to_string(), text)
                                 }
+                                RigMessage::System { content } => {
+                                    ("System".to_string(), content.clone())
+                                }
                             };
                             (role, content)
                         })
@@ -1807,13 +1819,17 @@ async fn generate_chat_response_json_inner(
                         _ => None,
                     })
                     .unwrap_or_default(),
-                RigMessage::Assistant { content, .. } => content
-                    .iter()
-                    .find_map(|c| match c {
-                        rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
-                        _ => None,
-                    })
-                    .unwrap_or_default(),
+                RigMessage::Assistant { content, .. } => {
+                    let text = content
+                        .iter()
+                        .find_map(|c| match c {
+                            rig::message::AssistantContent::Text(t) => Some(t.text.clone()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    ("Assistant".to_string(), text).1
+                }
+                RigMessage::System { content } => ("System".to_string(), content.clone()).1,
             })
             .collect();
 
@@ -2112,6 +2128,7 @@ async fn generate_chat_response_json_inner(
                                                         }).unwrap_or_default();
                                                         ("Assistant".to_string(), text)
                                                     }
+                                                    RigMessage::System { content } => ("System".to_string(), content.clone()),
                                                 };
                                                 (role, content)
                                             })
@@ -2636,6 +2653,7 @@ async fn generate_chat_response_json_inner(
                                                         }).unwrap_or_default();
                                                         ("Assistant".to_string(), text)
                                                     }
+                                                    RigMessage::System { content } => ("System".to_string(), content.clone()),
                                                 };
                                                 (role, content)
                                             })
@@ -3736,11 +3754,8 @@ pub async fn generate_suggested_actions(
                     content_str,
                 )),
             },
-            MessageRole::System => RigMessage::User {
-                // Fallback
-                content: rig::one_or_many::OneOrMany::one(rig::message::UserContent::text(
-                    content_str,
-                )),
+            MessageRole::System => RigMessage::System {
+                content: content_str,
             },
         };
         rig_processed_history.push(rig_msg);

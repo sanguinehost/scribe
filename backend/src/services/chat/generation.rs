@@ -1465,12 +1465,16 @@ pub async fn get_session_data_for_generation(
                 &session_model_name_db,
                 Some(context_total_token_limit),
             );
-            let rag_selector = DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
+            let rag_selector =
+                DynamicRagSelector::new((*state.token_counter).clone(), budget_planner);
 
             // REPLACED: Legacy hot-state lorebook retrieval replaced with semantic Iceberg recall
             // This now directs semantic queries to the Iceberg catalog for deep recall.
             if let Some(_lorebook_ids) = &active_lorebook_ids_for_search {
-                match rag_selector.query_iceberg_lorebooks(&rag_query_text, lorebook_search_limit as usize).await {
+                match rag_selector
+                    .query_iceberg_lorebooks(&rag_query_text, lorebook_search_limit as usize)
+                    .await
+                {
                     Ok(iceberg_chunks) => {
                         info!(%session_id, num_iceberg_chunks = iceberg_chunks.len(), "Retrieved lorebook chunks from Iceberg catalog.");
                         combined_rag_candidates.extend(iceberg_chunks);

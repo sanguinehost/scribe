@@ -1,18 +1,15 @@
 #![cfg(feature = "postgres-backend")]
 #![cfg(test)]
 
-use anyhow::Context as _;
 use axum::{
     body::Body,
     http::{header, Method, Request, StatusCode},
 };
-use bigdecimal::BigDecimal;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 use diesel::prelude::*;
 use scribe_backend::{
-    db::DbId,
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -23,7 +20,6 @@ use scribe_backend::{
     test_helpers::{self},
 };
 use serde_json::json;
-use tower_cookies::Cookie;
 
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
@@ -49,7 +45,7 @@ async fn test_update_chat_message_content_success_and_bola() -> anyhow::Result<(
     // Create User B (Attacker)
     let username_b = "test_update_message_attacker";
     let password_b = "password_user_b";
-    let user_b: User = test_helpers::db::create_test_user(
+    let _user_b: User = test_helpers::db::create_test_user(
         &test_app.db_pool,
         username_b.to_string(),
         password_b.to_string(),

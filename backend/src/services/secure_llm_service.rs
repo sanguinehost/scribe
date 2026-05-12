@@ -227,6 +227,7 @@ impl SecureLlmService {
                     })
                     .collect::<Vec<_>>()
                     .join("\n"),
+                rig::message::Message::System { content } => content.clone(),
             };
 
             if let Err(security_error) = sanitizer.sanitize(&content) {
@@ -321,6 +322,7 @@ impl SecureLlmService {
                         _ => 0,
                     })
                     .sum(),
+                rig::message::Message::System { content } => content.len(),
             };
             estimated_tokens += content_len / 4;
         }
@@ -446,6 +448,7 @@ fn extract_text_content(request: &RigCompletionRequest) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
+            rig::message::Message::System { content } => content.clone(),
         };
         content.push_str(" ");
         content.push_str(&msg_content);

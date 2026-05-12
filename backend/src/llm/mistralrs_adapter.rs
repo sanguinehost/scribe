@@ -77,6 +77,9 @@ impl CompletionModel for MistralRsRigAdapter {
                         .join("\n");
                     messages.push(("assistant".to_string(), text));
                 }
+                Message::System { content } => {
+                    messages.push(("system".to_string(), content.clone()));
+                }
             }
         }
 
@@ -93,8 +96,10 @@ impl CompletionModel for MistralRsRigAdapter {
                 output_tokens: 0,
                 total_tokens: 0,
                 cached_input_tokens: 0,
+                cache_creation_input_tokens: 0,
             },
             raw_response: MistralRsResponse(response_text),
+            message_id: None,
         })
     }
 
@@ -131,6 +136,9 @@ impl CompletionModel for MistralRsRigAdapter {
                         .collect::<Vec<_>>()
                         .join("\n");
                     messages.push(("assistant".to_string(), text));
+                }
+                Message::System { content } => {
+                    messages.push(("system".to_string(), content.clone()));
                 }
             }
         }

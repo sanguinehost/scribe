@@ -8,7 +8,6 @@
 use chrono::Utc;
 use scribe_backend::{
     auth::session_dek::SessionDek,
-    db::DbId,
     models::{
         chats::{ChatMessage, MessageRole},
         chronicle_event::EventSource,

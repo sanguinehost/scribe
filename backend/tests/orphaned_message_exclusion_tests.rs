@@ -244,14 +244,23 @@ async fn test_frontend_history_vs_database_history() {
     // Test 2: With frontend history - should NOT call RAG for chat history
     let frontend_history = vec![
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Previous user message".to_string(),
         },
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "assistant".to_string(),
             content: "Previous assistant response".to_string(),
         },
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Test message".to_string(), // Current message
         },
@@ -412,20 +421,32 @@ async fn test_orphaned_message_exclusion_scenario() {
     // Frontend provides filtered history that excludes orphaned messages
     let filtered_frontend_history = vec![
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Hello, how are you?".to_string(),
         },
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "assistant".to_string(),
             content: "I'm doing well, thank you!".to_string(),
         },
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "What's the weather like?".to_string(), // User edited this message
         },
         // Note: Any messages that came after the original "What's the weather like?"
         // message are now orphaned and should NOT appear in this history
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Can you help me with this task?".to_string(), // Current message
         },

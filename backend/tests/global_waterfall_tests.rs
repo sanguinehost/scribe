@@ -177,6 +177,9 @@ async fn test_global_waterfall_fills_context() -> anyhow::Result<()> {
     // 10. Call generate endpoint
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Trigger waterfall".to_string(),
         }],

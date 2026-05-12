@@ -2,7 +2,6 @@
 #![cfg(test)]
 
 use anyhow::Result;
-use chrono::Utc;
 use diesel::prelude::*;
 use qdrant_client::qdrant::{
     condition::ConditionOneOf, r#match::MatchValue, Condition, FieldCondition, Filter, Match,

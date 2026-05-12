@@ -112,7 +112,7 @@ mod get_session_data_for_generation_tests {
         character_id: scribe_backend::db::DbId,
         user_id: scribe_backend::db::DbId,
     ) -> Character {
-        use scribe_backend::db::{DbDecimal, DbId, DbJson, DbStringArray, DbTimestamp};
+        use scribe_backend::db::{DbDecimal, DbJson, DbStringArray};
         Character {
             id: character_id,
             user_id: user_id,
@@ -1046,7 +1046,7 @@ mod get_session_data_for_generation_tests {
         .await;
 
         let mut setup = setup; // Make setup mutable
-        let mut conn = get_conn(&setup.app_state.pool)
+        let conn = get_conn(&setup.app_state.pool)
             .await
             .expect("Failed to get DB connection");
 
@@ -1338,7 +1338,7 @@ mod get_session_data_for_generation_tests {
             active_lorebook_ids_for_search_db: None,
         })
         .await;
-        let mut conn = get_conn(&setup.app_state.pool)
+        let conn = get_conn(&setup.app_state.pool)
             .await
             .expect("Failed to get DB connection for RAG combined test");
 
@@ -1739,7 +1739,7 @@ mod get_session_data_for_generation_tests {
             active_lorebook_ids_for_search_db: None,
         })
         .await;
-        let mut conn = get_conn(&setup.app_state.pool)
+        let conn = get_conn(&setup.app_state.pool)
             .await
             .expect("Failed to get DB connection for RAG older chat history test");
 

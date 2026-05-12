@@ -17,7 +17,7 @@ use tracing::debug;
 use uuid::Uuid;
 
 use scribe_backend::{
-    db::{DbId, DbStringArray, DbTimestamp},
+    db::DbId,
     models::{
         characters::Character as DbCharacter,
         chats::{
@@ -203,6 +203,9 @@ async fn perform_empty_response_stream_test(
 
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "User message for empty stream response".to_string(),
     }];
@@ -409,6 +412,9 @@ async fn perform_reasoning_chunk_stream_test(
 
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "User message for reasoning chunk".to_string(),
     }];
@@ -818,6 +824,9 @@ async fn perform_real_client_stream_test_and_verify(
         "A simple prompt likely to succeed in non-streaming, but might fail in streaming.";
 
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: user_message_content.to_string(),
     }];

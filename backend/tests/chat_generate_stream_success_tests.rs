@@ -177,6 +177,9 @@ async fn send_chat_request(
 
     let generate_request = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "Hello, how are you?".to_string(),
         }],

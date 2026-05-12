@@ -10,9 +10,9 @@ mod payment_race_condition_tests {
         services::payment::CreditService,
         test_helpers::{spawn_app, TestDataGuard},
     };
-    use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-    use std::sync::{Arc, Barrier};
-    use std::time::Duration;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+    
     use tokio::task::JoinSet;
     use uuid::Uuid;
 

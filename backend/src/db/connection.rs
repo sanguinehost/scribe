@@ -29,7 +29,11 @@ impl TursoClient {
     /// If `url` and `token` are provided, it initializes a remote replica that
     /// syncs with the specified Turso database. Otherwise, it falls back to a
     /// standard local SQLite file.
-    pub async fn new(path: &str, url: Option<String>, token: Option<String>) -> Result<Self, DbError> {
+    pub async fn new(
+        path: &str,
+        url: Option<String>,
+        token: Option<String>,
+    ) -> Result<Self, DbError> {
         let db = match (url, token) {
             (Some(url), Some(token)) if !url.is_empty() && !token.is_empty() => {
                 info!("Initializing LibSQL with Turso replication: {}", url);
@@ -69,7 +73,12 @@ impl TursoClient {
     /// Executes a query while ensuring parameters are sanitized for logging.
     ///
     /// This follows PRIVACY_SAFE_LOGGING.md standards by redacting PII before logging.
-    pub async fn execute_safe(&self, conn: &Connection, query: &str, params: serde_json::Value) -> Result<u64, DbError> {
+    pub async fn execute_safe(
+        &self,
+        conn: &Connection,
+        query: &str,
+        params: serde_json::Value,
+    ) -> Result<u64, DbError> {
         // Sanitize parameters before logging as per privacy requirements
         let sanitized = sanitize_json_value(&params);
         debug!(
@@ -90,8 +99,8 @@ impl TursoClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use serde_json::json;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_turso_replication_sync() {
@@ -105,23 +114,25 @@ mod tests {
             .expect("Failed to create client");
 
         let conn = client.connect().expect("Failed to connect");
-        
-        // Verify basic read/write atomicity in the spike environment
-        client.execute_safe(
-            &conn, 
-            "CREATE TABLE test (id INTEGER PRIMARY KEY, val TEXT)", 
-            json!({})
-        )
-        .await
-        .expect("Failed to create table");
 
-        client.execute_safe(
-            &conn, 
-            "INSERT INTO test (val) VALUES ('hot state')", 
-            json!({"val": "hot state"})
-        )
-        .await
-        .expect("Failed to insert data");
+        // Verify basic read/write atomicity in the spike environment
+        client
+            .execute_safe(
+                &conn,
+                "CREATE TABLE test (id INTEGER PRIMARY KEY, val TEXT)",
+                json!({}),
+            )
+            .await
+            .expect("Failed to create table");
+
+        client
+            .execute_safe(
+                &conn,
+                "INSERT INTO test (val) VALUES ('hot state')",
+                json!({"val": "hot state"}),
+            )
+            .await
+            .expect("Failed to insert data");
 
         // Check if the local file was created
         assert!(path.exists(), "Database file should exist at {}", path_str);

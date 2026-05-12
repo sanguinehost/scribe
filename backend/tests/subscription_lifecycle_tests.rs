@@ -15,7 +15,7 @@ mod subscription_lifecycle_tests {
     use scribe_backend::{
         config::Config,
         middleware::plan_enforcement::EnforcementConfig,
-        test_helpers::{spawn_app, TestApp, TestDataGuard},
+        test_helpers::{spawn_app, TestDataGuard},
     };
     use serde_json::json;
     use std::env;

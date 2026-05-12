@@ -12,7 +12,7 @@ use scribe_backend::{
         chats::{ChatMessage, MessageRole},
         chronicle::CreateChronicleRequest,
         chronicle_event::{CreateEventRequest, EventFilter, EventSource},
-        users::{AccountStatus, NewUser, UserDbQuery, UserRole},
+        users::{AccountStatus, NewUser, UserRole},
     },
     schema::users,
     services::{
@@ -20,7 +20,7 @@ use scribe_backend::{
         ChronicleService, ScribeTool,
     },
     test_helpers::{
-        spawn_app_permissive_rate_limiting, MockQdrantClientService, TestApp, TestAppGuard,
+        spawn_app_permissive_rate_limiting, TestApp, TestAppGuard,
         TestDataGuard,
     },
 };
@@ -33,7 +33,7 @@ use uuid::Uuid;
 async fn create_test_user(
     test_app: &TestApp,
 ) -> AnyhowResult<(scribe_backend::db::DbId, SessionDek)> {
-    let mut conn = scribe_backend::db::get_conn(&test_app.db_pool).await?;
+    let conn = scribe_backend::db::get_conn(&test_app.db_pool).await?;
 
     let hashed_password = bcrypt::hash("testpassword", bcrypt::DEFAULT_COST)?;
     let username = format!("dedup_test_user_{}", Uuid::new_v4().simple());
@@ -121,7 +121,7 @@ async fn create_test_chat_session(
     user_id: scribe_backend::db::DbId,
     session_id: scribe_backend::db::DbId,
 ) -> AnyhowResult<()> {
-    let mut conn = scribe_backend::db::get_conn(db_pool)
+    let conn = scribe_backend::db::get_conn(db_pool)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to get DB connection: {}", e))?;
 
@@ -184,7 +184,7 @@ fn create_duplicate_everest_messages(
 
     let mut messages = Vec::new();
 
-    for (i, (role, content)) in messages_content.iter().enumerate() {
+    for (_i, (role, content)) in messages_content.iter().enumerate() {
         let message_role = match *role {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,
@@ -387,7 +387,7 @@ async fn test_search_knowledge_base_tool_functionality() {
     let chronicle_id = create_test_chronicle(user_id, &test_app).await.unwrap();
 
     // Create some existing events
-    let session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))); // Dummy for search test
+    let _session_dek = SessionDek(SecretBox::new(Box::new([0u8; 32].to_vec()))); // Dummy for search test
     create_existing_everest_events(user_id, chronicle_id, &test_app, None)
         .await
         .unwrap();

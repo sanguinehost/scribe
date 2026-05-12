@@ -11,7 +11,6 @@ use chrono::Utc;
 use diesel::prelude::*;
 use scribe_backend::db::{DbId, DbTimestamp};
 use scribe_backend::llm::RigChatResponse;
-use scribe_backend::models::OptionalStringArray;
 use serde_json::json;
 use std::str::FromStr;
 use tower::ServiceExt;
@@ -432,6 +431,9 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     }
 
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "Hello, world!".to_string(),
     }];
@@ -497,7 +499,7 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     let last_message_content = last_request.history.last().unwrap();
 
     let prompt_text = match last_message_content {
-        rig::message::Message::User { content } => match content.iter().next() {
+        rig::completion::Message::User { content } => match content.iter().next() {
             Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
             _ => None,
         }
@@ -511,16 +513,19 @@ async fn generate_chat_response_uses_session_settings() -> Result<(), anyhow::Er
     info!("--- DEBUG: All Messages ---");
     for (i, msg) in last_request.history.iter().enumerate() {
         let content_text = match msg {
-            rig::message::Message::User { content } => match content.iter().next() {
+            rig::completion::Message::User { content } => match content.iter().next() {
                 Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
                 _ => None,
             }
             .unwrap_or_else(|| "Non-text content".to_string()),
-            rig::message::Message::Assistant { content, .. } => match content.iter().next() {
+            rig::completion::Message::Assistant { content, .. } => match content.iter().next() {
                 Some(rig::message::AssistantContent::Text(t)) => Some(t.text.clone()),
                 _ => None,
             }
             .unwrap_or_else(|| "Non-text content".to_string()),
+            rig::completion::Message::System { content } => {
+                Some(content.clone()).unwrap_or_else(|| "Non-text content".to_string())
+            }
         };
         info!("Message {}: Content={}", i, content_text);
     }
@@ -895,6 +900,9 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     }
 
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "Hello, world!".to_string(),
     }];
@@ -949,7 +957,7 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     let last_message_content = last_request.history.last().unwrap();
 
     let prompt_text = match last_message_content {
-        rig::message::Message::User { content } => match content.iter().next() {
+        rig::completion::Message::User { content } => match content.iter().next() {
             Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
             _ => None,
         }
@@ -960,16 +968,19 @@ async fn generate_chat_response_json_stream_initiation_error() -> Result<(), any
     eprintln!("--- DEBUG: All Messages ---");
     for (i, msg) in last_request.history.iter().enumerate() {
         let content_text = match msg {
-            rig::message::Message::User { content } => match content.iter().next() {
+            rig::completion::Message::User { content } => match content.iter().next() {
                 Some(rig::message::UserContent::Text(t)) => Some(t.text.clone()),
                 _ => None,
             }
             .unwrap_or_else(|| "Non-text content".to_string()),
-            rig::message::Message::Assistant { content, .. } => match content.iter().next() {
+            rig::completion::Message::Assistant { content, .. } => match content.iter().next() {
                 Some(rig::message::AssistantContent::Text(t)) => Some(t.text.clone()),
                 _ => None,
             }
             .unwrap_or_else(|| "Non-text content".to_string()),
+            rig::completion::Message::System { content } => {
+                Some(content.clone()).unwrap_or_else(|| "Non-text content".to_string())
+            }
         };
         eprintln!("Message {}: Content={}", i, content_text);
     }
@@ -1322,6 +1333,9 @@ async fn generate_chat_response_history_sliding_window_messages() -> anyhow::Res
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message 4".to_string(),
         }],
@@ -1557,6 +1571,9 @@ async fn generate_chat_response_history_sliding_window_tokens() -> anyhow::Resul
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message 3".to_string(),
         }],
@@ -1792,6 +1809,9 @@ async fn test_generate_chat_response_history_truncate_tokens() -> anyhow::Result
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message 3".to_string(),
         }],
@@ -2048,6 +2068,9 @@ async fn generate_chat_response_history_none() -> anyhow::Result<()> {
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message 2".to_string(),
         }],
@@ -2283,6 +2306,9 @@ async fn generate_chat_response_history_truncate_tokens_limit_30() -> anyhow::Re
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message 3".to_string(),
         }],
@@ -2721,6 +2747,9 @@ async fn test_get_chat_messages_forbidden() -> anyhow::Result<()> {
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "test".to_string(),
         }],
@@ -2899,6 +2928,9 @@ async fn generate_chat_response_uses_full_character_prompt() -> Result<(), anyho
 
     let payload = GenerateChatRequest {
         history: vec![ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: "User message".to_string(),
         }],

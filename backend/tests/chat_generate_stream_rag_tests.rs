@@ -14,7 +14,6 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use scribe_backend::{
-    db::DbId,
     models::{
         characters::Character as DbCharacter,
         chats::{
@@ -201,10 +200,16 @@ async fn assert_rag_response(
 ) {
     let history = vec![
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "assistant".to_string(),
             content: test_context.document_content.clone(),
         },
         ApiChatMessage {
+            id: None,
+            current_variant_index: None,
+            variant_count: None,
             role: "user".to_string(),
             content: query_text.to_string(),
         },

@@ -405,7 +405,7 @@ mod payment_encryption_tests {
         );
 
         // Verify address is preserved
-        let decrypted_address = &original_address;
+        let _decrypted_address = &original_address;
         // Note: billing_details might not exactly match since the webhook stores it differently
         // Just verify the structure exists
         assert!(

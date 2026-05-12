@@ -8,7 +8,6 @@ use secrecy::SecretBox;
 use uuid::Uuid;
 
 use scribe_backend::{
-    db::DbId,
     models::{
         // characters::Character, // Character is used from test_helpers::db or directly via schema
         chats::ChatMode,

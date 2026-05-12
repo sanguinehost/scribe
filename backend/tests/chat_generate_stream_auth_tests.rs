@@ -13,7 +13,6 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use scribe_backend::{
-    db::DbId,
     models::{
         characters::Character as DbCharacter,
         chats::{ApiChatMessage, Chat as ChatSession, GenerateChatRequest, NewChat},
@@ -30,6 +29,9 @@ async fn generate_chat_response_streaming_unauthorized() {
 
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "test".to_string(),
     }];
@@ -111,6 +113,9 @@ async fn generate_chat_response_streaming_not_found() {
 
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "test".to_string(),
     }];
@@ -286,6 +291,9 @@ async fn generate_chat_response_streaming_forbidden() {
 
     // Construct the new payload with history
     let history = vec![ApiChatMessage {
+        id: None,
+        current_variant_index: None,
+        variant_count: None,
         role: "user".to_string(),
         content: "test".to_string(),
     }];

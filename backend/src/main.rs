@@ -410,13 +410,15 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     };
 
     // Use RigClient instead of ScribeGeminiClient
-    let mut ai_client =
+    let ai_client =
         scribe_backend::llm::rig_client::RigClient::new(config.gemini_api_key.clone(), None);
 
     #[cfg(feature = "local-llm")]
-    if let Some(ms) = mistralrs_service {
-        ai_client = ai_client.with_mistralrs(ms);
-    }
+    let ai_client = if let Some(ms) = mistralrs_service {
+        ai_client.with_mistralrs(ms)
+    } else {
+        ai_client
+    };
 
     let ai_client_arc = Arc::new(ai_client);
 

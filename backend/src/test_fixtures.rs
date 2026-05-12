@@ -8,7 +8,7 @@ use crate::{
     test_helpers::{MockAiClient, MockEmbeddingClient},
 };
 #[cfg(feature = "remote-vector")]
-use crate::{test_helpers::MockQdrantClientService, vector_db::QdrantClientServiceTrait};
+use crate::test_helpers::MockQdrantClientService;
 use std::sync::Arc;
 
 /// Factory for creating test fixtures with sensible defaults

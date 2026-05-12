@@ -1502,7 +1502,9 @@ pub async fn create_message_handler(
                                             });
                                         }
                                         MessageRole::System => {
-                                            // Handle system messages if needed, or skip
+                                            incoming_messages.push(RigMessage::System {
+                                                content: content.clone(),
+                                            });
                                         }
                                     }
                                 }
@@ -1525,6 +1527,7 @@ pub async fn create_message_handler(
                                 _ => None,
                             })
                         }
+                        RigMessage::System { content } => Some(content.clone()),
                     });
 
                     if last_msg_content.as_deref() != Some(&user_message_content_for_gen) {

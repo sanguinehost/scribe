@@ -18,10 +18,11 @@ pub mod game_state_service;
 pub mod history_manager;
 pub mod hybrid_token_counter;
 pub mod lorebook;
+pub mod mem_client;
 pub mod narrative_intelligence_service;
-pub mod pipeline;
 #[cfg(feature = "payment")]
 pub mod payment;
+pub mod pipeline;
 pub mod rag_budget_manager;
 pub mod reconciliation_detector;
 pub mod safety_utils;
@@ -31,7 +32,6 @@ pub mod token_client;
 pub mod tokenizer_service;
 pub mod user_persona_service;
 pub mod user_settings_service;
-pub mod mem_client;
 
 // Re-export agentic components
 pub use agentic::{
@@ -49,6 +49,7 @@ pub use cognitive::RecallPipeline;
 pub use email_service::{create_email_service, EmailService};
 pub use encryption_service::EncryptionService;
 pub use lorebook::LorebookService;
+pub use mem_client::{MemClientError, MemServerClient};
 pub use narrative_intelligence_service::{
     NarrativeIntelligenceService, NarrativeProcessingConfig, NarrativeProcessingResult,
 };
@@ -56,4 +57,3 @@ pub use secure_llm_service::SecureLlmService;
 pub use template_preference_service::TemplatePreferenceService;
 pub use user_persona_service::UserPersonaService;
 pub use user_settings_service::UserSettingsService;
-pub use mem_client::{MemServerClient, MemClientError};

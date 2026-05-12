@@ -14,7 +14,6 @@ mod payment_webhook_idempotency_tests {
     use diesel::prelude::*;
     use reqwest::{Client, StatusCode};
     use scribe_backend::{
-        models::payment::WebhookEvent,
         schema::webhook_events,
         test_helpers::{spawn_app, TestDataGuard},
     };

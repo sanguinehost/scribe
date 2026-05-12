@@ -132,7 +132,7 @@ fn create_test_point(
     keywords: Vec<&str>,
     vector: Vec<f32>,
 ) -> qdrant_client::qdrant::PointStruct {
-    use qdrant_client::qdrant::{vectors::VectorsOptions, PointStruct, Vector, Vectors};
+    use qdrant_client::qdrant::{PointStruct, Vectors};
 
     let mut payload = HashMap::new();
     payload.insert(
@@ -170,6 +170,6 @@ fn create_test_point(
 
 fn generate_random_vector(dim: usize) -> Vec<f32> {
     use rand::Rng;
-    let mut rng = rand::rng();
-    (0..dim).map(|_| rng.random_range(-1.0..1.0)).collect()
+    let mut rng = rand::thread_rng();
+    (0..dim).map(|_| rng.gen_range(-1.0..1.0)).collect()
 }

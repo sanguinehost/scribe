@@ -10,7 +10,7 @@ use axum::body::Body;
 use axum::http::{header, Method, Request, StatusCode};
 use scribe_backend::test_helpers;
 use serde_json::json;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tower::ServiceExt;
 use tracing::info;
 use uuid::Uuid;

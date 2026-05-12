@@ -8,7 +8,7 @@ use axum::{
     http::{header, Method, Request, StatusCode},
 };
 use chrono::Utc;
-use diesel_json::Json as DieselJson; // Added for explicit Json wrapping
+ // Added for explicit Json wrapping
 use scribe_backend::models::characters::CharacterDataForClient; // Updated import
 use scribe_backend::test_helpers::{ensure_tracing_initialized, TestDataGuard}; // Removed TestUser as it's not a struct here
 use serde_json::{json, Value as JsonValue}; // Added JsonValue
@@ -25,7 +25,7 @@ use http_body_util::BodyExt;
 use scribe_backend::auth::session_dek::SessionDek;
 use scribe_backend::{
     crypto,
-    db::{DbBigInt, DbId},
+    db::DbBigInt,
     models::users::{AccountStatus, NewUser, User, UserDbQuery, UserRole},
     schema::users,
 };

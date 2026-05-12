@@ -291,6 +291,7 @@ impl QdrantClientService {
                     field_type: Some(FieldType::Keyword.into()),
                     field_index_params: None, // Use default index params for keyword
                     ordering: None,
+                    timeout: None,
                 })
                 .await;
 
@@ -344,6 +345,7 @@ impl QdrantClientService {
                     field_type: Some(FieldType::Text.into()), // Text type for full-text search
                     field_index_params: None, // Default text index params (word tokenizer, lowercase)
                     ordering: None,
+                    timeout: None,
                 })
                 .await;
 
@@ -866,6 +868,7 @@ impl QdrantClientServiceTrait for QdrantClientService {
                 wait: Some(true), // Wait for operation to complete
                 ordering: None,
                 shard_key_selector: None,
+                timeout: None,
             })
             .await
             .map_err(|e| {
@@ -979,7 +982,9 @@ impl QdrantClientServiceTrait for QdrantClientService {
                 collection_name: collection_name.to_string(),
                 points: Some(points_selector),
                 wait: Some(true),
-                ..Default::default()
+                ordering: None,
+                shard_key_selector: None,
+                timeout: None,
             })
             .await
             .map_err(|e| {
@@ -1008,7 +1013,9 @@ impl QdrantClientServiceTrait for QdrantClientService {
                 collection_name: collection_name.to_string(),
                 points: Some(points_selector),
                 wait: Some(true),
-                ..Default::default()
+                ordering: None,
+                shard_key_selector: None,
+                timeout: None,
             })
             .await
             .map_err(|e| {
@@ -1117,7 +1124,7 @@ mod tests {
     use serde_json::json; // Moved import here
     use std::sync::Arc; // Removed Once
     use tokio; // Add tokio for async tests
-    use uuid::Uuid; // Import for PointId variants
+     // Import for PointId variants
                     // Use Rng trait for gen method, StdRng for concrete type, SeedableRng for seeding
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
@@ -1357,7 +1364,7 @@ mod tests {
         // Use slightly more distinct vectors for testing
         let mut rng1 = StdRng::seed_from_u64(42); // Seeded RNG for reproducibility
                                                   // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
-        let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.random::<f32>()).collect();
+        let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.gen::<f32>()).collect();
 
         let payload_1 = crate::db::Json(json!({"test_key": "value1"}));
         let point_1 = create_qdrant_point(point_id_1, vector_1.clone(), Some(payload_1.clone()))
@@ -1366,7 +1373,7 @@ mod tests {
         let point_id_2 = DbId::new();
         // Use a different seed or different generation logic for vector_2
         let mut rng2 = StdRng::seed_from_u64(99);
-        let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.random::<f32>()).collect();
+        let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.gen::<f32>()).collect();
 
         let payload_2 = crate::db::Json(json!({"test_key": "value2"}));
         let point_2 = create_qdrant_point(point_id_2, vector_2.clone(), Some(payload_2.clone()))
@@ -1443,7 +1450,7 @@ mod tests {
 
         let point_id_filter = DbId::new();
         let mut rng3 = StdRng::seed_from_u64(123);
-        let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.random::<f32>()).collect();
+        let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.gen::<f32>()).collect();
 
         let payload_filter =
             crate::db::Json(json!({"filter_key": "target_value", "other": "data1"}));
@@ -1456,7 +1463,7 @@ mod tests {
 
         let point_id_other = DbId::new();
         let mut rng4 = StdRng::seed_from_u64(456);
-        let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.random::<f32>()).collect();
+        let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.gen::<f32>()).collect();
 
         let payload_other =
             crate::db::Json(json!({"filter_key": "different_value", "other": "data2"}));
@@ -1845,7 +1852,10 @@ impl super::VectorServiceTrait for QdrantClientService {
             .delete_points(qdrant_client::qdrant::DeletePoints {
                 collection_name: self.collection_name.clone(),
                 points: Some(ids.into()),
-                ..Default::default()
+                ordering: None,
+                wait: Some(true),
+                shard_key_selector: None,
+                timeout: None,
             })
             .await
             .map_err(|e| {

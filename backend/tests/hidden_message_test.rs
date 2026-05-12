@@ -23,7 +23,6 @@ use scribe_backend::{
     auth::session_dek::SessionDek,
     crypto,
     db::DbBigInt,
-    db::{self},
     models::{
         character_card::NewCharacter,
         characters::Character as DbCharacter,
@@ -46,7 +45,7 @@ async fn create_test_user_with_dek(
     password: String,
 ) -> anyhow::Result<(Uuid, SessionDek)> {
     #[cfg(feature = "postgres-backend")]
-    let mut conn = test_app
+    let conn = test_app
         .db_pool
         .get()
         .await
@@ -237,7 +236,7 @@ async fn create_test_message(
     content: &str,
     role: MessageRole,
 ) -> anyhow::Result<DbChatMessage> {
-    use scribe_backend::models::chats::NewChatMessage;
+    
 
     let new_message = scribe_backend::models::chats::DbInsertableChatMessage::new(
         session_id.into(),
@@ -325,7 +324,7 @@ async fn test_hidden_streaming_message() -> anyhow::Result<()> {
 
     // 2. Set status to "streaming" (or anything other than "completed")
     #[cfg(feature = "postgres-backend")]
-    let mut conn = test_app
+    let conn = test_app
         .db_pool
         .get()
         .await

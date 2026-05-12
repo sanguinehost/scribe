@@ -212,10 +212,10 @@ mod tests {
     use super::*;
     use crate::db::DbId;
     use crate::models::chats::MessageRole;
-    use chrono::Utc;
-    use uuid::Uuid;
+    
+    
 
-    fn create_test_message(id: crate::db::DbId, role: MessageRole, content: &str) -> ChatMessage {
+    fn create_test_message(_id: crate::db::DbId, role: MessageRole, content: &str) -> ChatMessage {
         ChatMessage::builder()
             .session_id(DbId::new())
             .message_type(role)

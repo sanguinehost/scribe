@@ -325,7 +325,7 @@ mod payment_owasp_comprehensive_tests {
             .expect("Failed to execute request");
 
         // Should have HSTS header in production
-        let headers = response.headers();
+        let _headers = response.headers();
 
         // Document the expectation for production deployment
         // This test passes to document the requirement
@@ -488,7 +488,7 @@ mod payment_owasp_comprehensive_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
         // Perform payment operations that should be logged
-        let result = conn
+        let _result = conn
             .interact(move |conn| {
                 let service = CreditService::new(config.clone());
 

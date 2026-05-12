@@ -504,6 +504,7 @@ async fn count_tokens_for_rig_message(
             })
             .collect::<Vec<_>>()
             .join("\n"),
+        RigMessage::System { content } => content.clone(),
     };
 
     total_tokens += token_counter
@@ -970,6 +971,9 @@ fn filter_rag_items_already_in_history(
                     }
                 }
             }
+            RigMessage::System { content } => {
+                history_texts.insert(content.trim().to_string());
+            }
         }
     }
 
@@ -1073,6 +1077,7 @@ fn deduplicate_older_chat_history(
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
+            RigMessage::System { content } => content.clone(),
         })
         .collect();
 
@@ -1877,6 +1882,14 @@ pub fn ensure_message_alternation(messages: Vec<RigMessage>) -> Vec<RigMessage> 
             (Some(RigMessage::Assistant { .. }), RigMessage::User { content }) => {
                 sanitized.push(RigMessage::User { content });
             }
+
+            // Case 5: System messages -> Just push (don't interfere with alternation)
+            (_, RigMessage::System { content }) => {
+                sanitized.push(RigMessage::System { content });
+            }
+            (Some(RigMessage::System { .. }), msg) => {
+                sanitized.push(msg);
+            }
         }
     }
     sanitized
@@ -1970,7 +1983,7 @@ mod tests {
     use crate::models::characters::CharacterMetadata;
     use crate::DbId;
     use chrono::Utc;
-    use uuid::Uuid;
+    
 
     mod alternation_tests {
         use super::super::*;
@@ -2366,6 +2379,7 @@ mod tests {
                         AssistantContent::Text(t) => Some(t.text.clone()),
                         _ => None,
                     }),
+                    RigMessage::System { content } => Some(content.clone()),
                 };
 
                 if let Some(content) = content {
@@ -2508,6 +2522,7 @@ mod tests {
                         AssistantContent::Text(t) => Some(t.text.clone()),
                         _ => None,
                     }),
+                    RigMessage::System { content } => Some(content.clone()),
                 };
 
                 if let Some(content) = content {
@@ -2759,7 +2774,7 @@ mod tests {
     #[test]
     fn test_build_scene_context_xml_with_npcs() {
         use crate::models::game_state::{GameState, NpcState};
-        use std::collections::HashMap;
+        
 
         let mut state = GameState::default();
         state.npcs.insert(
@@ -2789,7 +2804,7 @@ mod tests {
     #[test]
     fn test_build_scene_context_xml_filters_dead_npcs() {
         use crate::models::game_state::{GameState, NpcState};
-        use std::collections::HashMap;
+        
 
         let mut state = GameState::default();
         state.npcs.insert(
@@ -2876,7 +2891,7 @@ mod tests {
         use crate::models::game_state::{
             EnvironmentState, GameState, GameTime, Location, NpcState,
         };
-        use std::collections::HashMap;
+        
 
         let mut state = GameState::default();
         state.location = Some(Location {

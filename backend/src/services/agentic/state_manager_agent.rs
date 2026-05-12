@@ -1960,7 +1960,7 @@ Tags: nature, peaceful
 
     #[test]
     fn test_parse_vitals_section_dynamic() {
-        let agent = StateManagerAgent::new(mock_client());
+        let _agent = StateManagerAgent::new(mock_client());
         let vitals_text = r#"
 - health: 80/100
 - stress: 25/50
@@ -1979,7 +1979,7 @@ Tags: nature, peaceful
 
     #[test]
     fn test_parse_inventory_item_with_descriptors() {
-        let agent = StateManagerAgent::new(mock_client());
+        let _agent = StateManagerAgent::new(mock_client());
 
         // Test item with multiple descriptors including equipped
         let item_text = "Silk robes (equipped, damaged, blood-stained, brittle)";

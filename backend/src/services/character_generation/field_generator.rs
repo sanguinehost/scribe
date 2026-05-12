@@ -1241,6 +1241,7 @@ Show different scenarios, moods, or personality aspects."#
                     })
                     .collect::<Vec<_>>()
                     .join("\n"),
+                RigMessage::System { content } => content.clone(),
             };
             total += self
                 .state

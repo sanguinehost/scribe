@@ -40,14 +40,13 @@ mod credit_expiry_tests {
     use chrono::{Duration, Utc};
     use diesel::prelude::*;
     use scribe_backend::{
-        config::Config,
         errors::AppError,
-        models::credit::{CreditBalance, NewCreditTransaction},
+        models::credit::NewCreditTransaction,
         schema::{credit_transactions, user_credits},
         services::payment::CreditService,
         test_helpers::{spawn_app, TestDataGuard},
     };
-    use std::sync::Arc;
+    
     use uuid::Uuid;
 
     /// Helper function to create a test user
@@ -433,7 +432,7 @@ mod credit_expiry_tests {
             "Purchase should succeed when active balance < max"
         );
 
-        let transaction = result.expect("Purchase should succeed");
+        let _transaction = result.expect("Purchase should succeed");
 
         // Verify balance capped at 10,000 (only 1,000 added, not 1,500)
         let conn = app.db_pool.get().await.expect("Failed to get connection");
@@ -520,7 +519,7 @@ mod credit_expiry_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
         let service = CreditService::new(config.clone());
 
-        let grant_result = conn
+        let _grant_result = conn
             .interact(move |conn| {
                 service.add_credits(
                     conn,

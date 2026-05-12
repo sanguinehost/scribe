@@ -8,7 +8,7 @@ use chrono::Utc;
 use diesel::{prelude::*, PgConnection, RunQueryDsl};
 use scribe_backend::{
     crypto,
-    db::{DbBigInt, DbId},
+    db::DbBigInt,
     models::{
         chronicle::{CreateChronicleRequest, UpdateChronicleRequest},
         chronicle_event::{CreateEventRequest, EventFilter, EventSource},

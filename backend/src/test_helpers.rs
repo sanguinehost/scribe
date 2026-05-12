@@ -3719,7 +3719,7 @@ pub fn assert_ai_history(
     }
     for (i, msg) in history_sent_to_ai.iter().enumerate() {
         let (role_str, content) = match msg {
-            rig::message::Message::User { content } => {
+            rig::completion::Message::User { content } => {
                 let text = content
                     .iter()
                     .map(|c| match c {
@@ -3730,7 +3730,7 @@ pub fn assert_ai_history(
                     .join("\n");
                 ("User", text)
             }
-            rig::message::Message::Assistant { content, .. } => {
+            rig::completion::Message::Assistant { content, .. } => {
                 let text = content
                     .iter()
                     .map(|c| match c {
@@ -3741,6 +3741,7 @@ pub fn assert_ai_history(
                     .join("\n");
                 ("Assistant", text)
             }
+            rig::completion::Message::System { content } => ("System", content.clone()),
         };
         println!("  [{i}] {role_str}: {content}");
     }
@@ -3763,7 +3764,7 @@ pub fn assert_ai_history(
         let (expected_role_str, expected_content) = expected;
 
         let (actual_role_str, actual_content) = match actual {
-            rig::message::Message::User { content } => {
+            rig::completion::Message::User { content } => {
                 let text = content
                     .iter()
                     .map(|c| match c {
@@ -3774,7 +3775,7 @@ pub fn assert_ai_history(
                     .join("\n");
                 ("User", text)
             }
-            rig::message::Message::Assistant { content, .. } => {
+            rig::completion::Message::Assistant { content, .. } => {
                 let text = content
                     .iter()
                     .map(|c| match c {
@@ -3785,6 +3786,7 @@ pub fn assert_ai_history(
                     .join("\n");
                 ("Assistant", text)
             }
+            rig::completion::Message::System { content } => ("System", content.clone()),
         };
 
         println!(

@@ -541,7 +541,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_subscription_updated_status_change_to_cancelled() {
         use diesel::prelude::*;
-        use scribe_backend::schema::{subscriptions, users};
+        use scribe_backend::schema::subscriptions;
         use uuid::Uuid;
 
         let app = spawn_app(true, false, false).await;
@@ -673,7 +673,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_subscription_updated_trialing_to_active() {
         use diesel::prelude::*;
-        use scribe_backend::schema::{subscriptions, users};
+        use scribe_backend::schema::subscriptions;
         use uuid::Uuid;
 
         let app = spawn_app(true, false, false).await;
@@ -1097,7 +1097,7 @@ mod payment_webhook_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
         conn.interact(move |conn| {
-            use scribe_backend::schema::users::dsl;
+            
 
             diesel::sql_query(
                 "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
@@ -1237,7 +1237,7 @@ mod payment_webhook_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
         conn.interact(move |conn| {
-            use scribe_backend::schema::users::dsl;
+            
 
             diesel::sql_query(
                 "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
@@ -1427,7 +1427,7 @@ mod payment_webhook_tests {
         let conn = app.db_pool.get().await.expect("Failed to get connection");
 
         conn.interact(move |conn| {
-            use scribe_backend::schema::users::dsl;
+            
 
             diesel::sql_query(
                 "INSERT INTO users (id, username, email, password_hash, kek_salt, encrypted_dek,
@@ -1551,7 +1551,7 @@ mod payment_webhook_tests {
     #[tokio::test]
     async fn test_credit_purchase_via_transaction_completed() {
         use diesel::prelude::*;
-        use scribe_backend::schema::{credit_transactions, user_credits, users};
+        use scribe_backend::schema::{credit_transactions, user_credits};
         use uuid::Uuid;
 
         unsafe {

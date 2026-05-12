@@ -11,7 +11,7 @@ mod soft_limit_tests {
     use deadpool_diesel::Pool;
     use diesel::prelude::*;
     use scribe_backend::db::DbId;
-    use scribe_backend::models::users::UserRole;
+    
     use scribe_backend::{
         config::Config,
         models::payment::NewSubscription,
@@ -396,7 +396,7 @@ mod soft_limit_tests {
             let date = (Utc::now() - Duration::days(days_ago)).date_naive();
 
             let conn = app.db_pool.get().await.expect("Failed to get connection");
-            let config_clone = config.clone();
+            let _config_clone = config.clone();
             conn.interact(move |conn| {
                 use scribe_backend::models::credit::NewDailyUsage;
 

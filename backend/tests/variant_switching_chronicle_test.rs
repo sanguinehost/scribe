@@ -7,8 +7,7 @@ use scribe_backend::models::chats::{DbInsertableChatMessage, MessageRole, NewMes
 use scribe_backend::models::chronicle::{CreateChronicleRequest, PlayerChronicle};
 use scribe_backend::models::chronicle_event::{CreateEventRequest, EventSource};
 use scribe_backend::models::users::User;
-use scribe_backend::services::ChronicleService;
-use scribe_backend::test_helpers::{spawn_app_permissive_rate_limiting, TestApp, TestAppGuard};
+use scribe_backend::test_helpers::{spawn_app_permissive_rate_limiting, TestAppGuard};
 use secrecy::ExposeSecret;
 use uuid;
 
@@ -152,7 +151,7 @@ async fn test_variant_switching_chronicle_filtering() {
     let _variant1_id = DbId::new();
 
     // Helper to insert message and variants
-    let (inserted_message_id, v0_id, v1_id) =
+    let (_inserted_message_id, v0_id, v1_id) =
         scribe_backend::db::with_conn(&app.db_pool, move |conn| {
             use scribe_backend::schema::{chat_messages, message_variants};
 

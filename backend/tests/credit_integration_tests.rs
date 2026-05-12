@@ -11,12 +11,10 @@ mod credit_integration_tests {
     use deadpool_diesel::Pool;
     use diesel::prelude::*;
     use scribe_backend::{
-        config::Config,
         models::{
-            credit::{CreditBalance, CreditPackage, NewCreditPackage},
+            credit::{CreditPackage, NewCreditPackage},
             payment::{NewSubscription, Subscription},
         },
-        schema::{credit_packages, subscriptions, user_credits},
         services::payment::{CreditService, SoftLimitService, SubscriptionService},
         services::EncryptionService,
         test_helpers::{spawn_app, TestDataGuard},
