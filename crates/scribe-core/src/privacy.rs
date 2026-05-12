@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,6 +73,56 @@ impl fmt::Display for SanitizedString {
 
 pub fn sanitize_personal_info<S: Into<String>>(content: S) -> SanitizedString {
     SanitizedString::personal_info(content)
+}
+
+/// Check if a string looks like a UUID
+pub fn is_uuid_pattern(s: &str) -> bool {
+    s.len() == 36
+        && s.chars().filter(|&c| c == '-').count() == 4
+        && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+/// Check if a string looks like an email
+pub fn is_email_pattern(s: &str) -> bool {
+    s.contains('@') && s.contains('.') && s.len() > 5
+}
+
+/// Utility for sanitizing JSON values in logs
+pub fn sanitize_json_value(value: &Value) -> Value {
+    match value {
+        Value::String(s) => {
+            if is_uuid_pattern(s) {
+                Value::String("<uuid-redacted>".to_string())
+            } else if is_email_pattern(s) {
+                Value::String("<email-redacted>".to_string())
+            } else if s.len() > 100 {
+                // Redact long strings that might be content
+                Value::String(format!("<content-redacted:{}-chars>", s.len()))
+            } else {
+                value.clone()
+            }
+        }
+        Value::Object(obj) => {
+            let mut new_obj = serde_json::Map::new();
+            for (key, val) in obj {
+                let sanitized_key = key.clone();
+
+                let sanitized_val = if key.to_lowercase().contains("password")
+                    || key.to_lowercase().contains("token")
+                    || key.to_lowercase().contains("key")
+                {
+                    Value::String("<credentials-redacted>".to_string())
+                } else {
+                    sanitize_json_value(val)
+                };
+
+                new_obj.insert(sanitized_key, sanitized_val);
+            }
+            Value::Object(new_obj)
+        }
+        Value::Array(arr) => Value::Array(arr.iter().map(sanitize_json_value).collect()),
+        _ => value.clone(),
+    }
 }
 
 #[cfg(test)]

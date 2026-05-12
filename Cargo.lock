@@ -13480,6 +13480,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "scribe-database"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bigdecimal",
+ "chrono",
+ "deadpool",
+ "deadpool-diesel",
+ "diesel",
+ "diesel-derive-enum",
+ "diesel_json",
+ "diesel_migrations",
+ "futures-util",
+ "libsql",
+ "scribe-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "testcontainers",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid 1.23.1",
+]
+
+[[package]]
 name = "scribe-desktop"
 version = "0.2.0"
 dependencies = [
