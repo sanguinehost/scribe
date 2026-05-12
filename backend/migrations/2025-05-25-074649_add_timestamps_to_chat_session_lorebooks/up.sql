@@ -1,4 +1,0 @@
--- Your SQL goes here
-ALTER TABLE chat_session_lorebooks
-ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
