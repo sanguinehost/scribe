@@ -1,0 +1,22 @@
+-- SQLite Migration (Converted from PostgreSQL)
+-- Original: up.sql
+-- Conversion date: 2025-10-20T19:54:56.904147
+--
+-- IMPORTANT: Review warnings below and verify functionality
+-- ================================================================
+
+-- Change credits_cost from INTEGER to DECIMAL to store exact dollar amounts
+-- This allows storing fractional costs without rounding errors
+
+-- chat_messages.credits_cost: stores base Google API cost in dollars
+-- chat_sessions.total_credits_used: stores cumulative base API cost in dollars (local) or credits (production)
+--
+-- SQLite Type Affinity Note:
+-- SQLite doesn't support ALTER COLUMN TYPE, but this is not needed because:
+-- 1. SQLite uses dynamic typing (type affinity)
+-- 2. NUMERIC columns automatically handle DECIMAL values
+-- 3. Type constraints are recommendations, not strict requirements
+--
+-- The following PostgreSQL operations are not needed in SQLite:
+-- ALTER TABLE chat_messages ALTER COLUMN credits_cost TYPE DECIMAL(10, 6);
+-- ALTER TABLE chat_sessions ALTER COLUMN total_credits_used TYPE DECIMAL(10, 6);

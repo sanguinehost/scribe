@@ -1,0 +1,20 @@
+-- SQLite Migration (Converted from PostgreSQL)
+-- Original: up.sql
+-- Conversion date: 2025-10-20T19:54:56.901101
+--
+-- IMPORTANT: Review warnings below and verify functionality
+-- ================================================================
+
+-- Add unique constraint to prevent multiple active subscriptions per user
+-- This constraint only applies to active subscriptions (not cancelled ones)
+
+-- Create a partial unique index that only applies to non-cancelled subscriptions
+-- Note: CONCURRENTLY removed because Diesel runs migrations in transactions
+CREATE UNIQUE INDEX idx_subscriptions_unique_active_user
+ON subscriptions (user_id)
+WHERE status != 'cancelled';
+
+-- Add comment explaining the constraint
+-- COMMENT ON INDEX idx_subscriptions_unique_active_user IS
+-- SQLite Note: SQLite doesn't support COMMENT ON syntax, comments are stored as schema documentation
+-- 'Ensures a user can only have one active subscription (excluding cancelled ones)';

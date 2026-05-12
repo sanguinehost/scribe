@@ -1,0 +1,334 @@
+[package]
+name = "scribe-server"
+version = "0.2.1"
+edition = "2021"
+
+[features]
+default = ["cloud"] # Cloud mode is default for backward compatibility
+desktop = ["sqlite-backend", "embedded-vector", "otel"]
+cloud = ["postgres-backend", "remote-vector", "otel"]
+sqlite-backend = [
+    "diesel/sqlite",
+    "diesel/r2d2",
+    "diesel_migrations/sqlite",
+    "diesel-derive-enum/sqlite",
+]
+postgres-backend = [
+    "diesel/postgres",
+    "dep:deadpool-diesel",
+    "deadpool-diesel?/postgres",
+    "diesel_migrations/postgres",
+    "diesel-derive-enum/postgres",
+    "dep:diesel_json",
+]
+embedded-vector = [
+    "dep:lancedb",
+    "dep:arrow",
+    "dep:tokio-stream",
+    "dep:rig-lancedb",
+    "dep:datafusion",
+    "dep:datafusion-expr",
+]
+remote-vector = [
+    "dep:rig-qdrant",
+] # qdrant-client is already a direct dependency
+local-llm = [
+    "dep:sysinfo",
+    "dep:nix",
+    "dep:which",
+    "dep:tempfile",
+    "dep:mistralrs-core",
+    "dep:mistralrs",
+]
+payment = [
+    "dep:subtle",
+] # Payment processing dependencies (reqwest and serde_json already available)
+production = ["payment"] # Include payment in production builds
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry_sdk",
+    "dep:tracing-opentelemetry",
+    "dep:opentelemetry-langfuse",
+    "dep:opentelemetry-semantic-conventions",
+    "dep:opentelemetry-stdout",
+    "dep:opentelemetry-appender-tracing",
+]
+
+[[bin]]
+name = "re_embed_chronicles"
+path = "src/bin/re_embed_chronicles.rs"
+
+[build-dependencies]
+# Build dependencies are only needed for local-llm feature
+
+[dependencies]
+axum = { version = "0.8.1", features = ["macros", "multipart", "tokio"] }
+scribe-core = { path = "../scribe-core" }
+axum-macros = "0.5.0"
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+tokio = { version = "1.44.2", features = ["full"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+png = "0.18.0"
+base64 = "0.22.1"
+thiserror = "2.0.12"
+diesel = { version = "2.3", default-features = false, features = [
+    "chrono",
+    "uuid",
+    "serde_json",
+    "numeric",
+    "64-column-tables",
+    "128-column-tables",
+    "with-deprecated",
+] }
+diesel_migrations = { version = "2.3", default-features = false }
+dirs = "6.0" # Platform-specific directories for desktop config
+dotenvy = "0.15.7"
+chrono = { version = "0.4.40", features = ["serde"] }
+diesel-derive-enum = { version = "2.1.0", default-features = false }
+uuid = { version = "1.15", features = ["v4", "serde"] }
+tower = { version = "0.5.2" }
+tower-http = { version = "0.6.2", features = ["trace", "cors"] }
+tower-sessions = { version = "0.14.0", features = ["signed", "private"] }
+tower-sessions-memory-store = "0.14.0"
+axum-login = "0.18.0"
+bcrypt = "0.18.0"
+argon2 = { version = "0.5.3", features = [
+    "std",
+] } # Ensure std feature for hash_raw if available, or check API
+secrecy = { version = "0.10.3", features = [
+    "serde",
+] } # alloc feature removed as it's not standard
+aes-gcm = "0.10.3" # For AES-GCM encryption
+ring = "0.17.8" # Add ring
+sha2 = "0.10.8" # For SHA-256 hashing in integrity checks
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# Fix zlib-rs compilation issue by forcing flate2 to use zlib backend
+flate2 = { version = "1.0", default-features = false, features = ["zlib"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
+tracing-appender = "0.2.3"                                                     # File-based logging with rotation
+
+anyhow = "1.0.98"
+futures-util = "0.3.31"
+bigdecimal = { version = "0.4.8", features = ["serde"] }
+crc32fast = "1.4.2"
+
+deadpool = { version = "0.12.2", default-features = false }
+deadpool-diesel = { version = "0.6.1", default-features = false, features = [
+    "rt_tokio_1",
+    "serde",
+], optional = true }
+
+async-trait = "0.1.88"
+time = { version = "0.3.47", features = ["serde", "serde-well-known"] }
+
+rand = "0.8.6"
+cookie = { version = "0.18.1", features = ["secure"] }
+tower-cookies = "0.11.0"
+
+lettre = { version = "0.11.15" }
+mime = "0.3.17"
+password-auth = { version = "1.0.0", features = ["argon2"] }
+hex = "0.4.3"
+libc = "0.2.168"                                             # For system calls like statvfs
+
+# genai removed
+
+# Rig Framework
+rig-core = { version = "0.36.0", features = ["derive"] }
+rig-lancedb = { version = "0.4.5", optional = true }
+rig-qdrant = { version = "0.2.5", optional = true }
+
+# Mistral.rs (Local Inference)
+mistralrs-core = { version = "0.7.0", optional = true }
+mistralrs = { version = "0.7.0", optional = true }
+
+reqwest = { version = "0.13.1", features = [
+    "json",
+    "cookies",
+    "rustls",
+    "multipart",
+], default-features = false }
+libsql = { version = "0.6.0", features = ["replication", "hrana"] }
+reqwest-middleware = { version = "0.5.1" }
+reqwest-retry = { version = "0.9.0" }
+
+qdrant-client = { version = "1.14.0", features = ["serde"] }
+
+diesel_json = { version = "0.3.0", optional = true }
+image = { version = "0.25.9", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
+
+# DataFusion (Temporary fix for build error)
+datafusion = { version = "50.3.0", optional = true }
+datafusion-expr = { version = "50.3.0", optional = true }
+
+envy = "0.4"
+
+# Url (for parsing base URLs, etc.)
+url = "2.5.4"
+
+# Added for streaming
+futures = "0.3.31"
+async-stream = "0.3.6"
+
+# Added for sentence splitting (using ICU4X)
+icu_segmenter = { version = "2.1", features = ["compiled_data"] }
+icu_provider = "2.1"
+icu_provider_blob = "2.1"
+icu_testdata = "1.5"
+
+# Add missing dependencies here
+# icu = { version = "1.5", features = ["macros"] }
+icu_locid = "2.0"
+
+validator = { version = "0.20", features = ["derive"] }
+regex = "1.10.4"
+blake3 = "1.5.1"
+nanoid = "0.4.0"
+# Add missing dependencies needed by test_helpers
+tonic = "0.14.3"
+opentelemetry-proto = { version = "0.31.0", features = ["gen-tonic"] }
+testcontainers = "0.27.0"
+http-body-util = { version = "0.1.3", features = ["full"] }
+
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+rustls-pki-types = "1.9.0"                                                   # <-- Keep this dependency
+
+utf8_iter = "1.0.0" # Corrected crate name (underscore vs hyphen)
+
+# Add for new TLS setup
+rustls-pemfile = "2.1.2"
+tokio-rustls = "0.26.0"
+rcgen = "0.14.5"         # For generating self-signed certificates
+
+# Local LLM dependencies (only with feature flag)
+sysinfo = { version = "0.38", optional = true } # For hardware detection
+nix = { version = "0.31", features = [
+    "signal",
+], optional = true } # For Unix process management
+which = { version = "8.0", optional = true } # For finding executables in PATH
+tempfile = { version = "3.19.1", optional = true } # For temporary files in model management
+clap = { version = "4.5.26", features = ["derive"] }
+
+tokio-stream = { version = "0.1", optional = true }
+
+# Tokenization
+tokenizers = { version = "0.22.2" }
+strsim = "0.11.1"
+
+# Template engine for prompt templates
+minijinja = { version = "2.0", features = ["json", "loader"] }
+once_cell = "1.21.3"
+
+# AWS SDK for SES email service
+aws-config = "1.8.8"
+aws-sdk-ses = "1.95.0"
+aws-sdk-s3 = "1.95.0"
+
+# RAG Data Pipeline
+swiftide = { version = "0.32.1" }
+iceberg-rust = "0.10.0"
+
+# Rate limiting
+tower_governor = "0.8.0"
+
+# Payment processing (optional - only with payment feature)
+hmac = { version = "0.12" }                   # For blind indexing and webhook signature verification
+subtle = { version = "2.5", optional = true } # For constant-time comparisons
+
+# Security monitoring and metrics
+prometheus = "0.14.0" # For security metrics collection
+
+lazy_static = "1.4" # For global metrics registry
+
+# Vector database (optional - only with embedded-vector feature)
+lancedb = { version = "0.23.1", optional = true }
+arrow = { version = "56.2.0", optional = true }   # Pinned: lancedb 0.23.1 compatible with arrow 56.x
+
+# OpenTelemetry (optional - only with otel feature)
+opentelemetry = { version = "0.31", features = [
+    "metrics",
+    "logs",
+    "trace",
+], optional = true }
+opentelemetry-otlp = { version = "0.31", features = [
+    "grpc-tonic",
+    "metrics",
+    "logs",
+    "trace",
+], optional = true }
+opentelemetry_sdk = { version = "0.31", features = [
+    "rt-tokio",
+], optional = true }
+opentelemetry-stdout = { version = "0.31", optional = true }
+opentelemetry-semantic-conventions = { version = "0.31", optional = true }
+tracing-opentelemetry = { version = "0.32", optional = true }
+opentelemetry-langfuse = { version = "0.6", optional = true }
+opentelemetry-appender-tracing = { version = "0.31.1", optional = true }
+
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+bytes = "1.11.1"
+
+# Platform-specific dependencies
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+
+[dev-dependencies]
+axum = { version = "0.8.1", features = [
+    "macros",
+    "multipart",
+    "tokio",
+] } # Mirror main deps features for tests
+axum-server = { version = "0.8.0", features = [
+    "tls-rustls",
+] } # Mirror main deps features
+hyper-util = { version = "0.1.11", features = ["full"] }
+reqwest = { version = "0.13.1", features = ["json", "cookies"] }
+serde_json = "1.0.140"
+crc32fast = "1.4.2"
+mime = "0.3.17"
+
+anyhow = "1.0.98"
+once_cell = "1.21.3"
+bytes = "1.11.1"
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+tempfile = "3.19.1"
+bcrypt = "0.18.0"
+tokio = { version = "1.44.2", features = ["macros", "rt-multi-thread"] }
+http = "1.3.1"
+test-context = "0.5.3"
+lazy_static = "1.5.0"
+async-trait = "0.1.88"
+rstest = "0.26.1"
+serial_test = "3.0.0"
+log = "0.4"                                                              # Add log crate for testing
+ctor = "0.6.3"                                                           # For running code at test startup
+dotenvy = "0.15"
+
+# Testing utilities
+httpc-test = "0.1.10" # For testing axum handlers
+mockito = "1.7.0"
+httpmock = "0.8.1" # For mocking HTTP requests
+mockall = "0.14.0" # Add mockall
+secrecy = { version = "0.10.3", features = [
+    "serde",
+] } # Fix E0432: Add secrecy to dev-deps for tests
+
+# Specify the library target explicitly
+[lib]
+name = "scribe_backend"
+path = "src/lib.rs"
+
+# Optional: If you have separate integration tests
+# [[test]]
+# name = "integration_tests" # Example name
+# path = "tests/integration.rs" # Example path
+# harness = true

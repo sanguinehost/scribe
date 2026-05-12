@@ -1,0 +1,1889 @@
+// backend/src/vector_db/qdrant_client.rs
+
+use crate::config::Config;
+use crate::errors::AppError;
+use async_trait::async_trait;
+use qdrant_client::qdrant::vectors_config::Config as QdrantVectorsConfig; // Alias to avoid naming conflict
+pub use qdrant_client::qdrant::{
+    condition::ConditionOneOf, point_id::PointIdOptions, r#match::MatchValue, value::Kind,
+    Condition, CreateCollection, CreateFieldIndexCollection, Distance, FieldCondition, FieldType,
+    Filter, HnswConfigDiff, Match, OptimizersConfigDiff, PayloadIncludeSelector, PointId,
+    PointStruct, ReadConsistency, ReadConsistencyType, ScoredPoint, UpdateCollection, Value,
+    VectorParams, Vectors, VectorsConfig, WalConfigDiff, WithPayloadSelector,
+};
+use qdrant_client::Qdrant;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::{debug, error, info, instrument, warn};
+
+// Constants
+pub const DEFAULT_COLLECTION_NAME: &str = "scribe_embeddings";
+// Removed hardcoded EMBEDDING_DIMENSION constant
+
+#[derive(Clone)]
+pub struct QdrantClientService {
+    client: Arc<Qdrant>, // Update client type
+    collection_name: String,
+    embedding_dimension: u64,
+    distance_metric: Distance, // Added from config
+    on_disk: Option<bool>,     // Added from config
+}
+
+use super::QdrantClientServiceTrait;
+
+impl QdrantClientService {
+    #[instrument(skip(config), name = "qdrant_service_new")]
+    pub async fn new(config: Arc<Config>) -> Result<Self, AppError> {
+        let qdrant_url = config.qdrant_url.as_ref().ok_or_else(|| {
+            error!("QDRANT_URL is not configured");
+            AppError::ConfigError("QDRANT_URL is not configured".to_string())
+        })?;
+
+        info!("Connecting to Qdrant at URL: {}", qdrant_url);
+
+        // Build the Qdrant client with timeout configuration
+        // Use the new Qdrant struct and its builder pattern
+        let mut builder = Qdrant::from_url(qdrant_url);
+
+        // Set timeout for operations (30 seconds for better reliability in tests)
+        builder = builder.timeout(std::time::Duration::from_secs(30));
+
+        // Add API key authentication if configured
+        if let Some(api_key) = &config.qdrant_api_key {
+            info!("Using API key authentication for Qdrant");
+            builder = builder.api_key(api_key.clone());
+        } else {
+            info!("No API key configured for Qdrant - using unauthenticated connection");
+        }
+
+        // Build the client
+        let qdrant_client = builder.build().map_err(|e| {
+            error!(error = %e, "Failed to build Qdrant client");
+            AppError::VectorDbError(format!("Failed to build Qdrant client: {e}"))
+        })?;
+
+        let collection_name = config.qdrant_collection_name.clone(); // Access directly from config
+
+        // Use embedding dimension from config
+        let embedding_dimension = config.embedding_dimension;
+        info!(embedding_dimension, "Using embedding dimension from config");
+
+        // Parse distance metric from config
+        let distance_metric_str = &config.qdrant_distance_metric;
+        let distance_metric = match distance_metric_str.to_lowercase().as_str() {
+            "cosine" => Distance::Cosine,
+            "euclid" => Distance::Euclid,
+            "dot" => Distance::Dot,
+            _ => {
+                error!(
+                    "Invalid QDRANT_DISTANCE_METRIC configured: '{}'. Must be one of 'Cosine', 'Euclid', 'Dot'.",
+                    distance_metric_str
+                );
+                return Err(AppError::ConfigError(format!(
+                    "Invalid QDRANT_DISTANCE_METRIC: {distance_metric_str}"
+                )));
+            }
+        };
+        info!(?distance_metric, "Using distance metric from config");
+
+        // Get on_disk setting from config
+        let on_disk = config.qdrant_on_disk;
+        info!(?on_disk, "Using on_disk setting from config");
+
+        let service = Self {
+            client: Arc::new(qdrant_client),
+            collection_name,
+            embedding_dimension,
+            distance_metric,
+            on_disk,
+        };
+
+        // Ensure the collection exists on startup
+        service.ensure_collection_exists().await?;
+
+        Ok(service)
+    }
+
+    /// Private constructor for creating a dummy instance for tests where
+    /// the actual Qdrant service is mocked at a higher level.
+    /// Avoids hitting network or requiring config.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the Qdrant client cannot be built with the dummy URL.
+    /// This is intended for test use only.
+    #[must_use]
+    pub fn new_test_dummy() -> Self {
+        // NOTE: The Qdrant client here is likely non-functional or will panic if used.
+        // This is acceptable ONLY because the AppStateBuilder uses this when the
+        // higher-level service (like EmbeddingPipelineService) is mocked, meaning
+        // this dummy QdrantClientService won't actually be called.
+        Self {
+            // Attempt to build a client with a dummy URL. This might still panic
+            // if the builder tries to resolve the URL immediately, but it avoids Default::default().
+            // If this panics, we might need a more sophisticated mock/dummy approach.
+            client: Arc::new(
+                Qdrant::from_url("http://localhost:6333")
+                    .build()
+                    .expect("Failed to build dummy Qdrant client"),
+            ),
+            collection_name: DEFAULT_COLLECTION_NAME.to_string(), // Keep default for dummy
+            embedding_dimension: 768, // Use a reasonable default (e.g., 768) for the dummy instance
+            distance_metric: Distance::Cosine, // Default for dummy
+            on_disk: None,            // Default for dummy
+        }
+    }
+
+    #[instrument(skip(self), name = "qdrant_ensure_collection")]
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        // Use the collection_exist method on the new client (assuming name change, check docs if fails)
+        // Correction: Deprecation message confirms method name is still collection_exists
+        let collection_exists = self.client.collection_exists(&self.collection_name).await.map_err(|e| {
+            error!(error = %e, collection = %self.collection_name, "Failed to check if Qdrant collection exists");
+            AppError::VectorDbError(format!("Failed to check Qdrant collection existence: {e}"))
+        })?;
+
+        if collection_exists {
+            info!("Collection '{}' already exists.", self.collection_name);
+            // Ensure existing collection has the correct HNSW settings
+            let target_hnsw_config = HnswConfigDiff {
+                m: Some(16),         // Enable HNSW with 16 connections per point
+                payload_m: Some(16), // Enable payload indexing
+                ..Default::default()
+            };
+            info!(
+                "Updating HNSW config for existing collection '{}': m=16, payload_m=16",
+                self.collection_name
+            );
+            self.client
+                .update_collection(UpdateCollection {
+                    collection_name: self.collection_name.clone(),
+                    hnsw_config: Some(target_hnsw_config),
+                    ..Default::default()
+                })
+                .await
+                .map_err(|e| {
+                    error!(error = %e, collection = %self.collection_name, "Failed to update HNSW config for Qdrant collection");
+                    AppError::VectorDbError(format!(
+                        "Failed to update HNSW config for Qdrant collection '{}': {}",
+                        self.collection_name, e
+                    ))
+                })?;
+            info!(
+                "Successfully updated HNSW config for collection '{}'",
+                self.collection_name
+            );
+        } else {
+            info!(
+                "Collection '{}' does not exist. Creating...",
+                self.collection_name
+            );
+            // Use the create_collection method on the new client
+            // Pass the CreateCollection struct directly by value
+            let target_hnsw_config = HnswConfigDiff {
+                m: Some(16),         // Enable global HNSW with 16 connections
+                payload_m: Some(16), // Enable per-group HNSW
+                ..Default::default()
+            };
+            // Retry logic for collection creation to handle transient failures
+            let mut create_result = Err(anyhow::anyhow!("Not attempted"));
+            for attempt in 1..=3 {
+                if attempt > 1 {
+                    info!("Retrying collection creation, attempt {}/3", attempt);
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * attempt)).await;
+                }
+
+                create_result = self
+                    .client
+                    .create_collection(CreateCollection {
+                        collection_name: self.collection_name.clone(),
+                        vectors_config: Some(VectorsConfig {
+                            config: Some(QdrantVectorsConfig::Params(VectorParams {
+                                size: self.embedding_dimension,
+                                distance: self.distance_metric.into(), // Use configured distance
+                                hnsw_config: Some(target_hnsw_config),
+                                quantization_config: None,
+                                on_disk: self.on_disk, // Use configured on_disk setting
+                                datatype: None,
+                                multivector_config: None,
+                            })),
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .map_err(|e| anyhow::anyhow!(e));
+
+                if create_result.is_ok() {
+                    break;
+                }
+            }
+
+            match create_result {
+                Ok(_) => {
+                    // Creation succeeded
+                    info!("Successfully created collection '{}'", self.collection_name);
+
+                    // Wait for collection to be fully ready with increased timeout
+                    for i in 0..20 {
+                        // Increased retries
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await; // Increased sleep duration
+                        match self.client.collection_exists(&self.collection_name).await {
+                            Ok(true) => {
+                                info!(
+                                    "Collection '{}' confirmed ready after {}ms",
+                                    self.collection_name,
+                                    (i + 1) * 200
+                                );
+                                break;
+                            }
+                            Ok(false) => {
+                                if i == 19 {
+                                    // Adjusted for new retry count
+                                    return Err(AppError::VectorDbError(format!(
+                                        "Collection '{}' was created but is not accessible after {} seconds",
+                                        self.collection_name,
+                                        (i + 1) * 200 / 1000
+                                    )));
+                                }
+                            }
+                            Err(e) => {
+                                if i == 19 {
+                                    // Adjusted for new retry count
+                                    return Err(AppError::VectorDbError(format!(
+                                        "Failed to verify collection '{}' exists after creation: {}",
+                                        self.collection_name, e
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Check if the error is the one we want to ignore
+                    let error_string = e.to_string();
+                    if error_string.contains("already exists") {
+                        warn!(collection = %self.collection_name, "Attempted to create collection, but it already exists (ignoring error).");
+                        // Treat as success in the context of ensure_collection_exists
+                    } else {
+                        // This is a different, unexpected error
+                        error!(error = %e, collection = %self.collection_name, "Failed to create Qdrant collection after {} attempts", 3);
+                        return Err(AppError::VectorDbError(format!(
+                            "Failed to create Qdrant collection '{}' after 3 attempts: {}",
+                            self.collection_name, e
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Ensure payload indexes exist for keyword fields
+        for field_name in &["user_id", "lorebook_id", "session_id", "chronicle_id"] {
+            info!(
+                "Ensuring keyword index exists for field '{}' in collection '{}'",
+                field_name, self.collection_name
+            );
+            let result = self
+                .client
+                .create_field_index(CreateFieldIndexCollection {
+                    collection_name: self.collection_name.clone(),
+                    wait: Some(true),
+                    field_name: (*field_name).to_string(),
+                    field_type: Some(FieldType::Keyword.into()),
+                    field_index_params: None, // Use default index params for keyword
+                    ordering: None,
+                    timeout: None,
+                })
+                .await;
+
+            match result {
+                Ok(_) => info!(
+                    "Successfully ensured payload index for field '{}'",
+                    field_name
+                ),
+                Err(e) => {
+                    // Check if the error indicates the index already exists (common case)
+                    // Qdrant error for "already exists" might be specific, e.g., involving "Wrong input" if types mismatch
+                    // or a more generic "already exists". For now, we log and continue.
+                    // A more robust check might involve trying to get collection info and inspect existing indexes.
+                    let error_string = e.to_string();
+                    if error_string.contains("already exists")
+                        || error_string.contains("exists with different parameters")
+                    {
+                        warn!(error = %e, collection = %self.collection_name, field = %field_name, "Payload index for field may already exist or have different params. Proceeding.");
+                    } else {
+                        error!(error = %e, collection = %self.collection_name, field = %field_name, "Failed to create payload index for field. This might be an issue if filtering is required on this field.");
+                        // Decide if this should be a hard error. For now, let's make it a hard error to be safe.
+                        return Err(AppError::VectorDbError(format!(
+                            "Failed to create payload index for field '{field_name}': {e}"
+                        )));
+                    }
+                }
+            }
+        }
+
+        // Ensure text indexes exist for searchable text fields
+        // These enable substring matching and full-text search
+        for field_name in &[
+            "chunk_text",
+            "entry_title",
+            "keywords",
+            "event_text",
+            "text",
+        ] {
+            info!(
+                "Ensuring text index exists for field '{}' in collection '{}'",
+                field_name, self.collection_name
+            );
+
+            // Create text index with appropriate configuration for substring matching
+            let result = self
+                .client
+                .create_field_index(CreateFieldIndexCollection {
+                    collection_name: self.collection_name.clone(),
+                    wait: Some(true),
+                    field_name: (*field_name).to_string(),
+                    field_type: Some(FieldType::Text.into()), // Text type for full-text search
+                    field_index_params: None, // Default text index params (word tokenizer, lowercase)
+                    ordering: None,
+                    timeout: None,
+                })
+                .await;
+
+            match result {
+                Ok(_) => info!("Successfully ensured text index for field '{}'", field_name),
+                Err(e) => {
+                    let error_string = e.to_string();
+                    if error_string.contains("already exists")
+                        || error_string.contains("exists with different parameters")
+                    {
+                        warn!(error = %e, collection = %self.collection_name, field = %field_name, "Text index for field may already exist or have different params. Proceeding.");
+                    } else {
+                        // Text indexes are optional for basic functionality, so we log but continue
+                        error!(error = %e, collection = %self.collection_name, field = %field_name, "Failed to create text index for field. Text search may not work optimally for this field.");
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // --- Placeholder for Upsert Operation ---
+    #[instrument(skip(self, points), fields(count = points.len()), name = "qdrant_upsert_points")]
+    pub async fn upsert_points(&self, points: Vec<PointStruct>) -> Result<(), AppError> {
+        if points.is_empty() {
+            return Ok(()); // Nothing to do
+        }
+        info!(
+            "Upserting {} points into collection '{}'",
+            points.len(),
+            self.collection_name
+        );
+        // Use the upsert_points method (blocking version seems removed/renamed)
+        // Construct and pass UpsertPoints struct directly
+        self.client
+            .upsert_points(qdrant_client::qdrant::UpsertPoints {
+                collection_name: self.collection_name.clone(),
+                wait: Some(true), // Wait for operation to complete (optional, default false)
+                points,
+                ordering: None, // Default ordering
+                shard_key_selector: None,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, "Failed to upsert points to Qdrant");
+                AppError::VectorDbError(format!("Failed to upsert points: {e}"))
+            })?;
+        info!("Successfully upserted points.");
+        Ok(())
+    }
+
+    // --- Search Operation ---
+    #[instrument(
+        skip(self, query_vector, filter),
+        fields(limit, score_threshold),
+        name = "qdrant_search_points"
+    )]
+    pub async fn search_points(
+        &self,
+        query_vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        self.search_points_with_threshold(query_vector, limit, filter, None)
+            .await
+    }
+
+    // --- Search Operation with Score Threshold ---
+    #[instrument(
+        skip(self, query_vector, filter),
+        fields(limit, score_threshold),
+        name = "qdrant_search_points_with_threshold"
+    )]
+    pub async fn search_points_with_threshold(
+        &self,
+        query_vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        info!(
+            limit,
+            filter_is_some = filter.is_some(),
+            score_threshold = ?score_threshold,
+            collection = %self.collection_name,
+            "Searching points in Qdrant with threshold"
+        );
+
+        // Build the base search request
+        let search_request = qdrant_client::qdrant::SearchPoints {
+            collection_name: self.collection_name.clone(),
+            vector: query_vector,
+            limit,
+            with_payload: Some(true.into()), // Request payload
+            filter,                          // Use the passed-in filter directly
+            // Initialize other fields as needed, using defaults or None
+            offset: None,
+            score_threshold, // Use the provided score threshold
+            params: None,
+            vector_name: None,
+            with_vectors: None,
+            read_consistency: None,
+            timeout: None,
+            shard_key_selector: None,
+            sparse_indices: None, // Add this if using sparse vectors
+        };
+
+        // Use the search_points method on the new client
+        let search_result = self
+            .client
+            // Pass the SearchPoints struct directly by value
+            .search_points(search_request)
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, "Failed to search points in Qdrant");
+                AppError::VectorDbError(format!("Failed to search points: {e}"))
+            })?;
+
+        info!(
+            found_points = search_result.result.len(),
+            "Qdrant search completed"
+        );
+        Ok(search_result.result)
+    }
+
+    // --- Hybrid Search Operation (combining vector and text search) ---
+    #[instrument(
+        skip(self, vector, text_query, filter),
+        fields(text_fields = ?text_fields, limit, score_threshold = ?score_threshold),
+        name = "qdrant_hybrid_search"
+    )]
+    pub async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        info!(
+            has_vector = vector.is_some(),
+            has_text_query = text_query.is_some(),
+            text_fields = ?text_fields,
+            limit,
+            score_threshold = ?score_threshold,
+            "Performing hybrid search in Qdrant"
+        );
+
+        // Build filter conditions for text search
+        let mut combined_filter = filter.clone();
+
+        if let Some(query) = &text_query {
+            if !text_fields.is_empty() {
+                let query_lower = query.to_lowercase();
+
+                // Create text matching conditions for each field
+                let mut text_conditions = Vec::new();
+                for field in &text_fields {
+                    // Use substring matching for flexible keyword search
+                    text_conditions.push(Condition {
+                        condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                            key: field.clone(),
+                            r#match: Some(Match {
+                                match_value: Some(MatchValue::Text(query_lower.clone())),
+                            }),
+                            range: None,
+                            geo_bounding_box: None,
+                            geo_radius: None,
+                            values_count: None,
+                            geo_polygon: None,
+                            datetime_range: None,
+                            is_empty: None,
+                            is_null: None,
+                        })),
+                    });
+                }
+
+                // Combine text conditions with OR logic
+                let text_filter = if text_conditions.len() > 1 {
+                    Filter {
+                        should: text_conditions,
+                        must: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    }
+                } else if text_conditions.len() == 1 {
+                    Filter {
+                        must: text_conditions,
+                        should: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    }
+                } else {
+                    Filter {
+                        must: vec![],
+                        should: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    }
+                };
+
+                // Combine with existing filter using AND logic
+                combined_filter = if let Some(existing_filter) = combined_filter {
+                    Some(Filter {
+                        must: vec![
+                            Condition {
+                                condition_one_of: Some(ConditionOneOf::Filter(existing_filter)),
+                            },
+                            Condition {
+                                condition_one_of: Some(ConditionOneOf::Filter(text_filter)),
+                            },
+                        ],
+                        should: vec![],
+                        must_not: vec![],
+                        min_should: None,
+                    })
+                } else {
+                    Some(text_filter)
+                };
+            }
+        }
+
+        // Perform search based on available inputs
+        let results = if let Some(vec) = vector {
+            // Vector search with optional text filtering
+            self.search_points_with_threshold(vec, limit, combined_filter, score_threshold)
+                .await?
+        } else if text_query.is_some() {
+            // Pure text search using scroll/retrieve
+            let retrieved = self.retrieve_points(combined_filter, limit, None).await?;
+
+            // Convert RetrievedPoint to ScoredPoint
+            retrieved
+                .into_iter()
+                .map(|rp| ScoredPoint {
+                    id: rp.id,
+                    version: 0,
+                    score: 1.0, // Text matches get a default score
+                    payload: rp.payload,
+                    vectors: rp.vectors,
+                    shard_key: rp.shard_key,
+                    order_value: rp.order_value,
+                })
+                .collect()
+        } else {
+            // No search criteria provided
+            return Err(AppError::VectorDbError(
+                "Hybrid search requires either vector or text query".to_string(),
+            ));
+        };
+
+        info!(found_points = results.len(), "Hybrid search completed");
+        Ok(results)
+    }
+
+    // --- Retrieve Operation (using Scroll API) ---
+    #[instrument(
+        skip(self, filter),
+        fields(limit),
+        name = "qdrant_retrieve_points_scroll"
+    )]
+    pub async fn retrieve_points_internal(
+        &self,
+        filter: Option<Filter>,
+        limit: u64,
+        offset: Option<u64>,
+    ) -> Result<Vec<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        info!(
+            limit,
+            offset = ?offset,
+            filter_is_some = filter.is_some(),
+            collection = %self.collection_name,
+            "Retrieving points from Qdrant using scroll"
+        );
+
+        // Use the client's `scroll` method for retrieving by filter
+        let scroll_request = qdrant_client::qdrant::ScrollPoints {
+            collection_name: self.collection_name.clone(),
+            filter,
+            limit: Some(u32::try_from(limit).unwrap_or(u32::MAX)), // Scroll API uses u32 for limit
+            with_payload: Some(true.into()),
+            with_vectors: Some(true.into()), // Include vectors (optional)
+            offset: offset.map(|o| o.into()), // Convert u64 to PointId (Qdrant uses PointId for offset in scroll)
+            read_consistency: None,           // Correct field name
+            shard_key_selector: None,
+            // Add missing fields required by ScrollPoints
+            order_by: None,
+            timeout: None,
+        };
+
+        let scroll_response = self
+            .client
+            .scroll(scroll_request) // Pass request by value
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, "Failed to scroll points in Qdrant");
+                AppError::VectorDbError(format!("Failed to scroll points: {e}"))
+            })?;
+
+        info!(
+            found_points = scroll_response.result.len(),
+            next_page_offset = ?scroll_response.next_page_offset,
+            "Qdrant scroll completed"
+        );
+
+        Ok(scroll_response.result)
+    }
+
+    // --- Placeholder for Search Operation ---
+    // Add search functionality later as needed by RAG logic
+    // pub async fn search(...) -> Result<...> { ... }
+}
+
+// --- Helper function to create PointStruct (Example) ---
+// This will likely live elsewhere (e.g., in the chunking/embedding pipeline)
+/// Creates a Qdrant point from the given parameters
+///
+/// # Errors
+///
+/// Returns an error if the payload is not a valid JSON object or if serialization fails
+pub fn create_qdrant_point(
+    id: crate::db::DbId,
+    vector: Vec<f32>,
+    payload: Option<crate::DbJson>,
+) -> Result<PointStruct, AppError> {
+    if vector.is_empty() {
+        error!(
+            "CRITICAL: create_qdrant_point received an empty vector! ID: {}",
+            id
+        );
+    } else {
+        // Log first few elements to verify content
+        let preview = if vector.len() > 3 {
+            format!("{:?}...", &vector[0..3])
+        } else {
+            format!("{:?}", vector)
+        };
+        info!(
+            "create_qdrant_point received vector of length {}. Preview: {}",
+            vector.len(),
+            preview
+        );
+    }
+
+    // Convert Option<serde_json::Value> to HashMap<String, qdrant_client::qdrant::Value>
+    let qdrant_payload: std::collections::HashMap<String, Value> = match payload {
+        Some(json_value) => {
+            // Ensure the JSON value is an object before converting
+            if !json_value.is_object() {
+                error!("Payload must be a JSON object");
+                return Err(AppError::SerializationError(
+                    "Payload must be a JSON object".to_string(),
+                ));
+            }
+            // Convert serde_json::Value to the target HashMap type
+            serde_json::from_value(json_value.0).map_err(|e| {
+                error!(error = %e, "Failed to deserialize JSON payload into Qdrant Value map");
+                AppError::SerializationError(format!(
+                    "Failed to deserialize payload for Qdrant: {e}"
+                ))
+            })?
+        }
+        None => HashMap::default(), // Empty HashMap if no payload provided
+    };
+
+    // Convert UUID to string for PointId
+    let point_id_str = id.to_string();
+
+    let vectors = Vectors::from(vector);
+
+    let point = PointStruct {
+        id: Some(point_id_str.into()), // Convert String to Qdrant PointId
+        vectors: Some(vectors),        // Use explicit Vectors struct
+        payload: qdrant_payload,
+    };
+
+    // Final sanity check before returning
+    if point.vectors.is_none() {
+        error!("CRITICAL: PointStruct created with NO vectors! ID: {}", id);
+    } else {
+        info!("PointStruct created successfully for ID: {}", id);
+    }
+
+    Ok(point)
+}
+
+// Add a helper function to create a filter for message_id
+#[must_use]
+pub fn create_message_id_filter(message_id: crate::db::DbId) -> Filter {
+    Filter {
+        must: vec![Condition {
+            condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                key: "message_id".to_string(), // Assumes metadata field name
+                r#match: Some(Match {
+                    match_value: Some(MatchValue::Keyword(message_id.to_string())),
+                }),
+                ..Default::default() // Initialize other FieldCondition fields if needed
+            })),
+        }],
+        ..Default::default() // Initialize other Filter fields if needed
+    }
+}
+
+// Implement the QdrantClientServiceTrait for QdrantClientService
+#[async_trait]
+impl QdrantClientServiceTrait for QdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        // Call the method directly instead of through the trait
+        self.ensure_collection_exists().await
+    }
+
+    async fn store_points(&self, points: Vec<PointStruct>) -> Result<(), AppError> {
+        // Rename upsert_points to store_points for the trait, but call the implementation method
+        self.upsert_points(points).await
+    }
+
+    async fn search_points(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the implementation's method directly
+        self.search_points(vector, limit, filter).await
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the implementation's method directly
+        self.search_points_with_threshold(vector, limit, filter, score_threshold)
+            .await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Use the implementation's method directly
+        self.hybrid_search(
+            vector,
+            text_query,
+            text_fields,
+            limit,
+            filter,
+            score_threshold,
+        )
+        .await
+    }
+
+    // This is the trait method that will now call the internal implementation and convert to ScoredPoint
+    async fn retrieve_points(
+        &self,
+        filter: Option<Filter>,
+        limit: u64,
+        offset: Option<u64>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        // Call the implementation method which returns RetrievedPoint
+        let retrieved_points = self.retrieve_points_internal(filter, limit, offset).await?;
+
+        // Convert RetrievedPoint to ScoredPoint
+        let scored_points = retrieved_points
+            .into_iter()
+            .map(|rp| ScoredPoint {
+                id: rp.id,
+                version: 0, // Use a default version
+                score: 1.0, // Default score as RetrievedPoint doesn't have a score
+                payload: rp.payload,
+                vectors: rp.vectors,
+                shard_key: rp.shard_key,
+                order_value: rp.order_value,
+            })
+            .collect();
+
+        Ok(scored_points)
+    }
+
+    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
+        // Implement delete functionality if needed
+        // For now, return success
+        Ok(())
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        // Implement update settings functionality if needed
+        // For now, return success
+        Ok(())
+    }
+
+    #[instrument(skip(self, filter), name = "qdrant_delete_points_by_filter")]
+    async fn delete_points_by_filter(&self, filter: Filter) -> Result<(), AppError> {
+        debug!(
+            collection = %self.collection_name,
+            filter = "[REDACTED_FILTER]",
+            "Deleting points from Qdrant by filter"
+        );
+
+        let points_selector = qdrant_client::qdrant::PointsSelector {
+            points_selector_one_of: Some(
+                qdrant_client::qdrant::points_selector::PointsSelectorOneOf::Filter(filter),
+            ),
+        };
+
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: self.collection_name.clone(),
+                points: Some(points_selector),
+                wait: Some(true), // Wait for operation to complete
+                ordering: None,
+                shard_key_selector: None,
+                timeout: None,
+            })
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, "Failed to delete points by filter from Qdrant");
+                AppError::VectorDbError(format!("Failed to delete points by filter: {e}"))
+            })?;
+
+        info!(
+            "Successfully deleted points by filter from collection '{}'",
+            self.collection_name
+        );
+        Ok(())
+    }
+
+    #[instrument(skip(self), fields(point_id = ?point_id.point_id_options), name = "qdrant_get_point_by_id_trait")]
+    async fn get_point_by_id(
+        &self,
+        point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        info!(
+            collection = %self.collection_name,
+            point_id = "[REDACTED_UUID]",
+            "Trait: Getting point by ID from Qdrant"
+        );
+
+        // self.client is Arc<Qdrant>
+        let get_points_request = qdrant_client::qdrant::GetPoints {
+            collection_name: self.collection_name.clone(),
+            ids: vec![point_id],             // Pass the single PointId in a vec
+            with_payload: Some(true.into()), // Include payload
+            with_vectors: Some(true.into()), // Include vectors
+            read_consistency: None,
+            shard_key_selector: None,
+            timeout: None, // Add missing timeout field
+        };
+
+        let response = self.client
+            .get_points(get_points_request) // Use get_points
+            .await
+            .map_err(|e| {
+                error!(error = %e, collection = %self.collection_name, point_id = "[REDACTED_UUID]", "Failed to get point by ID from Qdrant using get_points");
+                AppError::VectorDbError(format!("Failed to get point by ID [REDACTED_UUID] using get_points: {e}"))
+            })?;
+
+        // get_points returns a GetResponse which has a Vec<RetrievedPoint>
+        // We expect at most one point.
+        Ok(response.result.into_iter().next())
+    }
+
+    #[instrument(skip(self), name = "qdrant_health_check")]
+    async fn health_check(&self) -> Result<(), AppError> {
+        // Try to get basic health information from Qdrant by listing collections
+        // This is a simple operation that checks connectivity
+        self.client.list_collections().await.map_err(|e| {
+            error!(error = %e, "Qdrant health check failed - cannot list collections");
+            AppError::VectorDbError(format!("Qdrant health check failed: {e}"))
+        })?;
+
+        info!("Qdrant health check successful - can list collections");
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        // Qdrant handles optimization automatically via its optimizer settings,
+        // but we can trigger a manual optimization if needed via update_collection.
+        // For now, we'll just log that it's handled by Qdrant.
+        debug!("QdrantClientService: optimize_collection (handled automatically by Qdrant)");
+        Ok(())
+    }
+
+    async fn store_points_to_collection(
+        &self,
+        collection_name: &str,
+        points: Vec<PointStruct>,
+    ) -> Result<(), AppError> {
+        if points.is_empty() {
+            return Ok(());
+        }
+        self.client
+            .upsert_points(qdrant_client::qdrant::UpsertPoints {
+                collection_name: collection_name.to_string(),
+                wait: Some(true),
+                points,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to upsert points to collection {}: {}",
+                    collection_name, e
+                ))
+            })?;
+        Ok(())
+    }
+
+    async fn delete_points_from_collection(
+        &self,
+        collection_name: &str,
+        points: Vec<PointId>,
+    ) -> Result<(), AppError> {
+        let points_selector = qdrant_client::qdrant::PointsSelector {
+            points_selector_one_of: Some(
+                qdrant_client::qdrant::points_selector::PointsSelectorOneOf::Points(
+                    qdrant_client::qdrant::PointsIdsList { ids: points },
+                ),
+            ),
+        };
+
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: collection_name.to_string(),
+                points: Some(points_selector),
+                wait: Some(true),
+                ordering: None,
+                shard_key_selector: None,
+                timeout: None,
+            })
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to delete points from collection {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        Ok(())
+    }
+
+    async fn delete_points_by_filter_from_collection(
+        &self,
+        collection_name: &str,
+        filter: Filter,
+    ) -> Result<(), AppError> {
+        let points_selector = qdrant_client::qdrant::PointsSelector {
+            points_selector_one_of: Some(
+                qdrant_client::qdrant::points_selector::PointsSelectorOneOf::Filter(filter),
+            ),
+        };
+
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: collection_name.to_string(),
+                points: Some(points_selector),
+                wait: Some(true),
+                ordering: None,
+                shard_key_selector: None,
+                timeout: None,
+            })
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to delete points by filter from collection {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        Ok(())
+    }
+
+    async fn search_points_in_collection(
+        &self,
+        collection_name: &str,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        let search_request = qdrant_client::qdrant::SearchPoints {
+            collection_name: collection_name.to_string(),
+            vector,
+            limit,
+            with_payload: Some(true.into()),
+            filter,
+            ..Default::default()
+        };
+
+        let response = self
+            .client
+            .search_points(search_request)
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to search points in collection {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        Ok(response.result)
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(id.to_string())),
+        };
+        self.delete_points(vec![point_id]).await
+    }
+
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        let exists = self
+            .client
+            .collection_exists(collection_name)
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!(
+                    "Failed to check collection existence for {}: {}",
+                    collection_name, e
+                ))
+            })?;
+
+        if !exists {
+            let target_hnsw_config = HnswConfigDiff {
+                m: Some(16),
+                payload_m: Some(16),
+                ..Default::default()
+            };
+
+            self.client
+                .create_collection(CreateCollection {
+                    collection_name: collection_name.to_string(),
+                    vectors_config: Some(VectorsConfig {
+                        config: Some(QdrantVectorsConfig::Params(VectorParams {
+                            size: self.embedding_dimension,
+                            distance: self.distance_metric.into(),
+                            hnsw_config: Some(target_hnsw_config),
+                            on_disk: self.on_disk,
+                            ..Default::default()
+                        })),
+                    }),
+                    ..Default::default()
+                })
+                .await
+                .map_err(|e| {
+                    AppError::VectorDbError(format!(
+                        "Failed to create collection {}: {}",
+                        collection_name, e
+                    ))
+                })?;
+        }
+        Ok(())
+    }
+}
+
+// --- Unit/Integration Tests
+#[cfg(all(test, feature = "postgres-backend"))]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::db::DbId;
+    use dotenvy::dotenv;
+    use qdrant_client::qdrant::point_id::PointIdOptions;
+    use qdrant_client::qdrant::r#match::MatchValue; // Corrected import
+    use qdrant_client::qdrant::{value::Kind, Condition, FieldCondition, Filter, Match};
+    use qdrant_client::qdrant::{PointId, Value, Vectors}; // Correct the import path for PointId and Vectors if they are part of the public API
+    use serde_json::json; // Moved import here
+    use std::sync::Arc; // Removed Once
+    use tokio; // Add tokio for async tests
+     // Import for PointId variants
+                    // Use Rng trait for gen method, StdRng for concrete type, SeedableRng for seeding
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    // Removed: use rustls;
+    use tracing::info; // Already used
+
+    // Removed static INIT_RUSTLS_PROVIDER and local ensure_rustls_provider_installed function
+
+    // Helper function to load config and create a real Qdrant client for integration tests
+    async fn setup_test_qdrant_client() -> Result<QdrantClientService, AppError> {
+        setup_test_qdrant_client_with_name(None).await
+    }
+
+    async fn setup_test_qdrant_client_with_name(
+        collection_name: Option<String>,
+    ) -> Result<QdrantClientService, AppError> {
+        use rand::random;
+
+        crate::test_helpers::ensure_rustls_provider_installed(); // Call public helper
+
+        dotenv().ok(); // Load .env file for QDRANT_URL
+        let mut config = Config::load().expect("Failed to load config for integration test");
+
+        // Use a unique collection name for each test to avoid conflicts
+        let unique_collection_name = collection_name.unwrap_or_else(|| {
+            format!(
+                "test_collection_{}",
+                DbId::new().to_string().replace('-', "_")
+            )
+        });
+        config.qdrant_collection_name = unique_collection_name.clone();
+
+        let config = Arc::new(config);
+
+        // Add a small random delay to stagger concurrent test execution
+        let delay_ms = random::<u64>() % 1000; // 0-999 ms
+        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+
+        let service = QdrantClientService::new(config).await?;
+
+        info!("Setting up test collection '{}'", service.collection_name);
+
+        // Ensure the collection exists (create it fresh for the test)
+        service.ensure_collection_exists().await?;
+        info!("Collection '{}' ready for test.", service.collection_name);
+
+        Ok(service)
+    }
+
+    // Helper to cleanup test collection
+    async fn cleanup_test_collection(service: &QdrantClientService) {
+        info!("Cleaning up test collection '{}'", service.collection_name);
+        let _ = service
+            .client
+            .delete_collection(&service.collection_name)
+            .await;
+    }
+
+    // Helper to create a simple filter for testing
+    fn create_test_filter(key: &str, value: &str) -> Filter {
+        Filter {
+            must: vec![Condition {
+                condition_one_of: Some(ConditionOneOf::Field(FieldCondition {
+                    key: key.to_string(),
+                    r#match: Some(Match {
+                        match_value: Some(MatchValue::Keyword(value.to_string())),
+                    }),
+                    ..Default::default() // Initialize other fields as needed
+                })),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_create_qdrant_point_with_payload() {
+        let id = DbId::new();
+        let vector = vec![0.1, 0.2, 0.3];
+        let payload = crate::db::Json(json!({
+            "key": "value",
+            "number": 123
+        }));
+
+        let result = create_qdrant_point(id, vector.clone(), Some(payload));
+        assert!(result.is_ok());
+        let point = result.unwrap();
+
+        // Check ID
+        assert_eq!(point.id, Some(PointId::from(id.to_string())));
+
+        // Check Vector
+        assert_eq!(point.vectors, Some(Vectors::from(vector)));
+
+        // Check Payload
+        assert!(point.payload.contains_key("key"));
+        assert!(point.payload.contains_key("number"));
+        assert_eq!(
+            point.payload.get("key").unwrap().kind.as_ref().unwrap(),
+            &Value {
+                kind: Some(qdrant_client::qdrant::value::Kind::StringValue(
+                    "value".to_string()
+                ))
+            }
+            .kind
+            .unwrap()
+        );
+        assert_eq!(
+            point.payload.get("number").unwrap().kind.as_ref().unwrap(),
+            &Value {
+                kind: Some(qdrant_client::qdrant::value::Kind::IntegerValue(123))
+            }
+            .kind
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_create_qdrant_point_without_payload() {
+        let id = DbId::new();
+        let vector = vec![0.4, 0.5];
+
+        let result = create_qdrant_point(id, vector.clone(), None);
+        assert!(result.is_ok());
+        let point = result.unwrap();
+
+        assert_eq!(point.id, Some(PointId::from(id.to_string())));
+        assert_eq!(point.vectors, Some(Vectors::from(vector)));
+        assert!(point.payload.is_empty(), "Payload should be an empty map");
+    }
+
+    #[test]
+    fn test_create_qdrant_point_payload_not_object() {
+        let id = DbId::new();
+        let vector = vec![0.6];
+        let payload = crate::db::Json(json!("this is just a string")); // Not a JSON object
+
+        let result = create_qdrant_point(id, vector, Some(payload));
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            AppError::SerializationError(msg) => {
+                assert!(msg.contains("Payload must be a JSON object"));
+            }
+            _ => panic!("Expected SerializationError due to non-object payload"),
+        }
+    }
+
+    #[test]
+    fn test_create_qdrant_point_payload_deserialization_error() {
+        // This tests the internal serde_json::from_value step.
+        // We create a valid JSON object but one that might fail complex struct deserialization
+        // if we were using a specific struct type here. Since we deserialize to HashMap<String, Value>,
+        // most valid JSON objects should work unless they contain types Value can't represent directly.
+        // Let's use a nested structure.
+        let id = DbId::new();
+        let vector = vec![0.7, 0.8];
+        let payload = crate::db::Json(json!({
+            "nested": { "a": 1 },
+            "array": [1, 2, 3]
+        }));
+
+        let result = create_qdrant_point(id, vector, Some(payload));
+        assert!(result.is_ok()); // Should be Ok because HashMap<String, Value> can handle nested objects/arrays
+        let point = result.unwrap();
+
+        // Check payload structure was preserved
+        assert!(point.payload.contains_key("nested"));
+        assert!(point.payload.contains_key("array"));
+
+        let nested_val = point.payload.get("nested").unwrap();
+        assert!(matches!(
+            nested_val.kind,
+            Some(qdrant_client::qdrant::value::Kind::StructValue(_))
+        ));
+
+        let array_val = point.payload.get("array").unwrap();
+        assert!(matches!(
+            array_val.kind,
+            Some(qdrant_client::qdrant::value::Kind::ListValue(_))
+        ));
+
+        // If we were expecting a flat structure, we might add a test that fails here.
+        // For now, this confirms the basic conversion handles nested JSON.
+    }
+
+    #[test]
+    fn test_new_test_dummy_creation() {
+        // This test covers lines 89, 98, 103
+        let dummy_service = QdrantClientService::new_test_dummy();
+        // Basic assertion to ensure it runs without panic and fields are initialized
+        assert_eq!(dummy_service.collection_name, DEFAULT_COLLECTION_NAME);
+        assert_eq!(dummy_service.embedding_dimension, 768); // Check against the dummy default
+                                                            // We don't assert on the client itself as it's expected to be non-functional.
+        drop(dummy_service);
+    }
+    // --- Integration Tests (Require running Qdrant instance) ---
+    // Run these tests with `cargo test -- --ignored`
+
+    #[tokio::test]
+    #[ignore] // Re-added as it's an integration test
+    async fn test_integration_connection_and_collection() {
+        let result = setup_test_qdrant_client().await;
+        assert!(
+            result.is_ok(),
+            "Failed to connect to Qdrant and ensure collection exists: {:?}",
+            result.err()
+        );
+        drop(result);
+
+        let service = setup_test_qdrant_client().await.unwrap();
+
+        // Verify the collection actually exists
+        let exists = service
+            .client
+            .collection_exists(&service.collection_name)
+            .await;
+        assert!(
+            exists.is_ok() && exists.unwrap(),
+            "Collection should exist after service initialization"
+        );
+
+        // Clean up the test collection
+        cleanup_test_collection(&service).await;
+        drop(service);
+    }
+
+    #[tokio::test]
+    #[ignore] // Re-added as it's an integration test
+    async fn test_integration_upsert_and_search() {
+        let service = setup_test_qdrant_client()
+            .await
+            .expect("Failed to setup Qdrant client");
+        let _collection_name = service.collection_name.clone(); // Prefix unused variable
+        let embedding_dim = usize::try_from(service.embedding_dimension)
+            .expect("embedding dimension should fit in usize");
+
+        let point_id_1 = DbId::new();
+        // Use slightly more distinct vectors for testing
+        let mut rng1 = StdRng::seed_from_u64(42); // Seeded RNG for reproducibility
+                                                  // Use rng.gen::<f32>() for f32 which generates [0.0, 1.0)
+        let vector_1: Vec<f32> = (0..embedding_dim).map(|_| rng1.gen::<f32>()).collect();
+
+        let payload_1 = crate::db::Json(json!({"test_key": "value1"}));
+        let point_1 = create_qdrant_point(point_id_1, vector_1.clone(), Some(payload_1.clone()))
+            .expect("Failed to create point 1");
+
+        let point_id_2 = DbId::new();
+        // Use a different seed or different generation logic for vector_2
+        let mut rng2 = StdRng::seed_from_u64(99);
+        let vector_2: Vec<f32> = (0..embedding_dim).map(|_| rng2.gen::<f32>()).collect();
+
+        let payload_2 = crate::db::Json(json!({"test_key": "value2"}));
+        let point_2 = create_qdrant_point(point_id_2, vector_2.clone(), Some(payload_2.clone()))
+            .expect("Failed to create point 2");
+
+        // Upsert points
+        let upsert_result = service.upsert_points(vec![point_1, point_2]).await;
+        assert!(
+            upsert_result.is_ok(),
+            "Failed to upsert points: {:?}",
+            upsert_result.err()
+        );
+
+        // Give Qdrant a moment to index (usually fast, but safer in tests)
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Increased sleep time slightly
+
+        // Search for point 1
+        let search_result = service.search_points(vector_1.clone(), 1, None).await;
+        assert!(
+            search_result.is_ok(),
+            "Search failed: {:?}",
+            search_result.err()
+        );
+        let found_points = search_result.unwrap();
+
+        assert_eq!(found_points.len(), 1, "Expected to find 1 point");
+        let found_point = &found_points[0];
+
+        // Extract the string ID correctly from PointId before comparing
+        let found_id_str = match found_point
+            .id
+            .as_ref()
+            .unwrap()
+            .point_id_options
+            .as_ref()
+            .unwrap()
+        {
+            PointIdOptions::Uuid(s) => s.clone(),
+            PointIdOptions::Num(n) => n.to_string(), // Handle numeric IDs just in case, though we use UUIDs
+        };
+        assert_eq!(
+            found_id_str,
+            point_id_1.to_string(),
+            "Found point ID does not match"
+        );
+
+        // Verify payload. Need to convert qdrant::Value back to serde_json::Value or compare map directly.
+        assert!(
+            found_point.payload.contains_key("test_key"),
+            "Payload key missing"
+        );
+        assert_eq!(
+            found_point.payload.get("test_key").unwrap().kind,
+            Some(Kind::StringValue("value1".to_string())),
+            "Payload value mismatch"
+        );
+
+        // Clean up the test collection
+        cleanup_test_collection(&service).await;
+        drop(service);
+    }
+
+    #[tokio::test]
+    #[ignore] // Re-added as it's an integration test
+    async fn test_integration_search_with_filter() {
+        const MAX_RETRIES: u32 = 3;
+
+        let service = setup_test_qdrant_client()
+            .await
+            .expect("Failed to setup Qdrant client");
+        let _collection_name = service.collection_name.clone(); // Prefix unused variable
+        let embedding_dim = usize::try_from(service.embedding_dimension)
+            .expect("embedding dimension should fit in usize");
+
+        let point_id_filter = DbId::new();
+        let mut rng3 = StdRng::seed_from_u64(123);
+        let vector_filter: Vec<f32> = (0..embedding_dim).map(|_| rng3.gen::<f32>()).collect();
+
+        let payload_filter =
+            crate::db::Json(json!({"filter_key": "target_value", "other": "data1"}));
+        let point_filter = create_qdrant_point(
+            point_id_filter,
+            vector_filter.clone(),
+            Some(payload_filter.clone()),
+        )
+        .expect("Failed to create filter point");
+
+        let point_id_other = DbId::new();
+        let mut rng4 = StdRng::seed_from_u64(456);
+        let vector_other: Vec<f32> = (0..embedding_dim).map(|_| rng4.gen::<f32>()).collect();
+
+        let payload_other =
+            crate::db::Json(json!({"filter_key": "different_value", "other": "data2"}));
+        let point_other = create_qdrant_point(
+            point_id_other,
+            vector_other.clone(),
+            Some(payload_other.clone()),
+        )
+        .expect("Failed to create other point");
+
+        // Add retry logic for the upsert operation
+        let points_to_upsert = vec![point_filter, point_other];
+        let mut attempt = 0;
+
+        loop {
+            attempt += 1;
+            match service.upsert_points(points_to_upsert.clone()).await {
+                Ok(()) => break, // Success
+                Err(e) => {
+                    if let AppError::VectorDbError(msg) = &e {
+                        if msg.contains("Collection")
+                            && (msg.contains("doesn't exist") || msg.contains("not found"))
+                            && attempt < MAX_RETRIES
+                        {
+                            warn!(
+                                "Upsert failed because collection was not found (attempt {}). Ensuring and retrying...",
+                                attempt
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_millis(
+                                100 * u64::from(attempt),
+                            ))
+                            .await; // Exponential backoff
+                            service
+                                .ensure_collection_exists()
+                                .await
+                                .expect("Retry ensure_collection_exists failed");
+                            continue; // Retry upsert
+                        }
+                    }
+                    // For other errors or max retries reached, panic with the original assertion message
+                    panic!("Failed to upsert points for filter test: {e:?} (attempt {attempt})");
+                }
+            }
+        }
+
+        // Give Qdrant a moment
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await; // Increased sleep time slightly
+
+        // Create filter
+        let filter = create_test_filter("filter_key", "target_value");
+
+        // Search with filter
+        let search_result = service
+            .search_points(vector_filter.clone(), 5, Some(filter))
+            .await; // Search near the target vector
+        assert!(
+            search_result.is_ok(),
+            "Filtered search failed: {:?}",
+            search_result.err()
+        );
+        let found_points = search_result.unwrap();
+
+        assert_eq!(
+            found_points.len(),
+            1,
+            "Expected to find exactly 1 point matching the filter"
+        );
+        let found_point = &found_points[0];
+        // Extract the string ID correctly from PointId before comparing
+        let found_id_str_filter = match found_point
+            .id
+            .as_ref()
+            .unwrap()
+            .point_id_options
+            .as_ref()
+            .unwrap()
+        {
+            PointIdOptions::Uuid(s) => s.clone(),
+            PointIdOptions::Num(n) => n.to_string(),
+        };
+        assert_eq!(
+            found_id_str_filter,
+            point_id_filter.to_string(),
+            "Found point ID does not match the filtered point"
+        );
+        assert!(
+            found_point.payload.contains_key("filter_key"),
+            "Payload key missing"
+        );
+        assert_eq!(
+            found_point.payload.get("filter_key").unwrap().kind,
+            Some(Kind::StringValue("target_value".to_string())),
+            "Payload value mismatch"
+        );
+
+        // Clean up the test collection
+        cleanup_test_collection(&service).await;
+        drop(service);
+    }
+}
+
+// ============================================================================
+// No-Op Implementation for Embedded Vector Mode (Desktop)
+// ============================================================================
+
+// Make NoOpQdrantService available when embedded-vector is enabled OR when neither vector feature is enabled
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
+#[derive(Clone)]
+pub struct NoOpQdrantService;
+
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
+impl NoOpQdrantService {
+    pub async fn new(_config: Arc<Config>) -> Result<Self, AppError> {
+        tracing::info!("Using no-op Qdrant service for desktop/embedded-vector mode");
+        Ok(NoOpQdrantService)
+    }
+}
+
+#[cfg(any(
+    feature = "embedded-vector",
+    not(any(feature = "remote-vector", feature = "embedded-vector"))
+))]
+#[async_trait]
+impl QdrantClientServiceTrait for NoOpQdrantService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: ensure_collection_exists (no-op)");
+        Ok(())
+    }
+
+    async fn store_points(&self, _points: Vec<PointStruct>) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: store_points (no-op)");
+        Ok(())
+    }
+
+    async fn search_points(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points (no-op)");
+        Ok(vec![])
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points_with_threshold (no-op)");
+        Ok(vec![])
+    }
+
+    async fn hybrid_search(
+        &self,
+        _vector: Option<Vec<f32>>,
+        _text_query: Option<String>,
+        _text_fields: Vec<String>,
+        _limit: u64,
+        _filter: Option<Filter>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: hybrid_search (no-op)");
+        Ok(vec![])
+    }
+
+    async fn retrieve_points(
+        &self,
+        _filter: Option<Filter>,
+        _limit: u64,
+        _offset: Option<u64>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: retrieve_points (no-op)");
+        Ok(vec![])
+    }
+
+    async fn delete_points(&self, _point_ids: Vec<PointId>) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points (no-op)");
+        Ok(())
+    }
+
+    async fn delete_points_by_filter(&self, _filter: Filter) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points_by_filter (no-op)");
+        Ok(())
+    }
+
+    async fn delete_points_from_collection(
+        &self,
+        _collection_name: &str,
+        _points: Vec<PointId>,
+    ) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points_from_collection (no-op)");
+        Ok(())
+    }
+
+    async fn delete_points_by_filter_from_collection(
+        &self,
+        _collection_name: &str,
+        _filter: Filter,
+    ) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_points_by_filter_from_collection (no-op)");
+        Ok(())
+    }
+
+    async fn update_collection_settings(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: update_collection_settings (no-op)");
+        Ok(())
+    }
+
+    async fn get_point_by_id(
+        &self,
+        _point_id: PointId,
+    ) -> Result<Option<qdrant_client::qdrant::RetrievedPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: get_point_by_id (no-op)");
+        Ok(None)
+    }
+
+    async fn delete_by_id(&self, _id: &str) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: delete_by_id (no-op)");
+        Ok(())
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: optimize_collection (no-op)");
+        // Qdrant handles optimization automatically
+        Ok(())
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: health_check (no-op)");
+        Ok(())
+    }
+
+    async fn store_points_to_collection(
+        &self,
+        _collection_name: &str,
+        _points: Vec<PointStruct>,
+    ) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: store_points_to_collection (no-op)");
+        Ok(())
+    }
+
+    async fn search_points_in_collection(
+        &self,
+        _collection_name: &str,
+        _vector: Vec<f32>,
+        _limit: u64,
+        _filter: Option<Filter>,
+    ) -> Result<Vec<ScoredPoint>, AppError> {
+        tracing::debug!("NoOpQdrantService: search_points_in_collection (no-op)");
+        Ok(vec![])
+    }
+
+    async fn ensure_collection_exists_named(&self, _collection_name: &str) -> Result<(), AppError> {
+        tracing::debug!("NoOpQdrantService: ensure_collection_exists_named (no-op)");
+        Ok(())
+    }
+}
+
+// Implement the unified VectorServiceTrait for QdrantClientService
+#[async_trait]
+impl super::VectorServiceTrait for QdrantClientService {
+    async fn ensure_collection_exists(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::ensure_collection_exists(self).await
+    }
+
+    async fn ensure_collection_exists_named(&self, collection_name: &str) -> Result<(), AppError> {
+        QdrantClientServiceTrait::ensure_collection_exists_named(self, collection_name).await
+    }
+
+    async fn add_document(&self, _document: serde_json::Value) -> Result<(), AppError> {
+        tracing::warn!(
+            "add_document called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(())
+    }
+
+    async fn add_documents(&self, _documents: Vec<serde_json::Value>) -> Result<(), AppError> {
+        tracing::warn!(
+            "add_documents called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(())
+    }
+
+    async fn add_document_to_collection(
+        &self,
+        _collection_name: &str,
+        _document: serde_json::Value,
+    ) -> Result<(), AppError> {
+        // This would need embedding generation - for now just log a warning
+        tracing::warn!("add_document_to_collection called on QdrantClientService directly - use RigQdrantService instead");
+        Ok(())
+    }
+
+    async fn search_values(
+        &self,
+        query: &str,
+        limit: usize,
+        filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        self.search_values_in_collection("default", query, limit, filter)
+            .await
+    }
+
+    async fn search_values_in_collection(
+        &self,
+        _collection_name: &str,
+        _query: &str,
+        _limit: usize,
+        _filter: Option<qdrant_client::qdrant::Filter>,
+    ) -> Result<Vec<(f32, serde_json::Value)>, AppError> {
+        // This would need embedding generation - for now return empty
+        tracing::warn!(
+            "search_values_in_collection called on QdrantClientService directly - use RigQdrantService instead"
+        );
+        Ok(vec![])
+    }
+
+    async fn search_points_with_threshold(
+        &self,
+        vector: Vec<f32>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        self.search_points_with_threshold(vector, limit, filter, score_threshold)
+            .await
+    }
+
+    async fn hybrid_search(
+        &self,
+        vector: Option<Vec<f32>>,
+        text_query: Option<String>,
+        text_fields: Vec<String>,
+        limit: u64,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        self.hybrid_search(
+            vector,
+            text_query,
+            text_fields,
+            limit,
+            filter,
+            score_threshold,
+        )
+        .await
+    }
+
+    async fn retrieve_points(
+        &self,
+        filter: Option<qdrant_client::qdrant::Filter>,
+        limit: u64,
+        offset: Option<u64>,
+        _score_threshold: Option<f32>,
+    ) -> Result<Vec<qdrant_client::qdrant::ScoredPoint>, AppError> {
+        // Note: score_threshold is ignored by inherent retrieve_points_internal
+        let results = self.retrieve_points_internal(filter, limit, offset).await?;
+        Ok(results
+            .into_iter()
+            .map(|p| qdrant_client::qdrant::ScoredPoint {
+                id: p.id,
+                version: 0,
+                score: 1.0,
+                payload: p.payload,
+                vectors: p.vectors,
+                shard_key: p.shard_key,
+                order_value: p.order_value,
+            })
+            .collect())
+    }
+
+    async fn delete_points(
+        &self,
+        ids: Vec<qdrant_client::qdrant::PointId>,
+    ) -> Result<(), AppError> {
+        self.client
+            .delete_points(qdrant_client::qdrant::DeletePoints {
+                collection_name: self.collection_name.clone(),
+                points: Some(ids.into()),
+                ordering: None,
+                wait: Some(true),
+                shard_key_selector: None,
+                timeout: None,
+            })
+            .await
+            .map_err(|e| {
+                AppError::VectorDbError(format!("Failed to delete points from Qdrant: {}", e))
+            })?;
+        Ok(())
+    }
+
+    async fn delete_by_filter(
+        &self,
+        filter: qdrant_client::qdrant::Filter,
+    ) -> Result<(), AppError> {
+        self.delete_points_by_filter(filter).await
+    }
+
+    async fn delete_by_id(&self, id: &str) -> Result<(), AppError> {
+        // Use the existing delete_points method
+        let point_id = PointId {
+            point_id_options: Some(PointIdOptions::Uuid(id.to_string())),
+        };
+        QdrantClientServiceTrait::delete_points(self, vec![point_id]).await
+    }
+
+    async fn health_check(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::health_check(self).await
+    }
+
+    async fn optimize_collection(&self) -> Result<(), AppError> {
+        QdrantClientServiceTrait::optimize_collection(self).await
+    }
+}
