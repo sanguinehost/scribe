@@ -6,6 +6,7 @@ pub mod capture_user;
 pub mod llm_security;
 pub mod plan_enforcement;
 pub mod rate_limit;
+pub mod telemetry;
 
 pub use rate_limit::{
     create_template_rate_limiter, credit_check_middleware, credit_purchase_rate_limit_middleware,
@@ -26,3 +27,4 @@ pub use plan_enforcement::{
 
 pub use auth_middleware::unified_login_required;
 pub use capture_user::{capture_user_id_middleware, PrivacySafeUserId};
+pub use telemetry::thermodynamic_telemetry_middleware;

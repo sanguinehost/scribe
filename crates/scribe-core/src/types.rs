@@ -54,3 +54,24 @@ impl Deref for DbJson {
 impl From<serde_json::Value> for DbJson {
     fn from(v: serde_json::Value) -> Self { Self(v) }
 }
+
+/// Thermodynamic Telemetry (HNA-native observability)
+/// Replace standard string-based logging with structural mathematical vectors.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ThermodynamicTelemetry {
+    pub friston_free_energy: f32, // Surrogate for system surprise/error
+    pub action_gradient: [f32; 3], // Directional delta of the update
+    pub entropy_variance: f32,    // Measure of trajectory volatility
+    pub auth_rotor: [f32; 2],     // Non-linear identity verification vector
+}
+
+impl Default for ThermodynamicTelemetry {
+    fn default() -> Self {
+        Self {
+            friston_free_energy: 0.0,
+            action_gradient: [0.0, 0.0, 0.0],
+            entropy_variance: 0.0,
+            auth_rotor: [1.0, 0.0], // Identity rotor
+        }
+    }
+}
