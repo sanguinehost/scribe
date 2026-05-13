@@ -72,6 +72,10 @@ impl SO2Rotor {
     pub fn new(cos: f32, sin: f32) -> Self {
         Self([cos, sin])
     }
+    
+    pub fn identity() -> Self {
+        Self([1.0, 0.0])
+    }
 }
 
 /// Graded Algebra - Tier 3: Dirac 4x4 Tensor
@@ -80,8 +84,8 @@ impl SO2Rotor {
 #[serde(transparent)]
 pub struct DiracTensor(pub [f32; 16]);
 
-/// Thermodynamic Telemetry
-/// Replaces standard string-based logging with structural mathematical vectors.
+/// Thermodynamic Telemetry (HNA-native observability)
+/// Replace standard string-based logging with structural mathematical vectors.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ThermodynamicTelemetry {
     /// Surrogate for system surprise/error
@@ -92,4 +96,15 @@ pub struct ThermodynamicTelemetry {
     pub entropy_variance: f32,
     /// Non-linear identity verification vector (Compositional Auth Rotor)
     pub auth_rotor: [f32; 2],
+}
+
+impl Default for ThermodynamicTelemetry {
+    fn default() -> Self {
+        Self {
+            friston_free_energy: 0.0,
+            action_gradient: [0.0, 0.0, 0.0],
+            entropy_variance: 0.0,
+            auth_rotor: [1.0, 0.0], // Identity rotor
+        }
+    }
 }
