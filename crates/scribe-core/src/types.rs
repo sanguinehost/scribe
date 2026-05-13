@@ -54,3 +54,42 @@ impl Deref for DbJson {
 impl From<serde_json::Value> for DbJson {
     fn from(v: serde_json::Value) -> Self { Self(v) }
 }
+
+/// Graded Algebra - Tier 1: U(1) Scalar
+/// Massless pure phase shifts requiring minimal VRAM allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct U1Scalar(pub f32);
+
+/// Graded Algebra - Tier 2: Pauli SO(2) Rotor
+/// Standard HNA state synchronization and action propagation.
+/// Encodes local spatial geometry without maintaining global temporal history.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SO2Rotor(pub [f32; 2]);
+
+impl SO2Rotor {
+    pub fn new(cos: f32, sin: f32) -> Self {
+        Self([cos, sin])
+    }
+}
+
+/// Graded Algebra - Tier 3: Dirac 4x4 Tensor
+/// Heavy, historical system state. Synchronized only via Deep Anchors.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DiracTensor(pub [f32; 16]);
+
+/// Thermodynamic Telemetry
+/// Replaces standard string-based logging with structural mathematical vectors.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ThermodynamicTelemetry {
+    /// Surrogate for system surprise/error
+    pub friston_free_energy: f32,
+    /// Directional delta of the update
+    pub action_gradient: [f32; 3],
+    /// Measure of trajectory volatility
+    pub entropy_variance: f32,
+    /// Non-linear identity verification vector (Compositional Auth Rotor)
+    pub auth_rotor: [f32; 2],
+}

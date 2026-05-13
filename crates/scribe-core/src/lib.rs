@@ -5,5 +5,7 @@ pub mod types;
 
 pub use error::CoreError;
 pub use models::{AccountStatus, UserRole};
-pub use privacy::{sanitize_personal_info, SanitizedString};
-pub use types::{DbId, DbJson, DbTimestamp};
+pub use privacy::{sanitize_personal_info, AdjointVerifier, CompositionalAuthRotor, SanitizedString};
+pub use types::{
+    DbId, DbJson, DbTimestamp, DiracTensor, SO2Rotor, ThermodynamicTelemetry, U1Scalar,
+};
