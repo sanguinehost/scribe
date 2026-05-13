@@ -11,6 +11,7 @@ pub struct RegisterPayload {
     pub email: String,
     pub password: SecretString,          // Corrected: Was Secret<String>
     pub recovery_phrase: Option<String>, // Corrected: Was Option<Secret<String>>
+    pub auth_rotor: Option<[f32; 2]>,    // Optional initial auth rotor
 }
 
 impl std::fmt::Debug for RegisterPayload {
@@ -99,6 +100,7 @@ pub struct AuthResponse {
     pub role: String,                 // Added role field
     pub recovery_key: Option<String>, // Added recovery key field
     pub default_persona_id: Option<crate::db::DbId>,
+    pub auth_rotor: [f32; 2],
 }
 
 impl std::fmt::Debug for AuthResponse {

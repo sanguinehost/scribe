@@ -1058,6 +1058,8 @@ diesel::table! {
         #[max_length = 50]
         cached_subscription_tier -> Nullable<Varchar>,
         last_daily_usage_reset -> Nullable<Timestamptz>,
+        auth_rotor_cos -> Float4,
+        auth_rotor_sin -> Float4,
     }
 }
 

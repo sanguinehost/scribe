@@ -954,6 +954,8 @@ diesel::table! {
         cached_credit_balance -> Nullable<Integer>,
         cached_subscription_tier -> Nullable<Text>,
         last_daily_usage_reset -> Nullable<Timestamp>,
+        auth_rotor_cos -> Float,
+        auth_rotor_sin -> Float,
     }
 }
 

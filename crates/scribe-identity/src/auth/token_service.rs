@@ -13,6 +13,7 @@ pub struct TokenClaims {
     pub exp: i64,           // Expiration time (Unix timestamp)
     pub iat: i64,           // Issued at (Unix timestamp)
     pub token_type: String, // "access" or "refresh"
+    pub auth_rotor: [f32; 2],
 }
 
 /// Token types for different purposes
@@ -60,7 +61,7 @@ impl TokenService {
     }
 
     /// Generate a new token pair for a user
-    pub fn generate_token_pair(&self, user_id: DbId) -> Result<TokenPair, AppError> {
+    pub fn generate_token_pair(&self, user_id: DbId, auth_rotor: [f32; 2]) -> Result<TokenPair, AppError> {
         let now = Utc::now();
 
         // Generate access token
@@ -69,6 +70,7 @@ impl TokenService {
             exp: (now + self.access_token_duration).timestamp(),
             iat: now.timestamp(),
             token_type: TokenType::Access.as_str().to_string(),
+            auth_rotor,
         };
 
         let access_token =
@@ -85,6 +87,7 @@ impl TokenService {
             exp: (now + self.refresh_token_duration).timestamp(),
             iat: now.timestamp(),
             token_type: TokenType::Refresh.as_str().to_string(),
+            auth_rotor,
         };
 
         let refresh_token = encode(&Header::default(), &refresh_claims, &self.encoding_key)
@@ -129,6 +132,7 @@ impl TokenService {
             exp: (now + self.access_token_duration).timestamp(),
             iat: now.timestamp(),
             token_type: TokenType::Access.as_str().to_string(),
+            auth_rotor: claims.auth_rotor,
         };
 
         let access_token =

@@ -349,6 +349,8 @@ pub async fn create_user_in_db(
         token_usage_updated_at: crate::db::DbTimestamp::now(),
         created_at: crate::db::DbTimestamp::now(),
         updated_at: crate::db::DbTimestamp::now(),
+        auth_rotor_cos: 1.0,
+        auth_rotor_sin: 0.0,
     };
 
     let user_from_db: UserDbQuery = crate::db::with_conn(pool, move |conn| {

@@ -148,6 +148,8 @@ pub struct UserDbQuery {
     pub cached_credit_balance: Option<i32>,
     pub cached_subscription_tier: Option<String>,
     pub last_daily_usage_reset: Option<DbTimestamp>,
+    pub auth_rotor_cos: f32,
+    pub auth_rotor_sin: f32,
 }
 
 impl std::fmt::Debug for UserDbQuery {
@@ -199,6 +201,18 @@ pub struct User {
     pub total_token_cost_cents: DbBigInt,
     pub tokens_last_reset_at: Option<DbTimestamp>,
     pub token_usage_updated_at: DbTimestamp,
+    pub auth_rotor_cos: f32,
+    pub auth_rotor_sin: f32,
+}
+
+impl User {
+    pub fn auth_rotor(&self) -> scribe_core::SO2Rotor {
+        scribe_core::SO2Rotor([self.auth_rotor_cos, self.auth_rotor_sin])
+    }
+
+    pub fn compositional_auth_rotor(&self) -> scribe_core::CompositionalAuthRotor {
+        scribe_core::CompositionalAuthRotor(self.auth_rotor())
+    }
 }
 
 impl std::fmt::Debug for User {
@@ -251,6 +265,8 @@ impl From<UserDbQuery> for User {
             total_token_cost_cents: user_from_db.total_token_cost_cents,
             tokens_last_reset_at: user_from_db.tokens_last_reset_at,
             token_usage_updated_at: user_from_db.token_usage_updated_at,
+            auth_rotor_cos: user_from_db.auth_rotor_cos,
+            auth_rotor_sin: user_from_db.auth_rotor_sin,
         }
     }
 }
@@ -292,6 +308,8 @@ pub struct NewUser {
     pub token_usage_updated_at: DbTimestamp,
     pub created_at: DbTimestamp,
     pub updated_at: DbTimestamp,
+    pub auth_rotor_cos: f32,
+    pub auth_rotor_sin: f32,
 }
 
 impl std::fmt::Debug for NewUser {

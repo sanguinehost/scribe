@@ -80,6 +80,8 @@ pub enum AuthError {
     SessionDeletionError(String),
     #[error("Invalid or expired verification token")]
     InvalidVerificationToken,
+    #[error("Adjoint verification failed: {0}")]
+    AdjointVerificationFailed(String),
 }
 
 // Manual PartialEq implementation for test comparisons
@@ -98,6 +100,7 @@ impl PartialEq for AuthError {
             | (Self::InvalidVerificationToken, Self::InvalidVerificationToken) => true,
             (Self::DatabaseError(a), Self::DatabaseError(b))
             | (Self::InteractError(a), Self::InteractError(b))
+            | (Self::AdjointVerificationFailed(a), Self::AdjointVerificationFailed(b))
             | (Self::SessionDeletionError(a), Self::SessionDeletionError(b)) => a == b,
             (Self::CryptoOperationFailed(a), Self::CryptoOperationFailed(b)) => a == b,
             // PoolError cannot be compared, so we always return false for it
@@ -356,6 +359,8 @@ pub fn create_user_sync(
         token_usage_updated_at: chrono::Utc::now().into(),
         created_at: crate::db::DbTimestamp::now(),
         updated_at: crate::db::DbTimestamp::now(),
+        auth_rotor_cos: credentials.auth_rotor.map(|[c, _]| c).unwrap_or(1.0),
+        auth_rotor_sin: credentials.auth_rotor.map(|[_, s]| s).unwrap_or(0.0),
     };
 
     debug!("Inserting new user with encryption fields into database...");
@@ -557,6 +562,7 @@ pub fn verify_credentials(
     }
 }
 
+pub mod adjoint;
 pub mod session_dek;
 pub mod session_rotation;
 pub mod session_store;
@@ -564,6 +570,7 @@ pub mod token_auth;
 pub mod token_service;
 pub mod user_store;
 
+pub use adjoint::{HNAAdjointVerifier, compose_rotors};
 pub use session_dek::SessionDek;
 pub use session_rotation::session_rotation_middleware;
 pub use session_store::DieselSessionStore;
