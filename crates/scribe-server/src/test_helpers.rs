@@ -1544,6 +1544,32 @@ pub struct TestAppStateBuilder {
     auth_backend: Arc<AuthBackend>, // Add auth_backend to builder
     token_service: Option<Arc<crate::auth::TokenService>>, // Add token_service field
     recall_pipeline: Option<Arc<crate::services::cognitive::RecallPipeline>>,
+    adjoint_verifier: Option<Arc<dyn scribe_core::privacy::AdjointVerifier + Send + Sync>>,
+}
+
+// Removed duplicate Mutex import
+
+#[derive(Clone)]
+pub struct MockAdjointVerifier {
+    pub should_pass: Arc<Mutex<bool>>,
+}
+
+impl MockAdjointVerifier {
+    pub fn new() -> Self {
+        Self {
+            should_pass: Arc::new(Mutex::new(true)),
+        }
+    }
+}
+
+impl scribe_core::privacy::AdjointVerifier for MockAdjointVerifier {
+    fn verify_adjoint(
+        &self,
+        _telemetry: &scribe_core::types::ThermodynamicTelemetry,
+        _threshold: f32,
+    ) -> bool {
+        *self.should_pass.lock().unwrap()
+    }
 }
 
 impl TestAppStateBuilder {
@@ -1570,6 +1596,7 @@ impl TestAppStateBuilder {
             auth_backend,
             token_service: None, // Initialize token_service field
             recall_pipeline: None,
+            adjoint_verifier: None,
         }
     }
 
@@ -1614,6 +1641,15 @@ impl TestAppStateBuilder {
         pipeline: Arc<crate::services::cognitive::RecallPipeline>,
     ) -> Self {
         self.recall_pipeline = Some(pipeline);
+        self
+    }
+    
+    #[must_use]
+    pub fn with_adjoint_verifier(
+        mut self,
+        verifier: Arc<dyn scribe_core::privacy::AdjointVerifier + Send + Sync>,
+    ) -> Self {
+        self.adjoint_verifier = Some(verifier);
         self
     }
 
@@ -1677,10 +1713,15 @@ impl TestAppStateBuilder {
             ))
         });
 
+        let adjoint_verifier = self.adjoint_verifier.unwrap_or_else(|| {
+            Arc::new(MockAdjointVerifier::new())
+        });
+
         // Create chronicle service for narrative intelligence
         let chronicle_service = Arc::new(ChronicleService::new(
             self.db_pool.clone(),
             self.ai_client.clone(),
+            adjoint_verifier.clone(),
         ));
 
         // NOTE: NarrativeIntelligenceService creation is deferred until after AppState is built
@@ -1710,6 +1751,7 @@ impl TestAppStateBuilder {
             Arc::new(crate::services::character_service::CharacterService::new(
                 self.db_pool.clone(),
                 encryption_service.clone(),
+                adjoint_verifier.clone(),
             ));
 
         let services = AppStateServices {
@@ -1720,6 +1762,7 @@ impl TestAppStateBuilder {
             chat_override_service,
             user_persona_service,
             character_service,
+            adjoint_verifier: adjoint_verifier.clone(),
             token_counter,
             encryption_service,
             lorebook_service,
@@ -1751,7 +1794,11 @@ impl TestAppStateBuilder {
         let narrative_intelligence_service =
             Arc::new(NarrativeIntelligenceService::for_development_with_deps(
                 app_state.ai_client.clone(),
-                chronicle_service,
+                Arc::new(crate::services::chronicle_service::ChronicleService::new(
+                    app_state.pool.clone(),
+                    app_state.ai_client.clone(),
+                    app_state.adjoint_verifier.clone(),
+                )),
                 app_state.lorebook_service.clone(),
                 app_state.qdrant_service.clone(),
                 app_state.embedding_client.clone(),
@@ -1829,6 +1876,7 @@ pub struct TestApp {
     pub qdrant_service: Arc<dyn crate::vector_db::VectorServiceTrait>, // Use trait object
     // Optionally store the mock Qdrant client for tests that need mock-specific methods
     pub mock_qdrant_service: Option<Arc<MockQdrantClientService>>,
+    pub mock_adjoint_verifier: Arc<MockAdjointVerifier>,
     // user_persona_service field removed as per plan
     // embedding_call_tracker field removed as per plan
     pub recall_pipeline: Arc<crate::services::cognitive::RecallPipeline>,
@@ -2164,6 +2212,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     }
 
     let config_arc = Arc::new(config_loader);
+    let mock_adjoint_verifier = Arc::new(MockAdjointVerifier::new());
 
     let (ai_client_for_state, mock_ai_client_for_test_app): (
         Arc<dyn AiClient + Send + Sync>,
@@ -2214,7 +2263,7 @@ pub async fn spawn_app_with_rate_limiting_options(
     // Create auth_backend early so it can be shared
     // IMPORTANT: We wrap AuthBackend in Arc to ensure the same instance is shared
     // This is critical for the DEK cache to work properly across requests
-    let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
+    let auth_backend = Arc::new(AuthBackend::new(pool.clone(), mock_adjoint_verifier.clone()));
 
     let mut builder; // Declare builder without initializing
 
@@ -2236,7 +2285,8 @@ pub async fn spawn_app_with_rate_limiting_options(
             embedding_client_for_state.clone(), // Pass the real one for AppState
             qdrant_service_for_state.clone(),
             auth_backend.clone(),
-        );
+        )
+        .with_adjoint_verifier(mock_adjoint_verifier.clone());
         // Only use real embedding pipeline if explicitly requested
         if !use_real_embedding_pipeline {
             builder = builder.with_embedding_pipeline_service(
@@ -2257,7 +2307,8 @@ pub async fn spawn_app_with_rate_limiting_options(
             embedding_client_for_state.clone(), // Pass the mock one for AppState
             qdrant_service_for_state.clone(),
             auth_backend.clone(),
-        );
+        )
+        .with_adjoint_verifier(mock_adjoint_verifier.clone());
 
         // Configure builder with the mock pipeline service for AppState
         // This mock_embedding_pipeline_service_for_test_app is the one initialized earlier.
@@ -2413,6 +2464,7 @@ pub async fn spawn_app_with_rate_limiting_options(
         mock_embedding_pipeline_service: mock_embedding_pipeline_service_for_test_app.clone(),
         qdrant_service: qdrant_service_for_state,
         mock_qdrant_service: mock_qdrant_service_for_test_app,
+        mock_adjoint_verifier,
         recall_pipeline: app_state_inner.recall_pipeline.clone(),
         state: Arc::new(app_state_inner.clone()), // Populate state field
     };
@@ -3893,7 +3945,10 @@ impl TestApp {
         ));
 
         // Create auth_backend for this AppState
-        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(self.db_pool.clone()));
+        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(
+            self.db_pool.clone(),
+            self.mock_adjoint_verifier.clone(),
+        ));
 
         // Create email service for testing
         let email_service = crate::services::email_service::create_email_service(
@@ -3915,6 +3970,7 @@ impl TestApp {
             Arc::new(crate::services::character_service::CharacterService::new(
                 self.db_pool.clone(),
                 encryption_service.clone(),
+                self.mock_adjoint_verifier.clone(),
             ));
 
         let services = crate::state::AppStateServices {
@@ -3958,6 +4014,7 @@ impl TestApp {
                 10, 100,
             )), // Test rate limiter
             recall_pipeline: self.recall_pipeline.clone(),
+            adjoint_verifier: self.mock_adjoint_verifier.clone(),
             token_service: None, // Not available in this test context
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Not used in tests
@@ -4323,5 +4380,43 @@ pub mod llm_server {
     pub async fn ensure_llm_server_running(
     ) -> Result<Option<LlmServerTestGuard>, Box<dyn std::error::Error + Send + Sync>> {
         Err("local-llm feature not enabled".into())
+    }
+}
+#[cfg(test)]
+mod adjoint_tests {
+    use super::*;
+    use crate::auth::adjoint::{HNAAdjointVerifier, TelemetryBuffer};
+    use scribe_core::types::ThermodynamicTelemetry;
+    use scribe_core::privacy::AdjointVerifier;
+
+    struct MockTelemetryBuffer {
+        state: ThermodynamicTelemetry,
+    }
+
+    impl TelemetryBuffer for MockTelemetryBuffer {
+        fn read_state(&self) -> ThermodynamicTelemetry {
+            self.state
+        }
+    }
+
+    #[tokio::test]
+    async fn test_adjoint_verification_bounds() {
+        let buffer = MockTelemetryBuffer {
+            state: ThermodynamicTelemetry::success(1.0),
+        };
+        // Verifier with threshold 5.0
+        let verifier = HNAAdjointVerifier::new(Box::new(buffer), 5.0);
+
+        // Case 1: Valid update (CE = 2.0 < limit = 5.0)
+        let valid_telemetry = ThermodynamicTelemetry::success(2.0);
+        assert!(verifier.verify_adjoint(&valid_telemetry, 10.0));
+
+        // Case 2: Malicious update (CE = 8.0 > limit = 5.0)
+        let malicious_telemetry = ThermodynamicTelemetry::success(8.0);
+        assert!(!verifier.verify_adjoint(&malicious_telemetry, 10.0));
+
+        // Case 3: Update exceeds request-specific threshold
+        let strict_telemetry = ThermodynamicTelemetry::success(3.0);
+        assert!(!verifier.verify_adjoint(&strict_telemetry, 2.0));
     }
 }

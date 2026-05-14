@@ -445,9 +445,18 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
         pool.clone(),
         encryption_service.clone(),
     ));
+    // --- Initialize Adjoint Verifier ---
+    let adjoint_buffer = Arc::new(scribe_backend::auth::adjoint::VulkanTelemetryBuffer::new());
+    let adjoint_verifier: Arc<dyn scribe_core::privacy::AdjointVerifier + Send + Sync> =
+        Arc::new(scribe_backend::auth::adjoint::HNAAdjointVerifier::new(
+            adjoint_buffer,
+            config.adjoint_threshold,
+        ));
+
     let character_service = Arc::new(CharacterService::new(
         pool.clone(),
         encryption_service.clone(),
+        adjoint_verifier.clone(),
     ));
 
     // --- Create Chunking Config and Embedding Pipeline ---
@@ -472,12 +481,16 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
     ));
 
     // --- Initialize Chronicle Service ---
-    let _chronicle_service = Arc::new(ChronicleService::new(pool.clone(), ai_client_arc.clone()));
+    let _chronicle_service = Arc::new(ChronicleService::new(
+        pool.clone(),
+        ai_client_arc.clone(),
+        adjoint_verifier.clone(),
+    ));
 
     // --- Initialize Recall Pipeline ---
     let recall_pipeline = Arc::new(RecallPipeline::new(pool.clone()));
 
-    let auth_backend = Arc::new(AuthBackend::new(pool.clone()));
+    let auth_backend = Arc::new(AuthBackend::new(pool.clone(), adjoint_verifier.clone()));
 
     // --- Initialize Token Service ---
     let token_service = if let Some(cookie_key) = config.cookie_signing_key.as_ref() {
@@ -540,6 +553,7 @@ async fn initialize_services(config: &Arc<Config>, pool: &DbPool) -> Result<AppS
             ),
         ),
         recall_pipeline,
+        adjoint_verifier,
         #[cfg(feature = "local-llm")]
         llamacpp_server_manager: None, // Removed LlamaCppServerManager
         #[cfg(feature = "local-llm")]
@@ -705,6 +719,7 @@ fn setup_app_state_and_auth(
     let chronicle_service = Arc::new(ChronicleService::new(
         pool.clone(),
         app_state.ai_client.clone(),
+        app_state.adjoint_verifier.clone(),
     ));
     let narrative_intelligence_service =
         Arc::new(NarrativeIntelligenceService::for_production_with_deps(

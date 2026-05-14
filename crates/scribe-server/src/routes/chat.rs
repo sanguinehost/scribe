@@ -511,7 +511,7 @@ async fn generate_chat_response_sse(
         let (agent_context, pre_processing_analysis_id) = if !should_skip_analysis && agent_mode.as_deref() == Some("pre_processing") {
             // Run the agent
             let search_tool = Arc::new(SearchKnowledgeBaseTool::new(state_arc.qdrant_service.clone(), state_arc.embedding_client.clone(), state_arc.clone()));
-            let chronicle_service = Arc::new(ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone()));
+            let chronicle_service = Arc::new(ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone(), state_arc.adjoint_verifier.clone()));
             let agent = ContextEnrichmentAgent::new(state_arc.clone(), search_tool.clone(), state_arc.recall_pipeline.clone(), chronicle_service.clone());
 
             let mut messages_for_agent: Vec<(String, String)> = managed_db_history.iter().take(10).map(|m| {
@@ -581,7 +581,7 @@ async fn generate_chat_response_sse(
         // Core Memory — also panic-safe
         tracing::info!("[SSE-DIAG] Starting core memory retrieval...");
         let core_memory = if let Some(chronicle_id) = player_chronicle_id {
-            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone());
+            let chronicle_service = crate::services::chronicle_service::ChronicleService::new(state_arc.pool.clone(), state_arc.ai_client.clone(), state_arc.adjoint_verifier.clone());
             tracing::info!("[SSE-DIAG] Calling get_core_memory (chronicle_id={})", chronicle_id);
             let core_mem_result = std::panic::AssertUnwindSafe(
                 chronicle_service.get_core_memory(user_id_value, chronicle_id)
@@ -1546,6 +1546,7 @@ async fn generate_chat_response_json_inner(
                     let chronicle_service = Arc::new(ChronicleService::new(
                         state_arc.pool.clone(),
                         state_arc.ai_client.clone(),
+                        state_arc.adjoint_verifier.clone(),
                     ));
 
                     let agent = ContextEnrichmentAgent::new(
@@ -1875,6 +1876,7 @@ async fn generate_chat_response_json_inner(
         let chronicle_service = crate::services::chronicle_service::ChronicleService::new(
             state_arc.pool.clone(),
             state_arc.ai_client.clone(),
+            state_arc.adjoint_verifier.clone(),
         );
 
         match chronicle_service
@@ -2099,6 +2101,7 @@ async fn generate_chat_response_json_inner(
                                         let chronicle_service = Arc::new(ChronicleService::new(
                                             state_clone.pool.clone(),
                                             state_clone.ai_client.clone(),
+                                            state_clone.adjoint_verifier.clone(),
                                         ));
 
                                         let agent = ContextEnrichmentAgent::new(
@@ -2623,6 +2626,7 @@ async fn generate_chat_response_json_inner(
                                     let chronicle_service = Arc::new(ChronicleService::new(
                                         state_clone.pool.clone(),
                                         state_clone.ai_client.clone(),
+                                        state_clone.adjoint_verifier.clone(),
                                     ));
 
                                     let agent = ContextEnrichmentAgent::new(

@@ -1,6 +1,42 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
+use crate::types::{SO2Rotor, ThermodynamicTelemetry};
+
+/// Compositional Auth Rotor
+/// Used for Adjoint Verification of gradient updates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CompositionalAuthRotor(pub SO2Rotor);
+    
+impl CompositionalAuthRotor {
+    /// Derives a 32-byte key from the rotor for data encryption.
+    /// In the full HNA implementation, this is replaced by native manifold gating.
+    pub fn derive_key(&self) -> [u8; 32] {
+        let mut key = [0u8; 32];
+        let bytes_cos = self.0.0[0].to_be_bytes();
+        let bytes_sin = self.0.0[1].to_be_bytes();
+        
+        // Populate key with rotor components and deterministic padding
+        for i in 0..4 {
+            key[i] = bytes_cos[i];
+            key[i+4] = bytes_sin[i];
+        }
+        // Fill the rest with a deterministic pattern
+        for i in 8..32 {
+            key[i] = (i * 7) as u8;
+        }
+        key
+    }
+}
+
+/// Adjoint Verification Pass
+/// Protects the HNA from "Thermodynamic Hijacking".
+pub trait AdjointVerifier: Send + Sync {
+    /// Performs an Adjoint Verification pass on a telemetry update.
+    /// Returns true if the projected Free Energy surprise is within safe bounds.
+    fn verify_adjoint(&self, telemetry: &ThermodynamicTelemetry, threshold: f32) -> bool;
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SanitizedString {

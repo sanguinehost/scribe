@@ -1432,7 +1432,12 @@ pub async fn create_character_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     ));
-    let character_service = CharacterService::new(state.pool.clone(), enc_service);
+    let character_service = CharacterService::new(
+        state.pool.clone(),
+        enc_service,
+        state.adjoint_verifier.clone(),
+    )
+;
 
     // Call the service method
     let client_data = character_service
@@ -1922,7 +1927,12 @@ pub async fn update_character_handler(
         state.encryption_service.clone(),
         state.qdrant_service.clone(),
     ));
-    let character_service = CharacterService::new(state.pool.clone(), enc_service);
+    let character_service = CharacterService::new(
+        state.pool.clone(),
+        enc_service,
+        state.adjoint_verifier.clone(),
+    )
+;
 
     // Call the service method
     let client_data = character_service

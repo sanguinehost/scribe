@@ -99,6 +99,9 @@ pub enum AppError {
     #[error("Forbidden: {0}")]
     Forbidden(String), // Access denied despite authentication
 
+    #[error("Adjoint verification failed: {0}")]
+    AdjointVerificationFailed(String), // Thermodynamic hijacking prevention
+
     #[error("Authentication framework error: {0}")]
     AuthError(String), // Use String instead of the full error type
 
@@ -359,6 +362,7 @@ impl AppError {
             Self::Unauthorized(_) => "UNAUTHORIZED",
             Self::DekMissing => "DEK_MISSING",
             Self::Forbidden(_) => "FORBIDDEN",
+            Self::AdjointVerificationFailed(_) => "ADJOINT_VERIFICATION_FAILED",
             Self::AuthError(_) => "AUTH_ERROR",
             Self::SessionStoreError(_) => "SESSION_STORE_ERROR",
             Self::SessionNotFound => "SESSION_NOT_FOUND",
@@ -524,6 +528,7 @@ impl AppError {
                     | Self::Unauthorized(_)
                     | Self::DekMissing
                     | Self::Forbidden(_)
+                    | Self::AdjointVerificationFailed(_)
                     | Self::NotFound(_)
                     | Self::UserNotFound
                     | Self::SessionNotFound
@@ -660,6 +665,7 @@ impl AppError {
                 "Data Encryption Key not available. Please sign in again.".to_string(),
             ),
             Self::Forbidden(msg) => (StatusCode::FORBIDDEN, msg),
+            Self::AdjointVerificationFailed(msg) => (StatusCode::FORBIDDEN, msg),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             Self::UserNotFound => (StatusCode::NOT_FOUND, "User not found".to_string()),
             Self::SessionNotFound => (
@@ -1301,6 +1307,9 @@ impl From<crate::auth::AuthError> for AppError {
             }
             crate::auth::AuthError::InvalidVerificationToken => {
                 Self::BadRequest("Invalid or expired verification token.".to_string())
+            }
+            crate::auth::AuthError::AdjointVerificationFailed(msg) => {
+                Self::Forbidden(format!("Adjoint verification failed: {msg}"))
             }
         }
     }

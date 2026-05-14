@@ -512,6 +512,10 @@ pub async fn login_handler(
                                 "Unexpected authentication error.".to_string(),
                             ))
                         }
+                        AuthError::AdjointVerificationFailed(msg) => {
+                            warn!("Login failed: Adjoint verification failed: {}", msg);
+                            Err(AppError::Forbidden(format!("Security verification failed: {msg}")))
+                        }
                     }
                 }
                 axum_login::Error::Session(session_err) => {

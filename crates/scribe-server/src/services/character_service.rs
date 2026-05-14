@@ -1,5 +1,6 @@
 use crate::db::{DbId, DbTimestamp};
 use std::sync::Arc;
+use scribe_core::privacy::AdjointVerifier;
 
 use crate::db::DbPool; // Changed from sqlx::PgPool
 use chrono::{DateTime, Utc}; // For timestamps
@@ -30,15 +31,21 @@ type EncryptedFieldResult = (Option<Vec<u8>>, Option<Vec<u8>>);
 pub struct CharacterService {
     db_pool: DbPool, // Changed from sqlx::PgPool
     encryption_service: Arc<EncryptionService>,
+    adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
 }
 
 impl CharacterService {
     #[must_use]
-    pub fn new(db_pool: DbPool, encryption_service: Arc<EncryptionService>) -> Self {
+    pub fn new(
+        db_pool: DbPool,
+        encryption_service: Arc<EncryptionService>,
+        adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
+    ) -> Self {
         // Changed db_pool type
         Self {
             db_pool,
             encryption_service,
+            adjoint_verifier,
         }
     }
 

@@ -21,6 +21,7 @@ use crate::{
     text_processing::chunking::ChunkConfig,
     vector_db::VectorService,
 };
+use scribe_core::privacy::AdjointVerifier;
 use std::sync::Arc;
 
 #[cfg(feature = "local-llm")]
@@ -49,6 +50,7 @@ pub struct AppStateServicesBuilder {
     email_service: Option<Arc<dyn EmailService + Send + Sync>>,
     rate_limiter: Option<Arc<LlmRateLimiter>>,
     recall_pipeline: Option<Arc<RecallPipeline>>,
+    adjoint_verifier: Option<Arc<dyn AdjointVerifier + Send + Sync>>,
 }
 
 impl AppStateServicesBuilder {
@@ -71,6 +73,7 @@ impl AppStateServicesBuilder {
             email_service: None,
             rate_limiter: None,
             recall_pipeline: None,
+            adjoint_verifier: None,
         }
     }
 
@@ -150,6 +153,14 @@ impl AppStateServicesBuilder {
         self
     }
 
+    pub fn with_adjoint_verifier(
+        mut self,
+        verifier: Arc<dyn AdjointVerifier + Send + Sync>,
+    ) -> Self {
+        self.adjoint_verifier = Some(verifier);
+        self
+    }
+
     /// Build AppStateServices with defaults for any unspecified services
     ///
     /// # Panics
@@ -162,10 +173,30 @@ impl AppStateServicesBuilder {
             .encryption_service
             .unwrap_or_else(|| Arc::new(EncryptionService::new()));
 
+        // Get or create adjoint verifier (needed for AuthBackend and other services)
+        let adjoint_verifier = self.adjoint_verifier.unwrap_or_else(|| {
+            // For now, use a default HNAAdjointVerifier if we can, or a mock
+            // In a real scenario, this would be initialized with the Vulkan telemetry buffer
+            // For the builder defaults, we'll use a placeholder verifier
+            use crate::auth::adjoint::HNAAdjointVerifier;
+            struct NoopTelemetry;
+            impl crate::auth::adjoint::TelemetryBuffer for NoopTelemetry {
+                fn read_state(&self) -> scribe_core::types::ThermodynamicTelemetry {
+                    scribe_core::types::ThermodynamicTelemetry::default()
+                }
+            }
+            Arc::new(HNAAdjointVerifier::new(Arc::new(NoopTelemetry), 10.0))
+        });
+
         // Get or create auth backend
         let auth_backend = self
             .auth_backend
-            .unwrap_or_else(|| Arc::new(AuthBackend::new(self.db_pool.clone())));
+            .unwrap_or_else(|| {
+                Arc::new(AuthBackend::new(
+                    self.db_pool.clone(),
+                    adjoint_verifier.clone(),
+                ))
+            });
 
         // Get or create email service
         let email_service = match self.email_service {
@@ -225,6 +256,7 @@ impl AppStateServicesBuilder {
             Arc::new(crate::services::character_service::CharacterService::new(
                 self.db_pool.clone(),
                 encryption_service.clone(),
+                adjoint_verifier.clone(),
             ))
         });
 
@@ -259,6 +291,7 @@ impl AppStateServicesBuilder {
         let _chronicle_service = Arc::new(ChronicleService::new(
             self.db_pool.clone(),
             ai_client.clone(),
+            adjoint_verifier.clone(),
         ));
 
         // Get or create rate limiter
@@ -294,6 +327,7 @@ impl AppStateServicesBuilder {
             ai_client_factory,
             rate_limiter,
             recall_pipeline,
+            adjoint_verifier,
             token_service: None, // Will be set in main.rs if configured
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: None, // Will be set in main.rs if local LLM is enabled
@@ -434,6 +468,13 @@ impl AppStateBuilder {
         }
     }
 
+    pub fn with_adjoint_verifier(self, verifier: Arc<dyn AdjointVerifier + Send + Sync>) -> Self {
+        Self {
+            services_builder: self.services_builder.with_adjoint_verifier(verifier),
+            ..self
+        }
+    }
+
     /// Build the AppState
     pub async fn build(self) -> Result<AppState, Box<dyn std::error::Error + Send + Sync>> {
         let services = self.services_builder.build().await?;
@@ -446,6 +487,7 @@ impl AppStateBuilder {
                 Arc::new(ChronicleService::new(
                     app_state.pool.clone(),
                     app_state.ai_client.clone(),
+                    app_state.adjoint_verifier.clone(),
                 )),
                 app_state.lorebook_service.clone(),
                 app_state.qdrant_service.clone(),

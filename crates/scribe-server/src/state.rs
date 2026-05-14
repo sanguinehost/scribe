@@ -11,6 +11,7 @@ use tokio::sync::Mutex as TokioMutex; // Add Mutex for test tracking
 use crate::llm::AiClient;
 use crate::llm::EmbeddingClient; // Add this
 use crate::services::embeddings::EmbeddingPipelineServiceTrait;
+use scribe_core::privacy::AdjointVerifier;
 // Remove concrete service import, use trait
 use crate::vector_db::VectorService;
 // use crate::auth::user_store::Backend as AuthBackend; // For axum-login
@@ -57,6 +58,7 @@ pub struct AppStateServices {
     pub ai_client_factory: Arc<AiClientFactory>,
     pub rate_limiter: Arc<LlmRateLimiter>,
     pub recall_pipeline: Arc<RecallPipeline>,
+    pub adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
     #[cfg(feature = "local-llm")]
@@ -93,6 +95,7 @@ pub struct AppState {
     pub ai_client_factory: Arc<AiClientFactory>,    // Added for dynamic AI client selection
     pub rate_limiter: Arc<LlmRateLimiter>,          // Added for rate limiting
     pub recall_pipeline: Arc<RecallPipeline>,       // Added for secure cognitive recall
+    pub adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
     pub narrative_intelligence_service: Option<Arc<NarrativeIntelligenceService>>, // Added for agentic narrative processing (optional to break circular dependency)
     #[cfg(feature = "local-llm")]
     pub llamacpp_server_manager: Option<Arc<LlamaCppServerManager>>, // Added for local LLM server management
@@ -133,6 +136,7 @@ impl fmt::Debug for AppState {
             .field("ai_client_factory", &"<Arc<AiClientFactory>>") // Added for AI client factory
             .field("rate_limiter", &"<Arc<LlmRateLimiter>>") // Added for rate limiting
             .field("recall_pipeline", &"<Arc<RecallPipeline>>") // Added for secure cognitive recall
+            .field("adjoint_verifier", &"<Arc<dyn AdjointVerifier>>")
             .field(
                 "narrative_intelligence_service",
                 &"<Option<Arc<NarrativeIntelligenceService>>>",
@@ -187,6 +191,7 @@ impl AppState {
             ai_client_factory: services.ai_client_factory,
             rate_limiter: services.rate_limiter,
             recall_pipeline: services.recall_pipeline,
+            adjoint_verifier: services.adjoint_verifier,
             narrative_intelligence_service: None, // Will be set later after AppState is fully constructed
             #[cfg(feature = "local-llm")]
             llamacpp_server_manager: services.llamacpp_server_manager,

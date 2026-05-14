@@ -216,11 +216,12 @@ mod tests {
     // TODO: Add tests for process_and_embed_lorebook_entry
 
     // Helper for setting up test environment for service methods
-    async fn setup_pipeline_test_env() -> (
-        Arc<AppState>,
-        Arc<MockQdrantClientService>,
         Arc<MockEmbeddingClient>,
     ) {
+        use crate::test_helpers::MockAdjointVerifier;
+        let adjoint_verifier: Arc<dyn scribe_core::privacy::AdjointVerifier + Send + Sync> =
+            Arc::new(MockAdjointVerifier::new());
+
         let mock_qdrant = Arc::new(MockQdrantClientService::new());
         let mock_embed_client = Arc::new(MockEmbeddingClient::new());
         let (pool, _test_db_name) = create_test_pool(Some(&DbId::new().to_string())).await;
@@ -258,17 +259,17 @@ mod tests {
                 .expect("Failed to create tokenizer for test"),
             ),
         );
-        let lorebook_service = Arc::new(LorebookService::new(
-            pool.clone(),
-            encryption_service.clone(),
             mock_qdrant.clone(),
         ));
-        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(pool.clone()));
+        let auth_backend = Arc::new(crate::auth::user_store::Backend::new(
+            pool.clone(),
+            adjoint_verifier.clone(),
+        ));
 
-        let character_service =
             Arc::new(crate::services::character_service::CharacterService::new(
                 pool.clone(),
                 encryption_service.clone(),
+                adjoint_verifier.clone(),
             ));
 
         // Create chronicle service for narrative intelligence
@@ -276,6 +277,7 @@ mod tests {
             Arc::new(crate::services::chronicle_service::ChronicleService::new(
                 pool.clone(),
                 ai_client.clone(),
+                adjoint_verifier.clone(),
             ));
 
         // First create services without narrative intelligence service
@@ -314,6 +316,7 @@ mod tests {
             recall_pipeline: Arc::new(crate::services::cognitive::RecallPipeline::new(
                 pool.clone(),
             )),
+            adjoint_verifier,
         };
 
         let app_state = Arc::new(AppState::new(pool, config, services));

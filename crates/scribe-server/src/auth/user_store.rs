@@ -21,6 +21,8 @@ use crate::schema;
 use anyhow::Context;
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
+use scribe_core::privacy::AdjointVerifier;
+
 pub struct UserCryptoFields {
     pub password_hash: Option<String>,
     pub dek_ciphertext: Option<crate::db::DbBlob>,
@@ -34,6 +36,7 @@ pub struct UserCryptoFields {
 pub struct Backend {
     pool: DbPool,
     pub dek_cache: Arc<RwLock<HashMap<crate::db::DbId, SerializableSecretDek>>>,
+    pub adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
 }
 
 // Manual Clone implementation to ensure dek_cache is properly shared
@@ -44,6 +47,7 @@ impl Clone for Backend {
             // CRITICAL: Clone the Arc, not create a new one
             // This ensures all Backend instances share the same cache
             dek_cache: self.dek_cache.clone(),
+            adjoint_verifier: self.adjoint_verifier.clone(),
         }
     }
 }
@@ -60,10 +64,11 @@ impl Debug for Backend {
 
 impl Backend {
     #[must_use]
-    pub fn new(pool: DbPool) -> Self {
+    pub fn new(pool: DbPool, adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>) -> Self {
         Self {
             pool,
             dek_cache: Arc::new(RwLock::new(HashMap::new())),
+            adjoint_verifier,
         }
     }
 }

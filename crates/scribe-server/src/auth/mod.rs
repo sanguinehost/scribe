@@ -14,6 +14,7 @@ use tokio::task::JoinError;
 use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid; // Import InteractError
 
+pub mod adjoint;
 use crate::crypto::{self, CryptoError}; // Added for encryption
 use crate::models::email_verification::EmailVerificationToken;
 use crate::models::email_verification::NewEmailVerificationToken; // Added for verification tokens
@@ -28,7 +29,7 @@ type VerifyCredentialsResult = Result<(User, Option<SecretBox<Vec<u8>>>), AuthEr
 /// Generate a secure random verification token
 fn generate_verification_token() -> String {
     // Generate a 32-character alphanumeric token using UUID for simplicity and security
-    format!("{}", crate::db::DbId::new().simple())
+    format!("{}", crate::db::DbId::new().to_simple())
 }
 
 /// Helper to insert email verification token (avoids E0275 Sized overflow with complex closures)
@@ -80,6 +81,8 @@ pub enum AuthError {
     SessionDeletionError(String),
     #[error("Invalid or expired verification token")]
     InvalidVerificationToken,
+    #[error("Adjoint verification failed: {0}")]
+    AdjointVerificationFailed(String),
 }
 
 // Manual PartialEq implementation for test comparisons
@@ -95,7 +98,8 @@ impl PartialEq for AuthError {
             | (Self::AccountPendingVerification, Self::AccountPendingVerification)
             | (Self::RecoveryNotSetup, Self::RecoveryNotSetup)
             | (Self::InvalidRecoveryPhrase, Self::InvalidRecoveryPhrase)
-            | (Self::InvalidVerificationToken, Self::InvalidVerificationToken) => true,
+            | (Self::InvalidVerificationToken, Self::InvalidVerificationToken)
+            | (Self::AdjointVerificationFailed(_), Self::AdjointVerificationFailed(_)) => true,
             (Self::DatabaseError(a), Self::DatabaseError(b))
             | (Self::InteractError(a), Self::InteractError(b))
             | (Self::SessionDeletionError(a), Self::SessionDeletionError(b)) => a == b,

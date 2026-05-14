@@ -96,7 +96,10 @@ impl TestFixtures {
 
     /// Create a test auth backend
     pub fn test_auth_backend(pool: DbPool) -> Arc<AuthBackend> {
-        Arc::new(AuthBackend::new(pool))
+        Arc::new(AuthBackend::new(
+            pool,
+            Arc::new(crate::test_helpers::MockAdjointVerifier::new()),
+        ))
     }
 }
 

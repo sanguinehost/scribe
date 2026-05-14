@@ -86,6 +86,9 @@ pub struct Config {
     #[cfg(feature = "payment")]
     #[serde(default)]
     pub payment: PaymentConfig,
+
+    #[serde(default = "default_adjoint_threshold")]
+    pub adjoint_threshold: f32,
 }
 
 impl std::fmt::Debug for Config {
@@ -200,6 +203,10 @@ const fn default_context_rag_token_budget() -> usize {
 }
 const fn default_min_tail_messages_to_preserve() -> usize {
     8 // Preserve last 8 messages to maintain conversation continuity
+}
+
+const fn default_adjoint_threshold() -> f32 {
+    1.0 // Default thermodynamic surprise limit
 }
 
 fn default_frontend_base_url() -> String {
@@ -871,6 +878,7 @@ impl Default for Config {
             embedding_dimension: default_embedding_dimension(),
             qdrant_distance_metric: default_qdrant_distance_metric(), // Added
             qdrant_on_disk: default_qdrant_on_disk(),                 // Added
+            adjoint_threshold: 1.0,
             lancedb_data_dir: None,                                   // LanceDB data directory
             chunking_metric: default_chunking_metric(),
             chunking_max_size: default_chunking_max_size(),

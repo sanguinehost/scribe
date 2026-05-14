@@ -27,6 +27,7 @@ use crate::schema::{
 use crate::services::ChronicleDeduplicationService;
 
 use crate::llm::AiClient;
+use scribe_core::privacy::AdjointVerifier;
 use std::sync::Arc;
 
 /// ChronicleService handles all Chronicle-related database operations
@@ -34,12 +35,21 @@ use std::sync::Arc;
 pub struct ChronicleService {
     db_pool: DbPool,
     ai_client: Arc<dyn AiClient>,
+    adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
 }
 
 impl ChronicleService {
     #[must_use]
-    pub fn new(db_pool: DbPool, ai_client: Arc<dyn AiClient>) -> Self {
-        Self { db_pool, ai_client }
+    pub fn new(
+        db_pool: DbPool,
+        ai_client: Arc<dyn AiClient>,
+        adjoint_verifier: Arc<dyn AdjointVerifier + Send + Sync>,
+    ) -> Self {
+        Self {
+            db_pool,
+            ai_client,
+            adjoint_verifier,
+        }
     }
 
     /// Helper to insert chronicle event and query it back (avoids E0275 Sized overflow)
