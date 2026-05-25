@@ -95,7 +95,7 @@
 		"@types/dompurify": "^3.2.0",
 		"@types/marked": "^6.0.0",
 		"cookie": "^1.1.1",
-		"dompurify": "^3.4.2",
+		"dompurify": "^3.4.5",
 		"eventsource-parser": "^3.0.8",
 		"marked": "^18.0.3",
 		"sveltekit-sse": "^0.14.3"
