@@ -98,6 +98,6 @@
 		"dompurify": "^3.4.2",
 		"eventsource-parser": "^3.0.8",
 		"marked": "^18.0.3",
-		"sveltekit-sse": "^0.14.3"
+		"sveltekit-sse": "^0.15.1"
 	}
 }
