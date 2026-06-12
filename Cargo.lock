@@ -13555,7 +13555,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum-server",
- "base64 0.21.7",
+ "base64 0.22.1",
  "diesel",
  "diesel_migrations",
  "dirs 5.0.1",
@@ -13566,7 +13566,7 @@ dependencies = [
  "once_cell",
  "p256 0.13.2",
  "parking_lot",
- "rand 0.8.6",
+ "rand 0.10.1",
  "reqwest 0.13.3",
  "scribe-backend",
  "serde",
