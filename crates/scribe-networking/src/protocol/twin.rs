@@ -2,13 +2,16 @@ use serde::{Deserialize, Serialize};
 use crate::crdt::CrdtState;
 use crate::error::{NetworkError, NetworkResult};
 use libp2p::identity::{Keypair, PublicKey};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TwinPayload {
     pub agent_id: String,
     pub state: CrdtState,
     pub timestamp: DateTime<Utc>,
+    pub nonce: String,      // Added for replay protection
+    pub expires_at: DateTime<Utc>, // Added for TTL
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,10 +25,13 @@ pub struct TwinMigrationProtocol;
 
 impl TwinMigrationProtocol {
     pub fn sign_payload(agent_id: String, state: CrdtState, keypair: &Keypair) -> NetworkResult<SignedTwinPayload> {
+        let now = Utc::now();
         let payload = TwinPayload {
             agent_id,
             state,
-            timestamp: Utc::now(),
+            timestamp: now,
+            nonce: Uuid::new_v4().to_string(),
+            expires_at: now + Duration::minutes(5), // 5 minute TTL
         };
         let encoded = serde_json::to_vec(&payload)?;
         let signature = keypair.sign(&encoded).map_err(|e| NetworkError::Unauthorized(e.to_string()))?;
@@ -39,6 +45,12 @@ impl TwinMigrationProtocol {
     }
 
     pub fn verify_payload(signed: &SignedTwinPayload) -> NetworkResult<bool> {
+        // 1. Check expiration
+        if Utc::now() > signed.payload.expires_at {
+            return Err(NetworkError::Unauthorized("Payload expired".into()));
+        }
+
+        // 2. Verify signature
         let public_key = PublicKey::try_decode_protobuf(&signed.public_key)
             .map_err(|e| NetworkError::Decoding(e.to_string()))?;
         
@@ -67,5 +79,20 @@ mod tests {
         
         assert!(verified);
         assert_eq!(signed.payload.agent_id, "agent-1");
+    }
+
+    #[test]
+    fn test_expiration() {
+        let keypair = Keypair::generate_ed25519();
+        let mut state = CrdtState::default();
+        state.update("memory".into(), serde_json::json!("happy"));
+        
+        let mut signed = TwinMigrationProtocol::sign_payload("agent-1".into(), state, &keypair).unwrap();
+        
+        // Force expiration
+        signed.payload.expires_at = Utc::now() - Duration::seconds(1);
+        
+        let result = TwinMigrationProtocol::verify_payload(&signed);
+        assert!(result.is_err());
     }
 }

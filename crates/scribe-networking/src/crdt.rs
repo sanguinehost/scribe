@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration};
 use crate::error::NetworkResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -19,9 +19,17 @@ impl<T: Clone> LwwRegister<T> {
 
     pub fn merge(&mut self, other: &Self) 
     where T: Clone + Serialize + PartialEq {
+        let now = Utc::now();
+        let max_future = now + Duration::seconds(60);
+
         let self_val_str = serde_json::to_string(&self.value).unwrap_or_default();
         let other_val_str = serde_json::to_string(&other.value).unwrap_or_default();
         
+        // Security check: Ignore updates from the far future to prevent poisoning
+        if other.timestamp > max_future {
+            return;
+        }
+
         if other.timestamp > self.timestamp || (other.timestamp == self.timestamp && other_val_str > self_val_str) {
             self.value = other.value.clone();
             self.timestamp = other.timestamp;
