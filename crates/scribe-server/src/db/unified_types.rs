@@ -154,7 +154,7 @@ impl std::fmt::Display for DbId {
 }
 
 impl DbType for DbId {
-    type PgType = Uuid;
+    type PgType = DbId;
     type SqliteType = SqliteUuid;
 
     #[cfg(feature = "postgres-backend")]
@@ -165,11 +165,11 @@ impl DbType for DbId {
     type SqliteSqlType = Text;
 
     fn to_pg_type(&self) -> Self::PgType {
-        self.0
+        *self
     }
 
     fn from_pg_type(value: Self::PgType) -> Self {
-        Self(value)
+        value
     }
 
     fn to_sqlite_type(&self) -> Self::SqliteType {
@@ -187,7 +187,7 @@ impl FromSql<PgUuid, Pg> for DbId {
     fn from_sql(
         bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let uuid = <Uuid as FromSql<PgUuid, Pg>>::from_sql(bytes)?;
+        let uuid = Uuid::from_slice(bytes.as_bytes())?;
         Ok(Self(uuid))
     }
 }
@@ -198,7 +198,8 @@ impl diesel::serialize::ToSql<PgUuid, Pg> for DbId {
         &'b self,
         out: &mut diesel::serialize::Output<'b, '_, Pg>,
     ) -> diesel::serialize::Result {
-        <Uuid as diesel::serialize::ToSql<PgUuid, Pg>>::to_sql(&self.0, out)
+        std::io::Write::write_all(out, self.0.as_bytes())?;
+        Ok(diesel::serialize::IsNull::No)
     }
 }
 
