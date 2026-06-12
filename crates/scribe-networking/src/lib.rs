@@ -5,4 +5,4 @@ pub mod protocol;
 
 pub use error::NetworkError;
 pub use error::NetworkResult;
-pub use p2p::NetworkManager;
+pub use p2p::{NetworkManager, NetworkEvent, NetworkCommand};
