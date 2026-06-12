@@ -1,5 +1,14 @@
 # Sanguine Scribe
 
+> [!IMPORTANT]
+> **This repository is deprecated and archived.** We have not given up — quite the opposite.
+>
+> While building Scribe we found something underneath it that changed our direction entirely. Development moved into the **Sanguine framework**: a foundation where the operating system itself is stated and proven as a small set of machine-checked theorems (one file, `SanguineOS.lean`, specifies the entire OS — runtime, translation, storage, verification, federation — with no axioms and no `sorry`), and where the AI features Scribe reached for (memory, context, learning from conversation) become exact, auditable operations — model training as a ledger of bit-exact folds with provable unlearning, mergeable shards, and generative chat on the same substrate (`Runtime/Model.lean`).
+>
+> We plan to share this work publicly in the next few months. We believe it will change the game. Until then this repository stays up, read-only, as the record of where it started.
+>
+> — The Sanguine team, June 2026 · [sanguinehost.com](https://sanguinehost.com)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Backend-Rust-orange.svg)](https://www.rust-lang.org/)
 [![Svelte](https://img.shields.io/badge/Frontend-SvelteKit-red.svg)](https://kit.svelte.dev/)
